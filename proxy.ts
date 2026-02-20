@@ -6,7 +6,7 @@ const secret = new TextEncoder().encode(
     process.env.JWT_SECRET as string
 );
 
-export async function middleware(request: NextRequest) {
+export async function proxy(request: NextRequest) {
     const token = request.cookies.get("token")?.value;
 
     if (!token) {
