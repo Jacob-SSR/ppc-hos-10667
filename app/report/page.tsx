@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, forwardRef } from "react";
 import DatePicker from "react-datepicker";
 import { th } from "date-fns/locale";
 import "react-datepicker/dist/react-datepicker.css";
@@ -11,6 +11,27 @@ import { FiCopy, FiChevronUp, FiChevronDown } from "react-icons/fi";
 import toast, { Toaster } from "react-hot-toast";
 
 const PAGE_SIZE = 50;
+
+const ThaiDateInput = forwardRef<HTMLInputElement, { value?: string; onClick?: () => void }>(
+    ({ value, onClick }, ref) => {
+        const thaiValue = value
+            ? (() => {
+                const [d, m, y] = value.split("/");
+                return `${d}/${m}/${Number(y) + 543}`;
+            })()
+            : "";
+        return (
+            <input
+                ref={ref}
+                value={thaiValue}
+                onClick={onClick}
+                readOnly
+                className="border p-2 rounded w-36 cursor-pointer"
+            />
+        );
+    }
+);
+ThaiDateInput.displayName = "ThaiDateInput";
 
 export default function ReportPage() {
     const [data, setData] = useState<ReportRow[]>([]);
@@ -26,6 +47,27 @@ export default function ReportPage() {
 
     const formatDate = (date: Date) =>
         date.toISOString().split("T")[0];
+
+    const formatDatePickerDisplay = (date: Date | null): string => {
+        if (!date) return "";
+        return date.toLocaleDateString("th-TH", {
+            timeZone: "Asia/Bangkok",
+            day: "2-digit",
+            month: "2-digit",
+            year: "numeric",
+        });
+    };
+
+    const formatThaiDate = (val: any) => {
+        const date = new Date(val);
+        if (isNaN(date.getTime())) return val;
+        return date.toLocaleDateString("th-TH", {
+            timeZone: "Asia/Bangkok",
+            day: "2-digit",
+            month: "2-digit",
+            year: "numeric",
+        });
+    };
 
     const fetchReport = async () => {
         if (!start || !end) return alert("กรุณาเลือกวันที่");
@@ -118,7 +160,7 @@ export default function ReportPage() {
 
                 {/* Center - Text */}
                 <h1 className="absolute left-1/2 -translate-x-1/2 font-bold text-2xl text-green-800">
-                    สิทธิ์หลักเป็น 10667
+                    แก้ไขสิทธิ์หลักจาก 10667 เป็น CUP Split
                 </h1>
 
                 {/* Right - Logout */}
@@ -147,7 +189,7 @@ export default function ReportPage() {
                             showYearDropdown
                             dropdownMode="select"
                             yearDropdownItemNumber={20}
-                            className="border p-2 rounded"
+                            customInput={<ThaiDateInput />}
                         />
                     </div>
 
@@ -162,7 +204,7 @@ export default function ReportPage() {
                             showYearDropdown
                             dropdownMode="select"
                             yearDropdownItemNumber={20}
-                            className="border p-2 rounded"
+                            customInput={<ThaiDateInput />}
                         />
                     </div>
 
@@ -227,10 +269,14 @@ export default function ReportPage() {
                                     <tbody>
                                         {paginatedData.map((row, i) => (
                                             <tr key={i} className="hover:bg-yellow-50">
-                                                {Object.values(row).map((val, idx) => (
+                                                {Object.entries(row).map(([key, val], idx) => (
                                                     <td key={idx} className="px-4 py-2 border">
                                                         <div className="flex justify-between items-center group">
-                                                            <span>{val}</span>
+                                                            <span>
+                                                                {key === "vstdate" && val
+                                                                    ? formatThaiDate(val)
+                                                                    : val}
+                                                            </span>
                                                             <button
                                                                 onClick={() => copyToClipboard(val)}
                                                                 className="opacity-0 group-hover:opacity-100 transition"
