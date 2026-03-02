@@ -67,3 +67,46 @@ export async function getNoEndpointReport(
 
     return rows;
 }
+
+export async function getUcOutsideDentalReport(
+    start: string,
+    end: string
+) {
+    const [rows] = await db.query(
+        `
+    select 
+      v.vstdate,
+      v.vn,
+      v.hn,
+      v.pdx,
+      v.aid,
+      v.pttype,
+      p.name as pttype_name,
+      v.hospmain,
+      h.name as hospmain_name,
+      v.income,
+      v.paid_money,
+      (v.inc08+v.inc10+v.inc14+v.inc15+v.inc16+v.inc17) as sum_other,
+      (v.income-v.inc11) as sum_total,
+      (v.income - v.paid_money) as ss,
+      op.cc,
+      k.department
+    from vn_stat v
+    inner join ovst o on o.vn=v.vn
+    left outer join opdscreen op on v.vn=op.vn
+    left outer join kskdepartment k on k.depcode=o.main_dep
+    left join hospcode h on v.hospmain = h.hospcode
+    left join pttype p on p.pttype=v.pttype
+    where v.vstdate between ? and ?
+      and v.pcode in ("AA","AB","AC","AD","AE","AF","AG","AH","AJ","AK","AL","UC")
+      and v.income <> 0
+      and h.chwpart <> "31"
+      and v.hospmain <> ""
+      and v.pdx BETWEEN "K000" and "K149"
+    order by v.vn;
+    `,
+        [start, end]
+    );
+
+    return rows;
+}

@@ -4,9 +4,7 @@ import { useState, useMemo, forwardRef } from "react";
 import DatePicker from "react-datepicker";
 import { th } from "date-fns/locale";
 import "react-datepicker/dist/react-datepicker.css";
-import * as XLSX from "xlsx";
-import { saveAs } from "file-saver";
-import { FiCopy, FiChevronUp, FiChevronDown } from "react-icons/fi";
+import { FiChevronUp, FiChevronDown } from "react-icons/fi";
 import toast, { Toaster } from "react-hot-toast";
 
 const PAGE_SIZE = 50;
@@ -28,13 +26,13 @@ const ThaiDateInput = forwardRef<
             value={thaiValue}
             onClick={onClick}
             readOnly
-            className="border-2 border-gray-300 px-4 py-2 rounded-lg w-40 cursor-pointer text-sm text-gray-800 bg-white focus:outline-none focus:border-green-800 shadow-sm"
+            className="border-2 border-gray-300 px-4 py-2 rounded-lg w-44 cursor-pointer text-sm bg-white focus:outline-none focus:border-green-800 shadow-sm"
         />
     );
 });
 ThaiDateInput.displayName = "ThaiDateInput";
 
-export default function NoEndpointPage() {
+export default function UcOutsideDentalPage() {
     const [data, setData] = useState<any[]>([]);
     const [loading, setLoading] = useState(false);
     const [start, setStart] = useState<Date | null>(new Date(2026, 0, 1));
@@ -44,68 +42,33 @@ export default function NoEndpointPage() {
     const [sortAsc, setSortAsc] = useState(true);
     const [page, setPage] = useState(1);
 
-    const formatDate = (date: Date) =>
-        date.toISOString().split("T")[0];
+    const formatDate = (date: Date) => date.toISOString().split("T")[0];
 
     const formatThaiDate = (val: any) => {
         if (!val) return "";
         const dateOnly = String(val).split("T")[0];
-        const [year, month, day] = dateOnly.split("-");
-        if (!year || !month || !day) return val;
-        return `${day}/${month}/${Number(year) + 543}`;
+        const [y, m, d] = dateOnly.split("-");
+        return `${d}/${m}/${Number(y) + 543}`;
     };
 
-    const fetchReport = async () => {
+    const fetchData = async () => {
         if (!start || !end) return alert("กรุณาเลือกวันที่");
+
         setLoading(true);
-
-        const res = await fetch(
-            `/api/no-endpoint?start=${formatDate(start)}&end=${formatDate(end)}`
-        );
-
-        const json = await res.json();
-        setData(json);
-        setPage(1);
+        try {
+            const res = await fetch(
+                `/api/uc-outside-dental?start=${formatDate(
+                    start
+                )}&end=${formatDate(end)}`
+            );
+            const json = await res.json();
+            setData(json || []);
+            setPage(1);
+            toast.success("โหลดข้อมูลสำเร็จ");
+        } catch (err) {
+            toast.error("โหลดข้อมูลไม่สำเร็จ");
+        }
         setLoading(false);
-        toast.success("โหลดข้อมูลสำเร็จ");
-    };
-
-    const copyToClipboard = (value: any) => {
-        navigator.clipboard.writeText(String(value));
-        toast.success("คัดลอกแล้ว");
-    };
-
-    const exportExcel = () => {
-        const cleanedData = data.map((row) => {
-            const newRow: any = {};
-
-            Object.keys(row).forEach((key) => {
-                let value = row[key];
-
-                if (key.toLowerCase().includes("date") && value) {
-                    value = formatThaiDate(value);
-                }
-
-                newRow[key] = value;
-            });
-
-            return newRow;
-        });
-
-        const worksheet = XLSX.utils.json_to_sheet(cleanedData);
-        const workbook = XLSX.utils.book_new();
-        XLSX.utils.book_append_sheet(workbook, worksheet, "NoEndpoint");
-
-        const excelBuffer = XLSX.write(workbook, {
-            bookType: "xlsx",
-            type: "array",
-        });
-
-        const file = new Blob([excelBuffer], {
-            type: "application/octet-stream",
-        });
-
-        saveAs(file, "no-endpoint-report.xlsx");
     };
 
     const filteredData = useMemo(() => {
@@ -118,11 +81,9 @@ export default function NoEndpointPage() {
 
     const sortedData = useMemo(() => {
         if (!sortKey) return filteredData;
-
         return [...filteredData].sort((a, b) => {
             const aVal = a[sortKey];
             const bVal = b[sortKey];
-
             return sortAsc
                 ? String(aVal).localeCompare(String(bVal), "th")
                 : String(bVal).localeCompare(String(aVal), "th");
@@ -130,7 +91,6 @@ export default function NoEndpointPage() {
     }, [filteredData, sortKey, sortAsc]);
 
     const totalPages = Math.max(1, Math.ceil(sortedData.length / PAGE_SIZE));
-
     const paginatedData = sortedData.slice(
         (page - 1) * PAGE_SIZE,
         page * PAGE_SIZE
@@ -148,10 +108,10 @@ export default function NoEndpointPage() {
         <div className="space-y-6 text-gray-800">
             <Toaster position="top-center" />
 
+            {/* FILTER BAR */}
             <div className="bg-white border-2 border-gray-300 rounded-2xl shadow-sm px-6 py-6 flex flex-wrap items-end gap-6">
-
                 <div>
-                    <label className="block text-sm font-semibold text-gray-700 mb-2">
+                    <label className="block text-sm font-semibold mb-2">
                         วันที่เริ่ม
                     </label>
                     <DatePicker
@@ -162,13 +122,12 @@ export default function NoEndpointPage() {
                         showMonthDropdown
                         showYearDropdown
                         dropdownMode="select"
-                        yearDropdownItemNumber={20}
                         customInput={<ThaiDateInput />}
                     />
                 </div>
 
                 <div>
-                    <label className="block text-sm font-semibold text-gray-700 mb-2">
+                    <label className="block text-sm font-semibold mb-2">
                         วันที่สิ้นสุด
                     </label>
                     <DatePicker
@@ -179,56 +138,47 @@ export default function NoEndpointPage() {
                         showMonthDropdown
                         showYearDropdown
                         dropdownMode="select"
-                        yearDropdownItemNumber={20}
                         customInput={<ThaiDateInput />}
                     />
                 </div>
 
                 <div>
-                    <label className="block text-sm font-semibold text-gray-700 mb-2">
+                    <label className="block text-sm font-semibold mb-2">
                         ค้นหา
                     </label>
                     <input
                         type="text"
                         placeholder="Search..."
                         value={search}
-                        onChange={(e) => { setSearch(e.target.value); setPage(1); }}
-                        className="border-2 border-gray-300 px-5 py-2 rounded-full w-72 text-sm text-gray-800 bg-white focus:outline-none focus:border-green-800 shadow-sm"
+                        onChange={(e) => {
+                            setSearch(e.target.value);
+                            setPage(1);
+                        }}
+                        className="border-2 border-gray-300 px-5 py-2 rounded-full w-72 text-sm bg-white focus:outline-none focus:border-green-800 shadow-sm"
                     />
                 </div>
 
-                <div className="flex gap-3 ml-auto">
+                <div className="ml-auto">
                     <button
-                        onClick={fetchReport}
+                        onClick={fetchData}
                         disabled={loading}
                         className="bg-green-800 hover:bg-green-900 text-white text-sm font-semibold px-7 py-2 rounded-lg shadow transition disabled:opacity-50"
                     >
                         {loading ? "กำลังโหลด..." : "Search"}
                     </button>
-
-                    {data.length > 0 && (
-                        <button
-                            onClick={exportExcel}
-                            className="bg-green-700 hover:bg-green-800 text-white text-sm font-semibold px-7 py-2 rounded-lg shadow transition"
-                        >
-                            Export Excel
-                        </button>
-                    )}
                 </div>
             </div>
 
-
             {/* TABLE */}
             <div className="bg-white border-2 border-gray-300 rounded-xl shadow-sm px-6 py-6">
-
                 {loading && (
-                    <div className="flex items-center justify-center py-20 text-gray-600 font-medium">
+                    <div className="py-20 text-center text-gray-600">
                         กำลังโหลดข้อมูล...
                     </div>
                 )}
 
                 {!loading && sortedData.length === 0 && (
-                    <div className="flex items-center justify-center py-20 text-gray-600 font-medium">
+                    <div className="py-20 text-center text-gray-600">
                         ไม่พบข้อมูล กรุณาเลือกช่วงวันที่แล้วกด Search
                     </div>
                 )}
@@ -251,7 +201,7 @@ export default function NoEndpointPage() {
                                             <th
                                                 key={key}
                                                 onClick={() => handleSort(key)}
-                                                className="sticky top-0 bg-green-800 text-white px-4 py-3 text-left cursor-pointer whitespace-nowrap border-r border-green-700"
+                                                className="sticky top-0 bg-green-800 text-white px-4 py-3 text-left cursor-pointer whitespace-nowrap border-r"
                                             >
                                                 <div className="flex items-center gap-1">
                                                     {key}
@@ -271,29 +221,21 @@ export default function NoEndpointPage() {
                                     {paginatedData.map((row, i) => (
                                         <tr
                                             key={i}
-                                            className={`border-b border-gray-200 hover:bg-green-50 transition ${i % 2 === 0 ? "bg-white" : "bg-gray-50"
+                                            className={`border-b hover:bg-green-50 ${i % 2 === 0 ? "bg-white" : "bg-gray-50"
                                                 }`}
                                         >
-                                            {Object.entries(row).map(([key, val], idx) => (
-                                                <td
-                                                    key={idx}
-                                                    className="px-4 py-2.5 text-sm whitespace-nowrap border-r border-gray-100"
-                                                >
-                                                    <div className="flex items-center justify-between gap-2 group">
-                                                        <span>
-                                                            {key.toLowerCase().includes("date")
-                                                                ? formatThaiDate(val)
-                                                                : (val as any)}
-                                                        </span>
-                                                        <button
-                                                            onClick={() => copyToClipboard(val)}
-                                                            className="opacity-0 group-hover:opacity-60 hover:!opacity-100 transition text-gray-500"
-                                                        >
-                                                            <FiCopy size={14} />
-                                                        </button>
-                                                    </div>
-                                                </td>
-                                            ))}
+                                            {Object.entries(row as Record<string, any>).map(
+                                                ([key, val], idx) => (
+                                                    <td
+                                                        key={idx}
+                                                        className="px-4 py-2 whitespace-nowrap border-r"
+                                                    >
+                                                        {key === "vstdate"
+                                                            ? formatThaiDate(val)
+                                                            : String(val ?? "")}
+                                                    </td>
+                                                )
+                                            )}
                                         </tr>
                                     ))}
                                 </tbody>

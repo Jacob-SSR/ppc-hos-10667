@@ -13,9 +13,15 @@ const NAV_ITEMS = [
         exact: false,
     },
     {
-        label: "คนไหนที่ยังไม่มี endpoint",
+        label: "คนไทยที่ยังไม่มี endpoint",
         href: "/no-endpoint",
         icon: UserRound,
+        exact: false,
+    },
+    {
+        label: "UC ต่างจังหวัดที่มาทำฟัน",
+        href: "/uc-outside-dental",
+        icon: FileEdit,
         exact: false,
     },
 ];

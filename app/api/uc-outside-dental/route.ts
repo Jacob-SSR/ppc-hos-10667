@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getReport } from "@/lib/report.service";
+import { getUcOutsideDentalReport } from "@/lib/report.service";
 
 export async function GET(req: NextRequest) {
     const { searchParams } = new URL(req.url);
@@ -14,7 +14,14 @@ export async function GET(req: NextRequest) {
         );
     }
 
-    const data = await getReport(start, end);
-    return NextResponse.json(data);
+    try {
+        const data = await getUcOutsideDentalReport(start, end);
+        return NextResponse.json(data);
+    } catch (error) {
+        console.error(error);
+        return NextResponse.json(
+            { message: "Internal Server Error" },
+            { status: 500 }
+        );
+    }
 }
-
