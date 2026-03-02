@@ -44,15 +44,28 @@ export default function NoEndpointPage() {
     const [sortAsc, setSortAsc] = useState(true);
     const [page, setPage] = useState(1);
 
-    const formatDate = (date: Date) =>
-        date.toISOString().split("T")[0];
+    const formatDate = (date: Date) => {
+        const y = date.getFullYear();
+        const m = String(date.getMonth() + 1).padStart(2, "0");
+        const d = String(date.getDate()).padStart(2, "0");
+        return `${y}-${m}-${d}`;
+    };
 
     const formatThaiDate = (val: any) => {
         if (!val) return "";
-        const dateOnly = String(val).split("T")[0];
-        const [year, month, day] = dateOnly.split("-");
-        if (!year || !month || !day) return val;
-        return `${day}/${month}/${Number(year) + 543}`;
+
+        const str = String(val);
+
+        if (str.includes("T")) {
+            const date = new Date(str);
+            const y = date.getFullYear();
+            const m = String(date.getMonth() + 1).padStart(2, "0");
+            const d = String(date.getDate()).padStart(2, "0");
+            return `${d}/${m}/${y + 543}`;
+        }
+
+        const [y, m, d] = str.split("T")[0].split("-");
+        return `${d}/${m}/${Number(y) + 543}`;
     };
 
     const fetchReport = async () => {

@@ -28,7 +28,7 @@ const ThaiDateInput = forwardRef<
             value={thaiValue}
             onClick={onClick}
             readOnly
-            className="border-2 border-gray-300 px-4 py-2 rounded-lg w-44 cursor-pointer text-sm bg-white focus:outline-none focus:border-green-800 shadow-sm"
+            className="border-2 border-gray-300 px-4 py-2 rounded-lg w-40 cursor-pointer text-sm bg-white focus:outline-none focus:border-green-800 shadow-sm"
         />
     );
 });
@@ -44,12 +44,27 @@ export default function UcOutsideDentalPage() {
     const [sortAsc, setSortAsc] = useState(true);
     const [page, setPage] = useState(1);
 
-    const formatDate = (date: Date) => date.toISOString().split("T")[0];
+    const formatDate = (date: Date) => {
+        const y = date.getFullYear();
+        const m = String(date.getMonth() + 1).padStart(2, "0");
+        const d = String(date.getDate()).padStart(2, "0");
+        return `${y}-${m}-${d}`;
+    };
 
     const formatThaiDate = (val: any) => {
         if (!val) return "";
-        const dateOnly = String(val).split("T")[0];
-        const [y, m, d] = dateOnly.split("-");
+
+        const str = String(val);
+
+        if (str.includes("T")) {
+            const date = new Date(str);
+            const y = date.getFullYear();
+            const m = String(date.getMonth() + 1).padStart(2, "0");
+            const d = String(date.getDate()).padStart(2, "0");
+            return `${d}/${m}/${y + 543}`;
+        }
+
+        const [y, m, d] = str.split("T")[0].split("-");
         return `${d}/${m}/${Number(y) + 543}`;
     };
 
@@ -147,7 +162,7 @@ export default function UcOutsideDentalPage() {
             {/* FILTER BAR */}
             <div className="bg-white border-2 border-gray-300 rounded-2xl shadow-sm px-6 py-6 flex flex-wrap items-end gap-6">
                 <div>
-                    <label className="block text-sm font-semibold mb-2">
+                    <label className="block text-sm font-semibold text-gray-700 mb-2">
                         วันที่เริ่ม
                     </label>
                     <DatePicker
@@ -158,6 +173,7 @@ export default function UcOutsideDentalPage() {
                         showMonthDropdown
                         showYearDropdown
                         dropdownMode="select"
+                        yearDropdownItemNumber={20}
                         customInput={<ThaiDateInput />}
                     />
                 </div>
@@ -194,7 +210,7 @@ export default function UcOutsideDentalPage() {
                     />
                 </div>
 
-                <div className="ml-auto flex gap-3">
+                <div className="flex gap-3 ml-auto">
                     <button
                         onClick={fetchData}
                         disabled={loading}
@@ -203,12 +219,14 @@ export default function UcOutsideDentalPage() {
                         {loading ? "กำลังโหลด..." : "Search"}
                     </button>
 
-                    <button
-                        onClick={handleExport}
-                        className="bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold px-7 py-2 rounded-lg shadow transition"
-                    >
-                        Export Excel
-                    </button>
+                    {data.length > 0 && (
+                        <button
+                            onClick={handleExport}
+                            className="bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold px-7 py-2 rounded-lg shadow transition"
+                        >
+                            Export Excel
+                        </button>
+                    )}
                 </div>
             </div>
 

@@ -16,7 +16,8 @@ export async function getReport(
     from vn_stat v
     join pttype p on v.pttype = p.pttype
     join patient pt on v.hn = pt.hn
-    where v.vstdate between ? and ?
+    where v.vstdate >= ?
+    and v.vstdate < DATE_ADD(?, INTERVAL 1 DAY)
     and v.hospsub in (
       '02876','02880','02890','13836','02875','02877',
       '02886','15090','77608','02878','02879','02887',
@@ -59,7 +60,8 @@ export async function getNoEndpointReport(
     LEFT JOIN vn_stat vv on vv.vn=s.vn
     WHERE vp.auth_code IS NULL 
     AND o.an IS NULL
-    AND o.vstdate BETWEEN ? AND ?
+    AND o.vstdate >= ?
+    AND o.vstdate < DATE_ADD(?, INTERVAL 1 DAY)
     ORDER BY o.vsttime ASC;
     `,
         [start, end]
@@ -93,11 +95,12 @@ export async function getUcOutsideDentalReport(
       k.department
     from vn_stat v
     inner join ovst o on o.vn=v.vn
-    left outer join opdscreen op on v.vn=op.vn
-    left outer join kskdepartment k on k.depcode=o.main_dep
+    left join opdscreen op on v.vn=op.vn
+    left join kskdepartment k on k.depcode=o.main_dep
     left join hospcode h on v.hospmain = h.hospcode
     left join pttype p on p.pttype=v.pttype
-    where v.vstdate between ? and ?
+    where v.vstdate >= ?
+      and v.vstdate < DATE_ADD(?, INTERVAL 1 DAY)
       and v.pcode in ("AA","AB","AC","AD","AE","AF","AG","AH","AJ","AK","AL","UC")
       and v.income <> 0
       and h.chwpart <> "31"
