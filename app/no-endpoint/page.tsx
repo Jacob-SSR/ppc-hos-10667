@@ -4,7 +4,6 @@ import { useState, useMemo, forwardRef } from "react";
 import DatePicker from "react-datepicker";
 import { th } from "date-fns/locale";
 import "react-datepicker/dist/react-datepicker.css";
-import { ReportRow } from "@/types/report";
 import * as XLSX from "xlsx";
 import { saveAs } from "file-saver";
 import { FiCopy, FiChevronUp, FiChevronDown } from "react-icons/fi";
@@ -35,8 +34,8 @@ const ThaiDateInput = forwardRef<
 });
 ThaiDateInput.displayName = "ThaiDateInput";
 
-export default function ReportPage() {
-    const [data, setData] = useState<ReportRow[]>([]);
+export default function NoEndpointPage() {
+    const [data, setData] = useState<any[]>([]);
     const [loading, setLoading] = useState(false);
     const [start, setStart] = useState<Date | null>(new Date(2026, 0, 1));
     const [end, setEnd] = useState<Date | null>(new Date());
@@ -45,28 +44,25 @@ export default function ReportPage() {
     const [sortAsc, setSortAsc] = useState(true);
     const [page, setPage] = useState(1);
 
-    const formatDate = (date: Date) => date.toISOString().split("T")[0];
+    const formatDate = (date: Date) =>
+        date.toISOString().split("T")[0];
 
     const formatThaiDate = (val: any) => {
         if (!val) return "";
-
         const dateOnly = String(val).split("T")[0];
-
         const [year, month, day] = dateOnly.split("-");
-
         if (!year || !month || !day) return val;
-
-        const thaiYear = Number(year) + 543;
-
-        return `${day}/${month}/${thaiYear}`;
+        return `${day}/${month}/${Number(year) + 543}`;
     };
 
     const fetchReport = async () => {
         if (!start || !end) return alert("กรุณาเลือกวันที่");
         setLoading(true);
+
         const res = await fetch(
-            `/api/report?start=${formatDate(start)}&end=${formatDate(end)}`
+            `/api/no-endpoint?start=${formatDate(start)}&end=${formatDate(end)}`
         );
+
         const json = await res.json();
         setData(json);
         setPage(1);
@@ -84,16 +80,10 @@ export default function ReportPage() {
             const newRow: any = {};
 
             Object.keys(row).forEach((key) => {
-                let value = row[key as keyof ReportRow];
+                let value = row[key];
 
-                if (key === "vstdate" && value) {
-                    const dateOnly = String(value).split("T")[0];
-                    const [year, month, day] = dateOnly.split("-");
-
-                    if (year && month && day) {
-                        const thaiYear = Number(year) + 543;
-                        value = `${day}/${month}/${thaiYear}`;
-                    }
+                if (key.toLowerCase().includes("date") && value) {
+                    value = formatThaiDate(value);
                 }
 
                 newRow[key] = value;
@@ -104,7 +94,7 @@ export default function ReportPage() {
 
         const worksheet = XLSX.utils.json_to_sheet(cleanedData);
         const workbook = XLSX.utils.book_new();
-        XLSX.utils.book_append_sheet(workbook, worksheet, "Report");
+        XLSX.utils.book_append_sheet(workbook, worksheet, "NoEndpoint");
 
         const excelBuffer = XLSX.write(workbook, {
             bookType: "xlsx",
@@ -115,8 +105,9 @@ export default function ReportPage() {
             type: "application/octet-stream",
         });
 
-        saveAs(file, "report.xlsx");
+        saveAs(file, "no-endpoint-report.xlsx");
     };
+
     const filteredData = useMemo(() => {
         return data.filter((row) =>
             Object.values(row).some((val) =>
@@ -127,9 +118,11 @@ export default function ReportPage() {
 
     const sortedData = useMemo(() => {
         if (!sortKey) return filteredData;
+
         return [...filteredData].sort((a, b) => {
-            const aVal = a[sortKey as keyof ReportRow];
-            const bVal = b[sortKey as keyof ReportRow];
+            const aVal = a[sortKey];
+            const bVal = b[sortKey];
+
             return sortAsc
                 ? String(aVal).localeCompare(String(bVal), "th")
                 : String(bVal).localeCompare(String(aVal), "th");
@@ -137,6 +130,7 @@ export default function ReportPage() {
     }, [filteredData, sortKey, sortAsc]);
 
     const totalPages = Math.max(1, Math.ceil(sortedData.length / PAGE_SIZE));
+
     const paginatedData = sortedData.slice(
         (page - 1) * PAGE_SIZE,
         page * PAGE_SIZE
@@ -154,7 +148,6 @@ export default function ReportPage() {
         <div className="space-y-6 text-gray-800">
             <Toaster position="top-center" />
 
-            {/* FILTER BAR */}
             <div className="bg-white border-2 border-gray-300 rounded-2xl shadow-sm px-6 py-6 flex flex-wrap items-end gap-6">
 
                 <div>
@@ -224,36 +217,30 @@ export default function ReportPage() {
                 </div>
             </div>
 
+
             {/* TABLE */}
             <div className="bg-white border-2 border-gray-300 rounded-xl shadow-sm px-6 py-6">
 
                 {loading && (
-                    <div className="flex items-center justify-center py-20 text-gray-600 text-base font-medium">
+                    <div className="flex items-center justify-center py-20 text-gray-600 font-medium">
                         กำลังโหลดข้อมูล...
                     </div>
                 )}
 
                 {!loading && sortedData.length === 0 && (
-                    <div className="flex items-center justify-center py-20 text-gray-600 text-base font-medium">
+                    <div className="flex items-center justify-center py-20 text-gray-600 font-medium">
                         ไม่พบข้อมูล กรุณาเลือกช่วงวันที่แล้วกด Search
                     </div>
                 )}
 
                 {!loading && sortedData.length > 0 && (
                     <>
-                        {/* RESULT COUNT */}
                         <div className="mb-4 text-sm font-semibold text-gray-700">
-                            {search ? (
-                                <>
-                                    ค้นหา "<span className="text-green-800">{search}</span>" พบทั้งหมด{" "}
-                                    <span className="text-green-800">{sortedData.length}</span> รายการ
-                                </>
-                            ) : (
-                                <>
-                                    พบทั้งหมด{" "}
-                                    <span className="text-green-800">{sortedData.length}</span> รายการ
-                                </>
-                            )}
+                            พบทั้งหมด{" "}
+                            <span className="text-green-800">
+                                {sortedData.length}
+                            </span>{" "}
+                            รายการ
                         </div>
 
                         <div className="overflow-auto max-h-[520px] border border-gray-200 rounded-lg">
@@ -264,15 +251,16 @@ export default function ReportPage() {
                                             <th
                                                 key={key}
                                                 onClick={() => handleSort(key)}
-                                                className="sticky top-0 bg-green-800 text-white text-sm font-semibold px-4 py-3 text-left cursor-pointer whitespace-nowrap border-r border-green-700"
+                                                className="sticky top-0 bg-green-800 text-white px-4 py-3 text-left cursor-pointer whitespace-nowrap border-r border-green-700"
                                             >
                                                 <div className="flex items-center gap-1">
                                                     {key}
-                                                    {sortKey === key ? (
-                                                        sortAsc
-                                                            ? <FiChevronUp size={14} />
-                                                            : <FiChevronDown size={14} />
-                                                    ) : null}
+                                                    {sortKey === key &&
+                                                        (sortAsc ? (
+                                                            <FiChevronUp size={14} />
+                                                        ) : (
+                                                            <FiChevronDown size={14} />
+                                                        ))}
                                                 </div>
                                             </th>
                                         ))}
@@ -289,13 +277,13 @@ export default function ReportPage() {
                                             {Object.entries(row).map(([key, val], idx) => (
                                                 <td
                                                     key={idx}
-                                                    className="px-4 py-2.5 text-gray-800 text-sm whitespace-nowrap border-r border-gray-100"
+                                                    className="px-4 py-2.5 text-sm whitespace-nowrap border-r border-gray-100"
                                                 >
                                                     <div className="flex items-center justify-between gap-2 group">
                                                         <span>
-                                                            {key === "vstdate" && val
+                                                            {key.toLowerCase().includes("date")
                                                                 ? formatThaiDate(val)
-                                                                : val}
+                                                                : (val as any)}
                                                         </span>
                                                         <button
                                                             onClick={() => copyToClipboard(val)}
@@ -317,6 +305,7 @@ export default function ReportPage() {
                             <p className="text-sm font-medium text-gray-700">
                                 หน้า {page} / {totalPages}
                             </p>
+
                             <div className="flex items-center gap-3">
                                 <button
                                     onClick={() => setPage((p) => Math.max(p - 1, 1))}
@@ -326,12 +315,14 @@ export default function ReportPage() {
                                     ก่อนหน้า
                                 </button>
 
-                                <span className="border-2 border-gray-300 rounded-lg px-4 py-2 text-sm font-semibold text-gray-800 min-w-[3rem] text-center">
+                                <span className="border-2 border-gray-300 rounded-lg px-4 py-2 text-sm font-semibold min-w-[3rem] text-center">
                                     {page}
                                 </span>
 
                                 <button
-                                    onClick={() => setPage((p) => Math.min(p + 1, totalPages))}
+                                    onClick={() =>
+                                        setPage((p) => Math.min(p + 1, totalPages))
+                                    }
                                     disabled={page === totalPages}
                                     className="px-5 py-2 border-2 border-gray-300 rounded-lg text-sm font-semibold text-gray-700 hover:bg-gray-100 disabled:opacity-40 transition"
                                 >

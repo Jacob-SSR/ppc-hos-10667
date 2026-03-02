@@ -23,4 +23,19 @@ body {
   background: var(--background);
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
+  background-color: #f3f4f6;
+}
+
+table {
+  border: 1px solid #d1d5db;
+}
+
+th,
+td {
+  border-right: 1px solid #e5e7eb;
+}
+
+th:last-child,
+td:last-child {
+  border-right: none;
 }

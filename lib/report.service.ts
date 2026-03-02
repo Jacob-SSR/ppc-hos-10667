@@ -31,3 +31,39 @@ export async function getReport(
 
     return rows as ReportRow[];
 }
+
+
+export async function getNoEndpointReport(
+    start: string,
+    end: string
+) {
+    const [rows] = await db.query(
+        `
+    SELECT 
+      concat(day(o.vstdate),"/", month(o.vstdate),"/", year(o.vstdate)+543) AS DATE,
+      o.vsttime,
+      p.cid,
+      vv.income,
+      o.vn,
+      o.hn,
+      CONVERT(CAST(CONVERT(concat(p.pname,p.fname,"  ",p.lname) USING tis620) AS BINARY) USING tis620) as Name,
+      CONVERT(CAST(CONVERT(k.department USING tis620) AS BINARY) USING tis620) as Department,
+      CONVERT(CAST(CONVERT(if(s.cc is null,'',s.cc) USING tis620) AS BINARY) USING tis620) as cc,
+      CONVERT(CAST(CONVERT(ptt.name USING tis620) AS BINARY) USING tis620) as pttypename
+    FROM ovst o
+    LEFT JOIN visit_pttype vp ON vp.vn=o.vn
+    LEFT JOIN pttype ptt on ptt.pttype=vp.pttype 
+    LEFT JOIN patient p on p.hn = o.hn
+    LEFT JOIN kskdepartment k on k.depcode = o.main_dep
+    LEFT JOIN opdscreen s on s.vn = o.vn
+    LEFT JOIN vn_stat vv on vv.vn=s.vn
+    WHERE vp.auth_code IS NULL 
+    AND o.an IS NULL
+    AND o.vstdate BETWEEN ? AND ?
+    ORDER BY o.vsttime ASC;
+    `,
+        [start, end]
+    );
+
+    return rows;
+}
