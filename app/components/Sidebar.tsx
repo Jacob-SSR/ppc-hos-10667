@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { LayoutGrid, FileEdit, UserRound, LogOut } from "lucide-react";
+import { LayoutGrid, FileEdit, UserRound, LogOut, FileUser } from "lucide-react";
 
 const NAV_ITEMS = [
     { label: "Overview", href: "/dashboard", icon: LayoutGrid, exact: true },
@@ -21,7 +21,7 @@ const NAV_ITEMS = [
     {
         label: "UC ต่างจังหวัดที่มาทำฟัน",
         href: "/uc-outside-dental",
-        icon: FileEdit,
+        icon: FileUser,
         exact: false,
     },
 ];
@@ -61,7 +61,7 @@ export default function Sidebar() {
                                 }
               `}
                         >
-                            <Icon size={18} />
+                            <Icon className="w-6 h-6 flex-shrink-0" />
                             {item.label}
                         </Link>
                     );

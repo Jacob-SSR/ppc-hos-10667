@@ -104,8 +104,10 @@ export default function NoEndpointPage() {
         const file = new Blob([excelBuffer], {
             type: "application/octet-stream",
         });
-
-        saveAs(file, "no-endpoint-report.xlsx");
+        const nowTH = new Date().toLocaleString("sv-SE", {
+            timeZone: "Asia/Bangkok",
+        }).replace(" ", "_");
+        saveAs(file, `no-endpoint-report_${nowTH}.xlsx`);
     };
 
     const filteredData = useMemo(() => {
@@ -209,7 +211,7 @@ export default function NoEndpointPage() {
                     {data.length > 0 && (
                         <button
                             onClick={exportExcel}
-                            className="bg-green-700 hover:bg-green-800 text-white text-sm font-semibold px-7 py-2 rounded-lg shadow transition"
+                            className="bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold px-7 py-2 rounded-lg shadow transition"
                         >
                             Export Excel
                         </button>

@@ -4,6 +4,8 @@ import { useState, useMemo, forwardRef } from "react";
 import DatePicker from "react-datepicker";
 import { th } from "date-fns/locale";
 import "react-datepicker/dist/react-datepicker.css";
+import * as XLSX from "xlsx";
+import { saveAs } from "file-saver";
 import { FiChevronUp, FiChevronDown } from "react-icons/fi";
 import toast, { Toaster } from "react-hot-toast";
 
@@ -104,6 +106,40 @@ export default function UcOutsideDentalPage() {
         }
     };
 
+    const handleExport = () => {
+        if (sortedData.length === 0) {
+            toast.error("ไม่มีข้อมูลสำหรับ export");
+            return;
+        }
+
+        const cleanedData = sortedData.map((row) => {
+            const newRow: any = {};
+            Object.entries(row).forEach(([key, val]) => {
+                newRow[key] =
+                    key === "vstdate" ? formatThaiDate(val) : val ?? "";
+            });
+            return newRow;
+        });
+
+        const worksheet = XLSX.utils.json_to_sheet(cleanedData);
+        const workbook = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(workbook, worksheet, "Report");
+
+        const excelBuffer = XLSX.write(workbook, {
+            bookType: "xlsx",
+            type: "array",
+        });
+
+        const file = new Blob([excelBuffer], {
+            type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;charset=UTF-8",
+        });
+
+        const nowTH = new Date().toLocaleString("sv-SE", {
+            timeZone: "Asia/Bangkok",
+        }).replace(" ", "_");
+        saveAs(file, `uc-outside-dental_${nowTH}.xlsx`);
+    };
+
     return (
         <div className="space-y-6 text-gray-800">
             <Toaster position="top-center" />
@@ -158,13 +194,20 @@ export default function UcOutsideDentalPage() {
                     />
                 </div>
 
-                <div className="ml-auto">
+                <div className="ml-auto flex gap-3">
                     <button
                         onClick={fetchData}
                         disabled={loading}
                         className="bg-green-800 hover:bg-green-900 text-white text-sm font-semibold px-7 py-2 rounded-lg shadow transition disabled:opacity-50"
                     >
                         {loading ? "กำลังโหลด..." : "Search"}
+                    </button>
+
+                    <button
+                        onClick={handleExport}
+                        className="bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold px-7 py-2 rounded-lg shadow transition"
+                    >
+                        Export Excel
                     </button>
                 </div>
             </div>

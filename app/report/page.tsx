@@ -114,8 +114,10 @@ export default function ReportPage() {
         const file = new Blob([excelBuffer], {
             type: "application/octet-stream",
         });
-
-        saveAs(file, "report.xlsx");
+        const nowTH = new Date().toLocaleString("sv-SE", {
+            timeZone: "Asia/Bangkok",
+        }).replace(" ", "_");
+        saveAs(file, `report_${nowTH}.xlsx`);
     };
     const filteredData = useMemo(() => {
         return data.filter((row) =>
@@ -216,7 +218,7 @@ export default function ReportPage() {
                     {data.length > 0 && (
                         <button
                             onClick={exportExcel}
-                            className="bg-green-700 hover:bg-green-800 text-white text-sm font-semibold px-7 py-2 rounded-lg shadow transition"
+                            className="bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold px-7 py-2 rounded-lg shadow transition"
                         >
                             Export Excel
                         </button>
@@ -313,52 +315,30 @@ export default function ReportPage() {
                         </div>
 
                         {/* PAGINATION */}
-                        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mt-6 pt-4 border-t">
-                            <p className="text-sm">
+                        <div className="flex items-center justify-between mt-6 pt-4 border-t-2 border-gray-200">
+                            <p className="text-sm font-medium text-gray-700">
                                 หน้า {page} / {totalPages}
                             </p>
-
-                            <div className="flex items-center gap-2 flex-wrap">
-
-                                {/* ปุ่มก่อนหน้า */}
+                            <div className="flex items-center gap-3">
                                 <button
                                     onClick={() => setPage((p) => Math.max(p - 1, 1))}
                                     disabled={page === 1}
-                                    className="px-4 py-2 border rounded-lg text-sm disabled:opacity-40 hover:bg-gray-100"
+                                    className="px-5 py-2 border-2 border-gray-300 rounded-lg text-sm font-semibold text-gray-700 hover:bg-gray-100 disabled:opacity-40 transition"
                                 >
                                     ก่อนหน้า
                                 </button>
 
-                                {/* เลขหน้า */}
-                                {Array.from({ length: totalPages }, (_, i) => i + 1)
-                                    .slice(
-                                        Math.max(page - 3, 0),
-                                        Math.min(page + 2, totalPages)
-                                    )
-                                    .map((p) => (
-                                        <button
-                                            key={p}
-                                            onClick={() => setPage(p)}
-                                            className={`px-4 py-2 rounded-lg text-sm border ${page === p
-                                                ? "bg-green-800 text-white border-green-800"
-                                                : "bg-white hover:bg-gray-100"
-                                                }`}
-                                        >
-                                            {p}
-                                        </button>
-                                    ))}
+                                <span className="border-2 border-gray-300 rounded-lg px-4 py-2 text-sm font-semibold text-gray-800 min-w-[3rem] text-center">
+                                    {page}
+                                </span>
 
-                                {/* ปุ่มถัดไป */}
                                 <button
-                                    onClick={() =>
-                                        setPage((p) => Math.min(p + 1, totalPages))
-                                    }
+                                    onClick={() => setPage((p) => Math.min(p + 1, totalPages))}
                                     disabled={page === totalPages}
-                                    className="px-4 py-2 border rounded-lg text-sm disabled:opacity-40 hover:bg-gray-100"
+                                    className="px-5 py-2 border-2 border-gray-300 rounded-lg text-sm font-semibold text-gray-700 hover:bg-gray-100 disabled:opacity-40 transition"
                                 >
                                     ถัดไป
                                 </button>
-
                             </div>
                         </div>
                     </>
