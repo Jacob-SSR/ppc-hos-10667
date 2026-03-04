@@ -5,22 +5,22 @@ import { usePathname, useRouter } from "next/navigation";
 import { LayoutGrid, FileEdit, UserRound, LogOut, FileUser } from "lucide-react";
 
 const NAV_ITEMS = [
-    { label: "Overview", href: "/dashboard", icon: LayoutGrid, exact: true },
+    { label: "Overview", href: "/pages/dashboard", icon: LayoutGrid, exact: true },
     {
         label: "แก้ไขสิทธิ์หลัก 10667 เป็น CUP Split",
-        href: "/report",
+        href: "/pages/report",
         icon: FileEdit,
         exact: false,
     },
     {
         label: "คนไทยที่ยังไม่มี endpoint",
-        href: "/no-endpoint",
+        href: "/pages/no-endpoint",
         icon: UserRound,
         exact: false,
     },
     {
         label: "UC ต่างจังหวัดที่มาทำฟัน",
-        href: "/uc-outside-dental",
+        href: "/pages/uc-outside-dental",
         icon: FileUser,
         exact: false,
     },

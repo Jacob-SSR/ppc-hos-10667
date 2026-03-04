@@ -239,7 +239,7 @@ export default function UcOutsideDentalPage() {
                 )}
 
                 {!loading && sortedData.length === 0 && (
-                    <div className="py-20 text-center text-gray-600">
+                    <div className="flex items-center justify-center py-20 text-gray-600 font-medium">
                         ไม่พบข้อมูล กรุณาเลือกช่วงวันที่แล้วกด Search
                     </div>
                 )}

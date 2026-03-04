@@ -23,31 +23,35 @@ export default function Navbar() {
     }, []);
 
     return (
-        <header className="h-16 bg-white border-b border-gray-300 flex items-center px-6 ">
+        <header className="h-16 bg-white shadow-md flex items-center px-8">
 
-            {/* Left: Logo only */}
-            <div className="w-1/3 flex items-center">
+            {/* Left: Logo */}
+            <div className="flex-1 flex items-center gap-3">
                 <Image
                     src="/logo.png"
                     alt="Hospital Logo"
-                    width={150}
-                    height={150}
+                    width={120}
+                    height={120}
                     priority
+                    className="object-contain"
                 />
             </div>
 
-            {/* Center: Page Title */}
-            <div className="w-1/3 text-center text-green-800">
-                <h1 className="text-lg font-medium">
-                    PLAIPLACHAI HOSPITAL
+            {/* Center: Title */}
+            <div className="flex-1 text-center">
+                <h1 className="text-lg font-semibold text-green-700 tracking-wide">
+                    PLABPLACHAI HOSPITAL
                 </h1>
+                <div className="h-[2px] w-24 bg-green-600 mx-auto mt-1 rounded-full opacity-70"></div>
             </div>
 
             {/* Right: Username */}
-            <div className="w-1/3 flex justify-end items-center">
-                <span className="text-sm font-semibold text-gray-700">
-                    {username ?? "Guest"}
-                </span>
+            <div className="flex-1 flex justify-end items-center">
+                <div className="bg-gray-100 px-4 py-1.5 rounded-full shadow-sm">
+                    <span className="text-sm font-medium text-gray-700">
+                        {username ?? "Guest"}
+                    </span>
+                </div>
             </div>
         </header>
     );

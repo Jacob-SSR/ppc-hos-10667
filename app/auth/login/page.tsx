@@ -24,7 +24,7 @@ export default function LoginPage() {
 
             if (!res.ok) throw new Error("Login failed");
 
-            router.replace("/report");
+            router.replace("/pages/report");
         } catch (err) {
             alert("Login failed");
         } finally {
