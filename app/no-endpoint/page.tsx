@@ -52,21 +52,21 @@ export default function NoEndpointPage() {
     };
 
     const formatThaiDate = (val: any) => {
-        if (!val) return "";
+        if (!val) return "-";
 
-        const str = String(val);
+        const date = new Date(val);
 
-        if (str.includes("T")) {
-            const date = new Date(str);
-            const y = date.getFullYear();
-            const m = String(date.getMonth() + 1).padStart(2, "0");
-            const d = String(date.getDate()).padStart(2, "0");
-            return `${d}/${m}/${y + 543}`;
+        if (isNaN(date.getTime())) {
+            return val;
         }
 
-        const [y, m, d] = str.split("T")[0].split("-");
-        return `${d}/${m}/${Number(y) + 543}`;
+        const y = date.getFullYear();
+        const m = String(date.getMonth() + 1).padStart(2, "0");
+        const d = String(date.getDate()).padStart(2, "0");
+
+        return `${d}/${m}/${y + 543}`;
     };
+
 
     const fetchReport = async () => {
         if (!start || !end) return alert("กรุณาเลือกวันที่");
