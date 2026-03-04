@@ -8,19 +8,13 @@ import * as XLSX from "xlsx";
 import { saveAs } from "file-saver";
 import { FiChevronUp, FiChevronDown } from "react-icons/fi";
 import toast, { Toaster } from "react-hot-toast";
-import {
-    motion,
-    AnimatePresence,
-    useMotionValue,
-    useTransform,
-    animate,
-} from "framer-motion";
+import { motion, AnimatePresence, useMotionValue, useTransform, animate, type Variants } from "framer-motion";
 
 const PAGE_SIZE = 50;
 
 // ─── Variants ────────────────────────────────────────────────────────────────
 
-const pageVariants = {
+const pageVariants: Variants = {
     hidden: { opacity: 0 },
     visible: {
         opacity: 1,
@@ -28,7 +22,7 @@ const pageVariants = {
     },
 };
 
-const cardVariants = {
+const cardVariants: Variants = {
     hidden: { opacity: 0, y: 28, scale: 0.97 },
     visible: {
         opacity: 1,
@@ -38,7 +32,7 @@ const cardVariants = {
     },
 };
 
-const filterItemVariants = {
+const filterItemVariants: Variants = {
     hidden: { opacity: 0, y: 10 },
     visible: (i: number) => ({
         opacity: 1,
@@ -47,15 +41,14 @@ const filterItemVariants = {
     }),
 };
 
-const tableContainerVariants = {
+const tableContainerVariants: Variants = {
     hidden: {},
     visible: {
         transition: { staggerChildren: 0.018, delayChildren: 0.05 },
     },
-    exit: { opacity: 0, transition: { duration: 0.18 } },
 };
 
-const rowVariants = {
+const rowVariants: Variants = {
     hidden: { opacity: 0, x: -14, scale: 0.99 },
     visible: {
         opacity: 1,
@@ -65,12 +58,11 @@ const rowVariants = {
     },
 };
 
-const fadeSlide = {
+const fadeSlide: Variants = {
     hidden: { opacity: 0, y: 8 },
-    visible: { opacity: 1, y: 0, transition: { duration: 0.28, ease: [0.22, 1, 0.36, 1] } },
+    visible: { opacity: 1, y: 0, transition: { duration: 0.28, ease: "easeOut" } },
     exit: { opacity: 0, y: -6, transition: { duration: 0.18 } },
 };
-
 // ─── Shimmer Skeleton ─────────────────────────────────────────────────────────
 
 function ShimmerRow({ cols }: { cols: number }) {
