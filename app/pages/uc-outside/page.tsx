@@ -14,7 +14,7 @@ import {
     useMotionValue,
     useTransform,
     animate,
-    type Variants
+    type Variants,
 } from "framer-motion";
 
 const PAGE_SIZE = 50;
@@ -77,7 +77,7 @@ function ShimmerRow({ cols }: { cols: number }) {
     return (
         <tr>
             {Array.from({ length: cols }).map((_, i) => (
-                <td key={i} className="px-4 py-3 border-r border-gray-100">
+                <td key={i} className="px-4 py-3 border-r">
                     <motion.div
                         className="h-4 rounded-md bg-gray-200"
                         animate={{ opacity: [0.4, 0.9, 0.4] }}
@@ -100,7 +100,7 @@ function AnimatedCount({ value }: { value: number }) {
         return ctrl.stop;
     }, [value]);
 
-    return <motion.span className="text-green-800 font-bold">{rounded}</motion.span>;
+    return <motion.span className="text-green-800">{rounded}</motion.span>;
 }
 
 // ─── ThaiDateInput ────────────────────────────────────────────────────────────
@@ -122,7 +122,7 @@ const ThaiDateInput = forwardRef<
             value={thaiValue}
             onClick={onClick}
             readOnly
-            className="border-2 border-gray-300 px-4 py-2 rounded-lg w-40 cursor-pointer text-sm text-gray-800 bg-white focus:outline-none focus:border-green-800 shadow-sm"
+            className="border-2 border-gray-300 px-4 py-2 rounded-lg w-40 cursor-pointer text-sm bg-white focus:outline-none focus:border-green-800 shadow-sm"
         />
     );
 });
@@ -130,7 +130,7 @@ ThaiDateInput.displayName = "ThaiDateInput";
 
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
-export default function NoEndpointPage() {
+export default function UcOutsidePage() {
     const [data, setData] = useState<any[]>([]);
     const [loading, setLoading] = useState(false);
     const [start, setStart] = useState<Date | null>(new Date(2026, 0, 1));
@@ -148,35 +148,34 @@ export default function NoEndpointPage() {
     };
 
     const formatThaiDate = (val: any) => {
-        if (!val) return "-";
-
-        if (typeof val === "string" && /^\d{4}-\d{2}-\d{2}/.test(val)) {
-            const [datePart] = val.split("T");
-            const [y, m, d] = datePart.split("-");
-            return `${d}/${m}/${Number(y) + 543}`;
-        }
-
-        if (val instanceof Date && !isNaN(val.getTime())) {
-            const y = val.getFullYear();
-            const m = String(val.getMonth() + 1).padStart(2, "0");
-            const d = String(val.getDate()).padStart(2, "0");
+        if (!val) return "";
+        const str = String(val);
+        if (str.includes("T")) {
+            const date = new Date(str);
+            const y = date.getFullYear();
+            const m = String(date.getMonth() + 1).padStart(2, "0");
+            const d = String(date.getDate()).padStart(2, "0");
             return `${d}/${m}/${y + 543}`;
         }
-
-        return String(val);
+        const [y, m, d] = str.split("T")[0].split("-");
+        return `${d}/${m}/${Number(y) + 543}`;
     };
 
-    const fetchReport = async () => {
+    const fetchData = async () => {
         if (!start || !end) return alert("กรุณาเลือกวันที่");
         setLoading(true);
-        const res = await fetch(
-            `/api/no-endpoint?start=${formatDate(start)}&end=${formatDate(end)}`
-        );
-        const json = await res.json();
-        setData(json);
-        setPage(1);
+        try {
+            const res = await fetch(
+                `/api/uc-outside?start=${formatDate(start)}&end=${formatDate(end)}`
+            );
+            const json = await res.json();
+            setData(json || []);
+            setPage(1);
+            toast.success("โหลดข้อมูลสำเร็จ");
+        } catch {
+            toast.error("โหลดข้อมูลไม่สำเร็จ");
+        }
         setLoading(false);
-        toast.success("โหลดข้อมูลสำเร็จ");
     };
 
     const copyToClipboard = (value: any) => {
@@ -184,37 +183,15 @@ export default function NoEndpointPage() {
         toast.success("คัดลอกแล้ว");
     };
 
-    const exportExcel = () => {
-        const cleanedData = data.map((row) => {
-            const newRow: any = {};
-            Object.keys(row).forEach((key) => {
-                let value = row[key];
-                if (key.toLowerCase().includes("date") && value) {
-                    value = formatThaiDate(value);
-                }
-                newRow[key] = value;
-            });
-            return newRow;
-        });
-
-        const worksheet = XLSX.utils.json_to_sheet(cleanedData);
-        const workbook = XLSX.utils.book_new();
-        XLSX.utils.book_append_sheet(workbook, worksheet, "NoEndpoint");
-        const excelBuffer = XLSX.write(workbook, { bookType: "xlsx", type: "array" });
-        const file = new Blob([excelBuffer], { type: "application/octet-stream" });
-        const nowTH = new Date()
-            .toLocaleString("sv-SE", { timeZone: "Asia/Bangkok" })
-            .replace(" ", "_");
-        saveAs(file, `no-endpoint-report_${nowTH}.xlsx`);
-    };
-
-    const filteredData = useMemo(() => {
-        return data.filter((row) =>
-            Object.values(row).some((val) =>
-                String(val).toLowerCase().includes(search.toLowerCase())
-            )
-        );
-    }, [data, search]);
+    const filteredData = useMemo(
+        () =>
+            data.filter((row) =>
+                Object.values(row).some((val) =>
+                    String(val).toLowerCase().includes(search.toLowerCase())
+                )
+            ),
+        [data, search]
+    );
 
     const sortedData = useMemo(() => {
         if (!sortKey) return filteredData;
@@ -232,7 +209,35 @@ export default function NoEndpointPage() {
 
     const handleSort = (key: string) => {
         if (sortKey === key) setSortAsc(!sortAsc);
-        else { setSortKey(key); setSortAsc(true); }
+        else {
+            setSortKey(key);
+            setSortAsc(true);
+        }
+    };
+
+    const handleExport = () => {
+        if (sortedData.length === 0) {
+            toast.error("ไม่มีข้อมูลสำหรับ export");
+            return;
+        }
+        const cleanedData = sortedData.map((row) => {
+            const newRow: any = {};
+            Object.entries(row).forEach(([key, val]) => {
+                newRow[key] = key === "vstdate" ? formatThaiDate(val) : val ?? "";
+            });
+            return newRow;
+        });
+        const worksheet = XLSX.utils.json_to_sheet(cleanedData);
+        const workbook = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(workbook, worksheet, "Report");
+        const excelBuffer = XLSX.write(workbook, { bookType: "xlsx", type: "array" });
+        const file = new Blob([excelBuffer], {
+            type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;charset=UTF-8",
+        });
+        const nowTH = new Date()
+            .toLocaleString("sv-SE", { timeZone: "Asia/Bangkok" })
+            .replace(" ", "_");
+        saveAs(file, `uc-outside_${nowTH}.xlsx`);
     };
 
     const colCount = paginatedData[0] ? Object.keys(paginatedData[0]).length : 6;
@@ -252,7 +257,7 @@ export default function NoEndpointPage() {
                 }}
             />
 
-            {/* ── FILTER BAR ──────────────────────────────────────── */}
+            {/* ── FILTER BAR ────────────────────────────────────────── */}
             <motion.div
                 variants={cardVariants}
                 className="bg-white border border-gray-200 rounded-2xl shadow-md px-6 py-5 flex flex-wrap items-end gap-5"
@@ -287,7 +292,6 @@ export default function NoEndpointPage() {
                         showMonthDropdown
                         showYearDropdown
                         dropdownMode="select"
-                        yearDropdownItemNumber={20}
                         customInput={<ThaiDateInput />}
                     />
                 </motion.div>
@@ -300,14 +304,17 @@ export default function NoEndpointPage() {
                         type="text"
                         placeholder="Search..."
                         value={search}
-                        onChange={(e) => { setSearch(e.target.value); setPage(1); }}
-                        className="border-2 border-gray-200 px-5 py-2 rounded-full w-72 text-sm text-gray-800 bg-white focus:outline-none focus:border-green-700 shadow-sm transition-colors duration-200"
+                        onChange={(e) => {
+                            setSearch(e.target.value);
+                            setPage(1);
+                        }}
+                        className="border-2 border-gray-200 px-5 py-2 rounded-full w-72 text-sm bg-white focus:outline-none focus:border-green-700 shadow-sm transition-colors duration-200"
                     />
                 </motion.div>
 
                 <motion.div custom={3} variants={filterItemVariants} className="flex gap-3 ml-auto">
                     <motion.button
-                        onClick={fetchReport}
+                        onClick={fetchData}
                         disabled={loading}
                         className="relative overflow-hidden bg-green-800 text-white text-sm font-bold px-8 py-2.5 rounded-xl shadow-lg disabled:opacity-50"
                         whileHover={{ scale: 1.04, boxShadow: "0 8px 28px rgba(22,101,52,0.35)" }}
@@ -330,14 +337,16 @@ export default function NoEndpointPage() {
                                     />
                                     กำลังโหลด...
                                 </span>
-                            ) : "Search"}
+                            ) : (
+                                "Search"
+                            )}
                         </span>
                     </motion.button>
 
                     <AnimatePresence>
                         {data.length > 0 && (
                             <motion.button
-                                onClick={exportExcel}
+                                onClick={handleExport}
                                 className="relative overflow-hidden bg-emerald-600 text-white text-sm font-bold px-8 py-2.5 rounded-xl shadow-lg"
                                 initial={{ opacity: 0, scale: 0.7, x: 20 }}
                                 animate={{ opacity: 1, scale: 1, x: 0 }}
@@ -359,14 +368,13 @@ export default function NoEndpointPage() {
                 </motion.div>
             </motion.div>
 
-            {/* ── TABLE CARD ──────────────────────────────────────── */}
+            {/* ── TABLE CARD ────────────────────────────────────────── */}
             <motion.div
                 variants={cardVariants}
                 className="bg-white border border-gray-200 rounded-2xl shadow-md px-6 py-6"
                 style={{ boxShadow: "0 4px 24px 0 rgba(22,101,52,0.07)" }}
             >
                 <AnimatePresence mode="wait">
-
                     {/* Loading — shimmer skeleton */}
                     {loading && (
                         <motion.div
@@ -382,7 +390,7 @@ export default function NoEndpointPage() {
                                     <thead>
                                         <tr>
                                             {Array.from({ length: colCount }).map((_, i) => (
-                                                <th key={i} className="bg-green-800 px-4 py-3 border-r border-green-700">
+                                                <th key={i} className="bg-green-800 px-4 py-3 border-r">
                                                     <div className="h-3 rounded bg-green-700/60 w-16" />
                                                 </th>
                                             ))}
@@ -451,7 +459,7 @@ export default function NoEndpointPage() {
                                                 <motion.th
                                                     key={key}
                                                     onClick={() => handleSort(key)}
-                                                    className="sticky top-0 bg-green-800 text-white px-4 py-3 text-left cursor-pointer whitespace-nowrap border-r border-green-700 select-none"
+                                                    className="sticky top-0 bg-green-800 text-white px-4 py-3 text-left cursor-pointer whitespace-nowrap border-r select-none"
                                                     initial={{ opacity: 0 }}
                                                     animate={{ opacity: 1 }}
                                                     transition={{ delay: 0.05 + i * 0.025 }}
@@ -467,7 +475,11 @@ export default function NoEndpointPage() {
                                                                     exit={{ opacity: 0, rotate: 90 }}
                                                                     transition={{ duration: 0.18 }}
                                                                 >
-                                                                    {sortAsc ? <FiChevronUp size={14} /> : <FiChevronDown size={14} />}
+                                                                    {sortAsc ? (
+                                                                        <FiChevronUp size={14} />
+                                                                    ) : (
+                                                                        <FiChevronDown size={14} />
+                                                                    )}
                                                                 </motion.span>
                                                             )}
                                                         </AnimatePresence>
@@ -486,35 +498,42 @@ export default function NoEndpointPage() {
                                             <motion.tr
                                                 key={i}
                                                 variants={rowVariants}
-                                                className={`border-b border-gray-200 transition ${i % 2 === 0 ? "bg-white" : "bg-gray-50"}`}
+                                                className={`border-b cursor-default ${i % 2 === 0 ? "bg-white" : "bg-gray-50/60"
+                                                    }`}
                                                 whileHover={{
                                                     backgroundColor: "#f0fdf4",
                                                     transition: { duration: 0.12 },
                                                 }}
                                             >
-                                                {Object.entries(row).map(([key, val], idx) => (
-                                                    <td
-                                                        key={idx}
-                                                        className="px-4 py-2.5 text-sm whitespace-nowrap border-r border-gray-100"
-                                                    >
-                                                        <div className="flex items-center justify-between gap-2 group">
-                                                            <span>
-                                                                {key.toLowerCase().includes("date")
-                                                                    ? formatThaiDate(val)
-                                                                    : (val as any)}
-                                                            </span>
-                                                            <motion.button
-                                                                onClick={() => copyToClipboard(val)}
-                                                                className="opacity-0 group-hover:opacity-60 hover:!opacity-100 text-gray-500"
-                                                                whileHover={{ scale: 1.2 }}
-                                                                whileTap={{ scale: 0.85 }}
-                                                                transition={{ type: "spring", stiffness: 400, damping: 18 }}
-                                                            >
-                                                                <FiCopy size={14} />
-                                                            </motion.button>
-                                                        </div>
-                                                    </td>
-                                                ))}
+                                                {Object.entries(row as Record<string, any>).map(
+                                                    ([key, val], idx) => (
+                                                        <td
+                                                            key={idx}
+                                                            className="px-4 py-2.5 whitespace-nowrap border-r text-gray-700"
+                                                        >
+                                                            <div className="flex items-center justify-between gap-2 group">
+                                                                <span>
+                                                                    {key === "vstdate"
+                                                                        ? formatThaiDate(val)
+                                                                        : String(val ?? "")}
+                                                                </span>
+                                                                <motion.button
+                                                                    onClick={() => copyToClipboard(val)}
+                                                                    className="opacity-0 group-hover:opacity-60 hover:!opacity-100 text-gray-500"
+                                                                    whileHover={{ scale: 1.2 }}
+                                                                    whileTap={{ scale: 0.85 }}
+                                                                    transition={{
+                                                                        type: "spring",
+                                                                        stiffness: 400,
+                                                                        damping: 18,
+                                                                    }}
+                                                                >
+                                                                    <FiCopy size={14} />
+                                                                </motion.button>
+                                                            </div>
+                                                        </td>
+                                                    )
+                                                )}
                                             </motion.tr>
                                         ))}
                                     </motion.tbody>
@@ -530,8 +549,8 @@ export default function NoEndpointPage() {
                             >
                                 <p className="text-sm font-medium text-gray-500">
                                     หน้า{" "}
-                                    <span className="font-bold text-gray-800">{page}</span>
-                                    {" "}/ {totalPages}
+                                    <span className="font-bold text-gray-800">{page}</span> /{" "}
+                                    {totalPages}
                                 </p>
                                 <div className="flex items-center gap-2">
                                     <motion.button

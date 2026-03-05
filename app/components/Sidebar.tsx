@@ -24,6 +24,12 @@ const NAV_ITEMS = [
         icon: FileUser,
         exact: false,
     },
+    {
+        label: "ผู้ป่วยนอก UC สิทธิ์ต่างจังหวัดที่มารับบริการ",
+        href: "/pages/uc-outside",
+        icon: FileUser,
+        exact: false,
+    },
 ];
 
 export default function Sidebar() {

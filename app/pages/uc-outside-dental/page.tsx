@@ -6,7 +6,7 @@ import { th } from "date-fns/locale";
 import "react-datepicker/dist/react-datepicker.css";
 import * as XLSX from "xlsx";
 import { saveAs } from "file-saver";
-import { FiChevronUp, FiChevronDown } from "react-icons/fi";
+import { FiCopy, FiChevronUp, FiChevronDown } from "react-icons/fi";
 import toast, { Toaster } from "react-hot-toast";
 import { motion, AnimatePresence, useMotionValue, useTransform, animate, type Variants } from "framer-motion";
 
@@ -168,6 +168,12 @@ export default function UcOutsideDentalPage() {
             toast.error("โหลดข้อมูลไม่สำเร็จ");
         }
         setLoading(false);
+    };
+
+    // ── เพิ่ม copyToClipboard ──────────────────────────────────────────────────
+    const copyToClipboard = (value: any) => {
+        navigator.clipboard.writeText(String(value));
+        toast.success("คัดลอกแล้ว");
     };
 
     const filteredData = useMemo(
@@ -480,7 +486,20 @@ export default function UcOutsideDentalPage() {
                                                 {Object.entries(row as Record<string, any>).map(
                                                     ([key, val], idx) => (
                                                         <td key={idx} className="px-4 py-2.5 whitespace-nowrap border-r text-gray-700">
-                                                            {key === "vstdate" ? formatThaiDate(val) : String(val ?? "")}
+                                                            <div className="flex items-center justify-between gap-2 group">
+                                                                <span>
+                                                                    {key === "vstdate" ? formatThaiDate(val) : String(val ?? "")}
+                                                                </span>
+                                                                <motion.button
+                                                                    onClick={() => copyToClipboard(val)}
+                                                                    className="opacity-0 group-hover:opacity-60 hover:!opacity-100 text-gray-500"
+                                                                    whileHover={{ scale: 1.2 }}
+                                                                    whileTap={{ scale: 0.85 }}
+                                                                    transition={{ type: "spring", stiffness: 400, damping: 18 }}
+                                                                >
+                                                                    <FiCopy size={14} />
+                                                                </motion.button>
+                                                            </div>
                                                         </td>
                                                     )
                                                 )}

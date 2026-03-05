@@ -113,3 +113,60 @@ export async function getUcOutsideDentalReport(
 
     return rows;
 }
+
+export async function getUcOutsideReport(
+    start: string,
+    end: string
+) {
+    const [rows] = await db.query(
+        `
+    SELECT 
+        v.vn, 
+        v.hn, 
+        v.vstdate, 
+        ov.vsttime,
+        ks.department,
+        pt.pname, 
+        pt.fname, 
+        pt.lname, 
+        v.age_y AS age,
+        IF(v.sex='1','ชาย','หญิง') AS gender, 
+        v.hospmain, 
+        h1.name AS hospmain_name, 
+        v.hospsub, 
+        h2.name AS hospsub_name,
+        CASE h1.hospital_type_id 
+            WHEN '5' THEN 'โรงพยาบาลศูนย์'
+            WHEN '6' THEN 'โรงพยาบาลทั่วไป'
+            WHEN '7' THEN 'โรงพยาบาลชุมชน'
+            ELSE h1.hospital_type_id 
+        END AS hospital_type_name,
+        th.name AS province_name,
+        p.pttype, 
+        p.name AS pttype_name,
+        p.pcode,
+        v.income,
+        p.hipdata_code
+    FROM vn_stat v
+    JOIN ovst ov ON v.vn = ov.vn
+    JOIN kskdepartment ks ON ov.main_dep = ks.depcode
+    JOIN pttype p ON v.pttype = p.pttype
+    JOIN patient pt ON v.hn = pt.hn
+    LEFT JOIN hospcode h1 ON v.hospmain = h1.hospcode
+    LEFT JOIN hospcode h2 ON v.hospsub = h2.hospcode
+    LEFT JOIN thaiaddress th ON th.chwpart = h1.chwpart 
+                             AND th.codetype = '1' 
+    WHERE v.vstdate >= ?
+      AND v.vstdate < DATE_ADD(?, INTERVAL 1 DAY)
+      AND h1.chwpart NOT IN ('31')
+      AND h1.hospital_type_id IN ('5','6','7')
+      AND (v.hospsub IS NOT NULL AND v.hospsub <> '')
+      AND v.income > 0
+      AND p.hipdata_code IN ('UCS','WEL')
+    ORDER BY v.vstdate DESC;
+    `,
+        [start, end]
+    );
+
+    return rows;
+}

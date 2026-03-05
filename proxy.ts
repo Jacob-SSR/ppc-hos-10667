@@ -10,17 +10,17 @@ export async function proxy(request: NextRequest) {
     const token = request.cookies.get("token")?.value;
 
     if (!token) {
-        return NextResponse.redirect(new URL("/login", request.url));
+        return NextResponse.redirect(new URL("/auth/login", request.url));
     }
 
     try {
         await jwtVerify(token, secret);
         return NextResponse.next();
-    } catch (err) {
-        return NextResponse.redirect(new URL("/login", request.url));
+    } catch {
+        return NextResponse.redirect(new URL("/auth/login", request.url));
     }
 }
 
 export const config = {
-    matcher: ["/report/:path*"],
+    matcher: ["/pages/:path*"],
 };
