@@ -23,7 +23,7 @@ export default function NoEndpointLayout({
 
 
                 {/* Content */}
-                <main className="flex-1 overflow-auto p-6 bg-gray-50">
+                <main className="flex-1 overflow-auto p-6 bg-zinc-100">
                     {children}
                 </main>
 

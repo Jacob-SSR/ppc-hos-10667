@@ -47,7 +47,7 @@ export default function Navbar() {
 
             {/* Right: Username */}
             <div className="flex-1 flex justify-end items-center">
-                <div className="bg-gray-100 px-4 py-1.5 rounded-full shadow-sm">
+                <div className="bg-gray-100 px-4 py-1.5 rounded-full shadow-2xl">
                     <span className="text-sm font-medium text-gray-700">
                         {username ?? "Guest"}
                     </span>

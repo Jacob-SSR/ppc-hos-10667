@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { LayoutGrid, FileEdit, UserRound, LogOut, FileUser } from "lucide-react";
+import { useState } from "react";
 
 const NAV_ITEMS = [
     { label: "Overview", href: "/pages/dashboard", icon: LayoutGrid, exact: true },
@@ -35,23 +36,28 @@ const NAV_ITEMS = [
 export default function Sidebar() {
     const pathname = usePathname();
     const router = useRouter();
+    const [loggingOut, setLoggingOut] = useState(false);
 
     const isActive = (href: string, exact: boolean) => {
         if (!pathname) return false;
-
         if (exact) return pathname === href;
-
         return pathname === href || pathname.startsWith(href + "/");
     };
 
-    const handleLogout = () => {
-        localStorage.removeItem("token");
-
-        router.push("/");
+    const handleLogout = async () => {
+        setLoggingOut(true);
+        try {
+            await fetch("/api/logout", {
+                method: "POST",
+                credentials: "include",
+            });
+        } finally {
+            router.replace("/auth/login");
+        }
     };
 
     return (
-        <aside className="flex flex-col w-60 h-screen bg-white border-r border-gray-300">
+        <aside className="flex flex-col w-60 h-screen bg-white border-r border-gray-300 ">
 
             {/* NAV */}
             <nav className="flex-1 px-4 py-6 space-y-1 text-sm">
@@ -82,10 +88,11 @@ export default function Sidebar() {
             <div className="border-t border-gray-200 p-4">
                 <button
                     onClick={handleLogout}
-                    className="flex items-center justify-center gap-2 w-full bg-green-800 hover:bg-green-900 text-white text-sm font-semibold px-4 py-2 rounded-lg shadow transition"
+                    disabled={loggingOut}
+                    className="flex items-center justify-center gap-2 w-full bg-green-800 hover:bg-green-900 text-white text-sm font-semibold px-4 py-2 rounded-lg shadow-2xl transition disabled:opacity-60"
                 >
                     <LogOut size={16} />
-                    Logout
+                    {loggingOut ? "กำลังออก..." : "Logout"}
                 </button>
             </div>
         </aside>
