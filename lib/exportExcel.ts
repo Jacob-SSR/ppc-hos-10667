@@ -1,15 +1,7 @@
-// lib/exportExcel.ts
-// ใช้ร่วมกันทุกหน้า: report, no-endpoint, uc-outside-dental, uc-outside
-
 import * as XLSX from "xlsx";
 import { saveAs } from "file-saver";
+import { ExportOptions } from "@/types/allTypes";
 import { formatThaiDate } from "./dateUtils";
-
-interface ExportOptions {
-    sheetName?: string;
-    filePrefix: string;
-    dateKeys?: string[];
-}
 
 export function exportToExcel(data: any[], options: ExportOptions): void {
     const { sheetName = "Report", filePrefix, dateKeys = ["vstdate"] } = options;

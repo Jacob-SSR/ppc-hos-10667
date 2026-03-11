@@ -2,10 +2,10 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { ToastType } from "@/types/allTypes";
 import { motion, AnimatePresence } from "framer-motion";
 
 // ── Toast ──────────────────────────────────────────────
-type ToastType = "success" | "error";
 
 function Toast({ message, type }: { message: string; type: ToastType }) {
     return (

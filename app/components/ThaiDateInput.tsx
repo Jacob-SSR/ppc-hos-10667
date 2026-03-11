@@ -1,11 +1,7 @@
 "use client";
 
 import { forwardRef } from "react";
-
-interface ThaiDateInputProps {
-    value?: string;
-    onClick?: () => void;
-}
+import { ThaiDateInputProps } from "@/types/allTypes";
 
 const ThaiDateInput = forwardRef<HTMLInputElement, ThaiDateInputProps>(
     ({ value, onClick }, ref) => {

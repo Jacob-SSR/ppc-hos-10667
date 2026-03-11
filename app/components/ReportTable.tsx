@@ -7,6 +7,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import { FiChevronDown, FiChevronUp, FiCopy, FiX } from "react-icons/fi";
 import { LuFilterX } from "react-icons/lu";
 import toast, { Toaster } from "react-hot-toast";
+import { ReportTableProps } from "@/types/allTypes";
 
 import ThaiDateInput from "./ThaiDateInput";
 import { ShimmerRow, AnimatedCount } from "./TableHelpers";
@@ -20,15 +21,6 @@ import {
     filterItemVariants,
     fadeSlide,
 } from "@/lib/variants";
-
-interface ReportTableProps {
-    apiPath: string;
-    exportFilePrefix: string;
-    dateKeys?: string[];
-    sheetName?: string;
-    columnFilterKeys?: string[];
-    columnFilterLabels?: Record<string, string>;
-}
 
 export default function ReportTable({
     apiPath,

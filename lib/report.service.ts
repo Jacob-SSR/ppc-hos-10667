@@ -1,5 +1,5 @@
 import { db } from "@/lib/db";
-import { ReportRow } from "@/types/report";
+import { ReportRow } from "@/types/allTypes";
 
 export async function getReport(
     start: string,

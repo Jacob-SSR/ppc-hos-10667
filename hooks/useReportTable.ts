@@ -1,14 +1,9 @@
-// hooks/useReportTable.ts
 import { useState, useMemo } from "react";
 import { formatDate } from "@/lib/dateUtils";
+import { UseReportTableOptions } from "@/types/allTypes";
 import toast from "react-hot-toast";
 
 const PAGE_SIZE = 50;
-
-interface UseReportTableOptions {
-    apiPath: string;
-    columnFilterKeys?: string[];
-}
 
 export function useReportTable<T = any>({ apiPath, columnFilterKeys = [] }: UseReportTableOptions) {
     const [data, setData] = useState<T[]>([]);

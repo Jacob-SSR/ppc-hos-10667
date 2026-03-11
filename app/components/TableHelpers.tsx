@@ -19,7 +19,6 @@ export function ShimmerRow({ cols }: { cols: number }) {
         </tr>
     );
 }
-
 // ── AnimatedCount ──────────────────────────────────────────────────────────────
 export function AnimatedCount({ value }: { value: number }) {
     const motionVal = useMotionValue(0);
