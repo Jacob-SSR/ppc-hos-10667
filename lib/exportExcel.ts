@@ -6,11 +6,8 @@ import { saveAs } from "file-saver";
 import { formatThaiDate } from "./dateUtils";
 
 interface ExportOptions {
-    /** ชื่อ sheet ใน Excel */
     sheetName?: string;
-    /** prefix ของชื่อไฟล์ เช่น "report", "no-endpoint" */
     filePrefix: string;
-    /** key ที่เป็น date จะถูกแปลงเป็น พ.ศ. อัตโนมัติ (default: ["vstdate"]) */
     dateKeys?: string[];
 }
 

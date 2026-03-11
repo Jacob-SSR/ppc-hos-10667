@@ -1,7 +1,3 @@
-// lib/clipboard.ts
-// ใช้ร่วมกันทุกหน้า: report, no-endpoint, uc-outside-dental, uc-outside
-
-/** คัดลอก value ลง clipboard (รองรับ browser เก่าที่ไม่มี navigator.clipboard) */
 export function copyToClipboard(value: any): void {
     const text = String(value);
 
@@ -10,7 +6,6 @@ export function copyToClipboard(value: any): void {
         return;
     }
 
-    // Fallback สำหรับ browser เก่า
     const el = document.createElement("textarea");
     el.value = text;
     el.style.position = "fixed";

@@ -1,7 +1,3 @@
-// components/ThaiDateInput.tsx
-// ใช้ร่วมกันทุกหน้า: report, no-endpoint, uc-outside-dental, uc-outside
-// custom input ของ react-datepicker ที่แสดงปี พ.ศ.
-
 "use client";
 
 import { forwardRef } from "react";

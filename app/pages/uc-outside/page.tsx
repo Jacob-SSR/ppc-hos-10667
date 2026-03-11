@@ -1,6 +1,3 @@
-// app/pages/uc-outside/page.tsx  ← มาจากหน้า uc-outside
-// หลัง refactor เหลือแค่นี้ ทุกอย่างอยู่ใน <ReportTable>
-
 "use client";
 
 import ReportTable from "@/app/components/ReportTable";
@@ -11,7 +8,15 @@ export default function UcOutsidePage() {
             apiPath="/api/uc-outside"
             exportFilePrefix="uc-outside"
             dateKeys={["vstdate"]}
-            sheetName="Report"
+            sheetName="UCOutside"
+            columnFilterKeys={["pttype_name", "gender", "province_name", "department", "hospmain_name"]}
+            columnFilterLabels={{
+                pttype_name: "ประเภทสิทธิ์",
+                gender: "เพศ",
+                province_name: "จังหวัด",
+                department: "แผนก",
+                hospmain_name: "โรงพยาบาลต้นสังกัด",
+            }}
         />
     );
 }

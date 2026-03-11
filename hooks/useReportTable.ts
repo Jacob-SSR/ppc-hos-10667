@@ -1,7 +1,4 @@
 // hooks/useReportTable.ts
-// ใช้ร่วมกันทุกหน้า: report, no-endpoint, uc-outside-dental, uc-outside
-// รวม logic: fetch, filter, sort, paginate ไว้ที่เดียว
-
 import { useState, useMemo } from "react";
 import { formatDate } from "@/lib/dateUtils";
 import toast from "react-hot-toast";
@@ -9,11 +6,11 @@ import toast from "react-hot-toast";
 const PAGE_SIZE = 50;
 
 interface UseReportTableOptions {
-    /** path ของ API เช่น "/api/report" */
     apiPath: string;
+    columnFilterKeys?: string[];
 }
 
-export function useReportTable<T = any>({ apiPath }: UseReportTableOptions) {
+export function useReportTable<T = any>({ apiPath, columnFilterKeys = [] }: UseReportTableOptions) {
     const [data, setData] = useState<T[]>([]);
     const [loading, setLoading] = useState(false);
     const [start, setStart] = useState<Date | null>(new Date(2026, 0, 1));
@@ -22,6 +19,7 @@ export function useReportTable<T = any>({ apiPath }: UseReportTableOptions) {
     const [sortKey, setSortKey] = useState<string | null>(null);
     const [sortAsc, setSortAsc] = useState(true);
     const [page, setPage] = useState(1);
+    const [columnFilters, setColumnFiltersState] = useState<Record<string, string>>({});
 
     // ── Fetch ──────────────────────────────────────────────────────────────────
     const fetchData = async () => {
@@ -35,6 +33,7 @@ export function useReportTable<T = any>({ apiPath }: UseReportTableOptions) {
             const json = await res.json();
             setData(Array.isArray(json) ? json : []);
             setPage(1);
+            setColumnFiltersState({});
             toast.success("โหลดข้อมูลสำเร็จ");
         } catch {
             toast.error("โหลดข้อมูลไม่สำเร็จ");
@@ -43,8 +42,22 @@ export function useReportTable<T = any>({ apiPath }: UseReportTableOptions) {
         }
     };
 
-    // ── Filter ─────────────────────────────────────────────────────────────────
-    const filteredData = useMemo(
+    // ── Unique options for each specified filter key ────────────────────────────
+    const columnFilterOptions = useMemo(() => {
+        if (!data.length || !columnFilterKeys.length) return {} as Record<string, string[]>;
+        const result: Record<string, string[]> = {};
+        for (const key of columnFilterKeys) {
+            result[key] = Array.from(
+                new Set((data as any[]).map((row) => String(row[key] ?? "")))
+            )
+                .filter(Boolean)
+                .sort((a, b) => a.localeCompare(b, "th"));
+        }
+        return result;
+    }, [data, columnFilterKeys.join(",")]);
+
+    // ── Global search ──────────────────────────────────────────────────────────
+    const searchFiltered = useMemo(
         () =>
             data.filter((row) =>
                 Object.values(row as any).some((val) =>
@@ -54,16 +67,25 @@ export function useReportTable<T = any>({ apiPath }: UseReportTableOptions) {
         [data, search]
     );
 
+    // ── Column filters ─────────────────────────────────────────────────────────
+    const filteredData = useMemo(
+        () =>
+            searchFiltered.filter((row) =>
+                Object.entries(columnFilters).every(([key, val]) =>
+                    !val ? true : String((row as any)[key] ?? "") === val
+                )
+            ),
+        [searchFiltered, columnFilters]
+    );
+
     // ── Sort ───────────────────────────────────────────────────────────────────
     const sortedData = useMemo(() => {
         if (!sortKey) return filteredData;
-        return [...filteredData].sort((a: any, b: any) => {
-            const aVal = a[sortKey];
-            const bVal = b[sortKey];
-            return sortAsc
-                ? String(aVal).localeCompare(String(bVal), "th")
-                : String(bVal).localeCompare(String(aVal), "th");
-        });
+        return [...filteredData].sort((a: any, b: any) =>
+            sortAsc
+                ? String(a[sortKey]).localeCompare(String(b[sortKey]), "th")
+                : String(b[sortKey]).localeCompare(String(a[sortKey]), "th")
+        );
     }, [filteredData, sortKey, sortAsc]);
 
     // ── Pagination ─────────────────────────────────────────────────────────────
@@ -71,30 +93,35 @@ export function useReportTable<T = any>({ apiPath }: UseReportTableOptions) {
     const paginatedData = sortedData.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
     const handleSort = (key: string) => {
-        if (sortKey === key) setSortAsc((prev) => !prev);
+        if (sortKey === key) setSortAsc((p) => !p);
         else { setSortKey(key); setSortAsc(true); }
     };
 
-    const handleSearch = (val: string) => {
-        setSearch(val);
+    const handleSearch = (val: string) => { setSearch(val); setPage(1); };
+
+    const setColumnFilter = (key: string, val: string) => {
+        setColumnFiltersState((prev) => ({ ...prev, [key]: val }));
         setPage(1);
     };
 
+    const clearAllFilters = () => {
+        setColumnFiltersState({});
+        setSearch("");
+        setPage(1);
+    };
+
+    const activeFilterCount = Object.values(columnFilters).filter(Boolean).length;
+
     return {
-        // state
-        data,
-        loading,
-        start, setStart,
-        end, setEnd,
+        data, loading,
+        start, setStart, end, setEnd,
         search, handleSearch,
         sortKey, sortAsc,
         page, setPage,
-        // derived
-        sortedData,
-        paginatedData,
-        totalPages,
-        // actions
-        fetchData,
-        handleSort,
+        columnFilters, columnFilterOptions,
+        setColumnFilter, clearAllFilters,
+        activeFilterCount,
+        sortedData, paginatedData, totalPages,
+        fetchData, handleSort,
     };
 }

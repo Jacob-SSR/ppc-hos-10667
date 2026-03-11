@@ -10,7 +10,6 @@ export function formatThaiDate(val: any): string {
 
     const str = String(val);
 
-    // กรณีมีเวลา (2026-03-05T00:00:00.000Z)
     if (str.includes("T")) {
         const date = new Date(str);
         const y = date.getFullYear();
@@ -19,7 +18,6 @@ export function formatThaiDate(val: any): string {
         return `${d}/${m}/${y + 543}`;
     }
 
-    // กรณีเป็น yyyy-mm-dd
     const [y, m, d] = str.split("T")[0].split("-");
     return `${d}/${m}/${Number(y) + 543}`;
 }

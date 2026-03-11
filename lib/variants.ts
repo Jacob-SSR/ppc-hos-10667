@@ -1,6 +1,3 @@
-// lib/variants.ts
-// ใช้ร่วมกันทุกหน้า: report, no-endpoint, uc-outside-dental, uc-outside
-
 import type { Variants } from "framer-motion";
 
 export const pageVariants: Variants = {

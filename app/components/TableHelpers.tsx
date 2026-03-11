@@ -1,13 +1,9 @@
-// components/TableHelpers.tsx
-// ใช้ร่วมกันทุกหน้า: report, no-endpoint, uc-outside-dental, uc-outside
-
 "use client";
 
-import { useMemo } from "react";
+import { useEffect } from "react";
 import { motion, useMotionValue, useTransform, animate } from "framer-motion";
 
 // ── ShimmerRow ─────────────────────────────────────────────────────────────────
-/** แถว skeleton ตอน loading */
 export function ShimmerRow({ cols }: { cols: number }) {
     return (
         <tr>
@@ -25,14 +21,13 @@ export function ShimmerRow({ cols }: { cols: number }) {
 }
 
 // ── AnimatedCount ──────────────────────────────────────────────────────────────
-/** ตัวเลขที่นับขึ้นแบบ animate เมื่อค่าเปลี่ยน */
 export function AnimatedCount({ value }: { value: number }) {
     const motionVal = useMotionValue(0);
     const rounded = useTransform(motionVal, (v) => Math.round(v).toLocaleString());
 
-    useMemo(() => {
-        const ctrl = animate(motionVal, value, { duration: 0.7, ease: "easeOut" });
-        return ctrl.stop;
+    useEffect(() => {
+        const ctrl = animate(motionVal, value, { duration: 0.5, ease: "easeOut" });
+        return () => ctrl.stop();
     }, [value]);
 
     return (
