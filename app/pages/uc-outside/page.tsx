@@ -179,7 +179,20 @@ export default function UcOutsidePage() {
     };
 
     const copyToClipboard = (value: any) => {
-        navigator.clipboard.writeText(String(value));
+        const text = String(value);
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(text);
+        } else {
+            const el = document.createElement("textarea");
+            el.value = text;
+            el.style.position = "fixed";
+            el.style.opacity = "0";
+            document.body.appendChild(el);
+            el.focus();
+            el.select();
+            document.execCommand("copy");
+            document.body.removeChild(el);
+        }
         toast.success("คัดลอกแล้ว");
     };
 

@@ -36,11 +36,15 @@ export default function Sidebar() {
     const pathname = usePathname();
     const router = useRouter();
 
-    const isActive = (href: string, exact: boolean) =>
-        exact ? pathname === href : pathname.startsWith(href);
+    const isActive = (href: string, exact: boolean) => {
+        if (!pathname) return false;
+
+        if (exact) return pathname === href;
+
+        return pathname === href || pathname.startsWith(href + "/");
+    };
 
     const handleLogout = () => {
-        // ถ้ามี token ก็ลบตรงนี้
         localStorage.removeItem("token");
 
         router.push("/");

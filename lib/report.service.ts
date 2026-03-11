@@ -24,7 +24,7 @@ export async function getReport(
       '02893','02881','02884','02885','02889','02882'
     )
     and v.hospmain = '10667'
-    and p.pttype not in ('27','84','51')
+    AND p.hipdata_code IN ('UCS','WEL')
     order by v.vstdate asc;
     `,
         [start, end]
@@ -129,22 +129,14 @@ export async function getUcOutsideReport(
         pt.pname, 
         pt.fname, 
         pt.lname, 
+        pt.hometel,
         v.age_y AS age,
         IF(v.sex='1','ชาย','หญิง') AS gender, 
         v.hospmain, 
         h1.name AS hospmain_name, 
-        v.hospsub, 
-        h2.name AS hospsub_name,
-        CASE h1.hospital_type_id 
-            WHEN '5' THEN 'โรงพยาบาลศูนย์'
-            WHEN '6' THEN 'โรงพยาบาลทั่วไป'
-            WHEN '7' THEN 'โรงพยาบาลชุมชน'
-            ELSE h1.hospital_type_id 
-        END AS hospital_type_name,
         th.name AS province_name,
         p.pttype, 
         p.name AS pttype_name,
-        p.pcode,
         v.income,
         p.hipdata_code
     FROM vn_stat v
