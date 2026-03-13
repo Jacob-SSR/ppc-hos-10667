@@ -162,3 +162,68 @@ export async function getUcOutsideReport(
 
     return rows;
 }
+
+export async function getServiceUnitReport(
+    start: string,
+    end: string
+) {
+    const [rows] = await db.query(
+        `
+    SELECT 
+      CONCAT(pt.pname, pt.fname, " ", pt.lname) AS name,
+      pt.hn,
+      pt.cid,
+      pt.hometel,
+      pt.informtel,
+      pt.addrpart,
+      pt.moopart,
+      t.full_name AS address_name,
+      v.vstdate,
+      pc.name AS pcode_name,
+      h.name AS hospmain_name,
+      v.hospmain,
+      v.pttype,
+
+      CASE
+        WHEN v.aid = "311501" AND pt.moopart NOT IN ("4","04","8","08","11","13","15","17")
+          THEN "รพสตจันดุม"
+        WHEN v.aid = "311501" AND pt.moopart IN ("4","04","8","08","11","13","15","17")
+          THEN "รพสตโคกเจริญ"
+
+        WHEN v.aid = "311502" AND pt.moopart NOT IN ("01","1","2","02","4","04","5","05","9","09","12","13")
+          THEN "รพสตตาพระ"
+        WHEN v.aid = "311502" AND pt.moopart IN ("01","1","2","02","4","04","5","05","9","09","12","13")
+          THEN "รพสตโคกขมิ้น"
+
+        WHEN v.aid = "311503"
+          THEN "รพสตป่าชัน"
+
+        WHEN v.aid = "311504"
+          THEN "PCUสะเดา"
+
+        ELSE "รพสตสำโรง"
+      END AS service_unit
+
+    FROM vn_stat v
+    LEFT JOIN pttype p ON p.pttype = v.pttype
+    LEFT JOIN pcode pc ON pc.code = p.pcode
+    LEFT JOIN patient pt ON pt.hn = v.hn
+    LEFT JOIN thaiaddress t ON t.addressid = v.aid
+    LEFT JOIN hospcode h ON h.hospcode = v.hospmain
+
+    WHERE v.vstdate >= ?
+    AND v.vstdate < DATE_ADD(?, INTERVAL 1 DAY)
+
+    AND pc.code IN ("UC","AA","AB","AC","AD","AE","AF","AG","AI","AJ","AK")
+    AND p.pttype <> "64"
+    AND v.aid IN ("311501","311502","311503","311504","311505")
+    AND v.hospmain <> "10909"
+
+    GROUP BY v.hn
+    ORDER BY service_unit, v.aid, pt.moopart, v.vstdate
+    `,
+        [start, end]
+    );
+
+    return rows;
+}

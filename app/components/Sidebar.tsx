@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { LayoutGrid, FileEdit, UserRound, LogOut, FileUser } from "lucide-react";
+import { LayoutGrid, FileEdit, UserRound, LogOut, FileUser, Activity } from "lucide-react";
 import { useState } from "react";
 
 const NAV_ITEMS = [
@@ -29,6 +29,12 @@ const NAV_ITEMS = [
         label: "ผู้ป่วยนอก UC สิทธิ์ต่างจังหวัดที่มารับบริการ",
         href: "/pages/uc-outside",
         icon: FileUser,
+        exact: false,
+    },
+    {
+        label: "สถิติผู้รับบริการแยกเวร",
+        href: "/pages/shift-stats",
+        icon: Activity,
         exact: false,
     },
 ];
