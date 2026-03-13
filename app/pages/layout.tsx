@@ -1,6 +1,6 @@
 import Navbar from "../components/Navbar";
 import Sidebar from "../components/Sidebar";
-
+import TopProgressBar from "../components/TopProgressBar";
 
 export default function NoEndpointLayout({
     children,
@@ -9,6 +9,9 @@ export default function NoEndpointLayout({
 }) {
     return (
         <div className="flex flex-col h-screen bg-gray-50">
+
+            {/* Top progress bar — วิ่งทุกครั้งที่เปลี่ยนหน้า */}
+            <TopProgressBar />
 
             {/* Navbar เต็มความกว้าง */}
             <div className="h-14 shrink-0 border-b border-gray-300 bg-white">
@@ -21,12 +24,10 @@ export default function NoEndpointLayout({
                     <Sidebar />
                 </aside>
 
-
                 {/* Content */}
                 <main className="flex-1 overflow-auto p-6 bg-zinc-100">
                     {children}
                 </main>
-
             </div>
         </div>
     );

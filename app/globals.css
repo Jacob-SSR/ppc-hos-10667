@@ -8,8 +8,6 @@
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-
-  /* เปลี่ยนตรงนี้ */
   --font-sans: var(--font-prompt);
 }
 
@@ -23,10 +21,7 @@
 body {
   background: var(--background);
   color: var(--foreground);
-
-  /* ลบ Arial ทิ้ง */
   font-family: var(--font-sans), sans-serif;
-
   background-color: #f3f4f6;
 }
 
@@ -42,4 +37,19 @@ td {
 th:last-child,
 td:last-child {
   border-right: none;
+}
+
+/* ── Shimmer animation ── */
+@keyframes shimmer {
+  0% {
+    background-position: 200% 0;
+  }
+
+  100% {
+    background-position: -200% 0;
+  }
+}
+
+.animate-shimmer {
+  animation: shimmer 1.6s infinite linear;
 }

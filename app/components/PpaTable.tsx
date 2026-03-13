@@ -4,7 +4,7 @@ import { useEffect, useState, useMemo } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { FiChevronDown, FiChevronUp, FiCopy } from "react-icons/fi";
 import toast, { Toaster } from "react-hot-toast";
-import { ShimmerRow, AnimatedCount } from "./TableHelpers";
+import { ShimmerRow, LoadingBar, AnimatedCount } from "./TableHelpers";
 import { copyToClipboard } from "@/lib/clipboard";
 import { formatThaiDate } from "@/lib/dateUtils";
 import { exportToExcel } from "@/lib/exportExcel";
@@ -15,7 +15,7 @@ interface PpaTableProps {
     exportFilePrefix: string;
     dateKeys?: string[];
     sheetName?: string;
-    dateRangeLabel: string; // e.g. "01/02/2569 – 30/04/2569"
+    dateRangeLabel: string;
 }
 
 const PAGE_SIZE = 50;
@@ -34,7 +34,6 @@ export default function PpaTable({
     const [sortAsc, setSortAsc] = useState(true);
     const [page, setPage] = useState(1);
 
-    // ── Auto-fetch on mount ───────────────────────────────────────────────────
     useEffect(() => {
         (async () => {
             try {
@@ -50,18 +49,15 @@ export default function PpaTable({
         })();
     }, [apiPath]);
 
-    // ── Search ────────────────────────────────────────────────────────────────
     const searched = useMemo(
-        () =>
-            data.filter((row) =>
-                Object.values(row).some((val) =>
-                    String(val).toLowerCase().includes(search.toLowerCase())
-                )
-            ),
+        () => data.filter((row) =>
+            Object.values(row).some((val) =>
+                String(val).toLowerCase().includes(search.toLowerCase())
+            )
+        ),
         [data, search]
     );
 
-    // ── Sort ──────────────────────────────────────────────────────────────────
     const sorted = useMemo(() => {
         if (!sortKey) return searched;
         return [...searched].sort((a, b) =>
@@ -73,7 +69,7 @@ export default function PpaTable({
 
     const totalPages = Math.max(1, Math.ceil(sorted.length / PAGE_SIZE));
     const paginated = sorted.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
-    const colCount = paginated[0] ? Object.keys(paginated[0]).length : 6;
+    const colCount = paginated[0] ? Object.keys(paginated[0]).length : 8;
 
     const handleSort = (key: string) => {
         if (sortKey === key) setSortAsc((p) => !p);
@@ -100,13 +96,12 @@ export default function PpaTable({
                 }}
             />
 
-            {/* ── Header bar ─────────────────────────────────────────────────── */}
+            {/* ── Header bar ── */}
             <motion.div
                 variants={cardVariants}
                 className="bg-white border border-gray-200 rounded-2xl shadow-md px-6 py-4 flex flex-wrap items-center justify-between gap-4"
                 style={{ boxShadow: "0 4px 24px 0 rgba(22,101,52,0.07)" }}
             >
-                {/* Date range badge */}
                 <div className="flex items-center gap-2">
                     <span className="text-xs font-bold uppercase tracking-widest text-gray-400">ช่วงข้อมูล</span>
                     <span className="bg-green-50 border border-green-200 text-green-800 text-sm font-semibold px-4 py-1.5 rounded-full">
@@ -114,7 +109,6 @@ export default function PpaTable({
                     </span>
                 </div>
 
-                {/* Search + Export */}
                 <div className="flex items-center gap-3">
                     <input
                         type="text"
@@ -141,7 +135,7 @@ export default function PpaTable({
                 </div>
             </motion.div>
 
-            {/* ── Table card ─────────────────────────────────────────────────── */}
+            {/* ── Table card ── */}
             <motion.div
                 variants={cardVariants}
                 className="bg-white border border-gray-200 rounded-2xl shadow-md px-6 py-6"
@@ -152,7 +146,24 @@ export default function PpaTable({
                     {/* Loading */}
                     {loading && (
                         <motion.div key="loading" variants={fadeSlide} initial="hidden" animate="visible" exit="exit">
-                            <div className="mb-4 h-5 w-40 rounded-md bg-gray-200 animate-pulse" />
+                            {/* Loading bar วิ่ง */}
+                            <LoadingBar />
+
+                            {/* Label */}
+                            <motion.div
+                                className="flex items-center gap-2 mb-4 text-sm font-medium text-gray-500"
+                                initial={{ opacity: 0 }}
+                                animate={{ opacity: 1 }}
+                            >
+                                <motion.span
+                                    className="inline-block w-4 h-4 border-2 border-green-300 border-t-green-700 rounded-full"
+                                    animate={{ rotate: 360 }}
+                                    transition={{ duration: 0.8, repeat: Infinity, ease: "linear" }}
+                                />
+                                กำลังโหลดข้อมูล...
+                            </motion.div>
+
+                            {/* Skeleton table */}
                             <div className="overflow-hidden border border-gray-200 rounded-xl">
                                 <table className="min-w-full text-sm border-collapse">
                                     <thead>
@@ -196,7 +207,6 @@ export default function PpaTable({
                     {!loading && sorted.length > 0 && (
                         <motion.div key="table" variants={fadeSlide} initial="hidden" animate="visible" exit="exit">
 
-                            {/* Count */}
                             <motion.div
                                 className="mb-4 text-sm font-semibold text-gray-600 flex items-center gap-2"
                                 initial={{ opacity: 0, x: -10 }}
@@ -215,7 +225,6 @@ export default function PpaTable({
                                 )}
                             </motion.div>
 
-                            {/* Table */}
                             <motion.div
                                 className="overflow-auto max-h-[560px] border border-gray-200 rounded-xl"
                                 initial={{ opacity: 0, y: 10 }}
@@ -260,13 +269,10 @@ export default function PpaTable({
                                                 className={`border-b border-gray-200 transition-colors duration-100 hover:bg-green-50/70 ${i % 2 === 0 ? "bg-white" : "bg-gray-50"}`}
                                             >
                                                 {Object.entries(row).map(([key, val]: any, idx: number) => (
-                                                    <td
-                                                        key={idx}
-                                                        className="px-4 py-2.5 text-sm whitespace-nowrap border-r border-gray-100 text-gray-800"
-                                                    >
+                                                    <td key={idx} className="px-4 py-2.5 text-sm whitespace-nowrap border-r border-gray-100 text-gray-800">
                                                         <div className="flex items-center justify-between gap-2 group">
                                                             <span>
-                                                                {dateKeys.includes(key) && val && String(val).includes("-")
+                                                                {dateKeys.includes(key) && val && (String(val).includes("-") || String(val).includes("T"))
                                                                     ? formatThaiDate(val)
                                                                     : String(val ?? "")}
                                                             </span>
