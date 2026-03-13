@@ -10,6 +10,8 @@ export function formatThaiDate(val: any): string {
 
     const str = String(val);
 
+    if (str.includes("/")) return str;
+
     if (str.includes("T")) {
         const date = new Date(str);
         const y = date.getFullYear();
@@ -18,6 +20,7 @@ export function formatThaiDate(val: any): string {
         return `${d}/${m}/${y + 543}`;
     }
 
-    const [y, m, d] = str.split("T")[0].split("-");
+    const [y, m, d] = str.split("-");
+    if (!y || !m || !d) return str;
     return `${d}/${m}/${Number(y) + 543}`;
 }

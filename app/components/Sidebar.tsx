@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { LayoutGrid, FileEdit, UserRound, LogOut, FileUser, Activity } from "lucide-react";
+import { LayoutGrid, FileEdit, UserRound, LogOut, FileUser, Activity, UserCheck } from "lucide-react";
 import { useState } from "react";
 
 const NAV_ITEMS = [
@@ -31,10 +31,16 @@ const NAV_ITEMS = [
         icon: FileUser,
         exact: false,
     },
+    // {
+    //     label: "สถิติผู้รับบริการแยกเวร",
+    //     href: "/pages/shift-stats",
+    //     icon: Activity,
+    //     exact: false,
+    // },
     {
-        label: "สถิติผู้รับบริการแยกเวร",
-        href: "/pages/shift-stats",
-        icon: Activity,
+        label: "ผู้รับบริการแต่ขึ้นทะเบียนบัตรทองที่อื่น",
+        href: "/pages/service-unit",
+        icon: UserCheck,
         exact: false,
     },
 ];

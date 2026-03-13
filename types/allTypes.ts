@@ -76,6 +76,23 @@ export interface UcOutsideRow {
   hipdata_code: string;
 }
 
+export interface ServiceUnitRow {
+  name: string;
+  hn: string;
+  cid: string;
+  hometel: string;
+  informtel: string;
+  addrpart: string;
+  moopart: string;
+  address_name: string;
+  vstdate: string;
+  pcode_name: string;
+  hospmain_name: string;
+  hospmain: string;
+  pttype: string;
+  service_unit: string;
+}
+
 export interface DashboardSummary {
   totalVisit: number;
   noEndpoint: number;

@@ -35,5 +35,6 @@ export const config = {
         "/api/uc-outside/:path*",
         "/api/uc-outside-dental/:path*",
         "/api/dashboard/:path*",
+        "/api/service-unit/:path*",
     ],
 };
