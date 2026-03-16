@@ -10,7 +10,7 @@ import toast, { Toaster } from "react-hot-toast";
 import { ReportTableProps } from "@/types/allTypes";
 
 import ThaiDateInput from "./ThaiDateInput";
-import { ShimmerRow, AnimatedCount } from "./TableHelpers";
+import { ShimmerRow, LoadingBar, AnimatedCount } from "./TableHelpers";
 import { copyToClipboard } from "@/lib/clipboard";
 import { formatThaiDate } from "@/lib/dateUtils";
 import { exportToExcel } from "@/lib/exportExcel";
@@ -282,7 +282,19 @@ export default function ReportTable({
                     {/* Loading */}
                     {loading && (
                         <motion.div key="loading" variants={fadeSlide} initial="hidden" animate="visible" exit="exit">
-                            <div className="mb-4 h-5 w-40 rounded-md bg-gray-200 animate-pulse" />
+                            <LoadingBar />
+                            <motion.div
+                                className="flex items-center gap-2 mb-4 text-sm font-medium text-gray-500"
+                                initial={{ opacity: 0 }}
+                                animate={{ opacity: 1 }}
+                            >
+                                <motion.span
+                                    className="inline-block w-4 h-4 border-2 border-green-300 border-t-green-700 rounded-full"
+                                    animate={{ rotate: 360 }}
+                                    transition={{ duration: 0.8, repeat: Infinity, ease: "linear" }}
+                                />
+                                กำลังโหลดข้อมูล...
+                            </motion.div>
                             <div className="overflow-hidden border border-gray-200 rounded-xl">
                                 <table className="min-w-full text-sm border-collapse">
                                     <thead>
