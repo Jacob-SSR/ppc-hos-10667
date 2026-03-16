@@ -1,10 +1,10 @@
 import { NextResponse } from "next/server";
 import jwt from "jsonwebtoken";
+import bcrypt from "bcrypt";
 import md5 from "md5";
 import { db } from "@/lib/db";
 
 export async function POST(req: Request) {
-
     const body = await req.json();
 
     const username = body.username?.trim();
@@ -25,9 +25,23 @@ export async function POST(req: Request) {
         return NextResponse.json({ message: "Invalid" }, { status: 401 });
     }
 
-    const hashed = md5(password);
+    let isValid = false;
 
-    if (hashed !== user.passweb) {
+    if (user.passweb.startsWith("$2b$") || user.passweb.startsWith("$2a$")) {
+        isValid = await bcrypt.compare(password, user.passweb);
+    } else {
+        isValid = md5(password) === user.passweb;
+
+        if (isValid) {
+            const newHash = await bcrypt.hash(password, 12);
+            await db.query(
+                "UPDATE ppchos.users SET passweb = ? WHERE `user` = ?",
+                [newHash, username]
+            );
+        }
+    }
+
+    if (!isValid) {
         return NextResponse.json({ message: "Invalid" }, { status: 401 });
     }
 
