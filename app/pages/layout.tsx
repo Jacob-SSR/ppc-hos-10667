@@ -1,6 +1,6 @@
-import Navbar from "../components/Navbar";
-import Sidebar from "../components/Sidebar";
-import TopProgressBar from "../components/TopProgressBar";
+import Navbar from "@/app/components/Navbar";
+import Sidebar from "@/app/components/sidebar/Sidebar"
+import TopProgressBar from "@/app/components/TopProgressBar";
 
 export default function NoEndpointLayout({
     children,
