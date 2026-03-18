@@ -7,12 +7,12 @@ export async function getReport(
 ): Promise<ReportRow[]> {
     const [rows] = await db.query(
         `
-    select v.vn, v.hn, v.vstdate,
-    pt.pname, pt.fname, pt.lname,
-    v.age_y as age,
-    if(v.sex='1','ชาย','หญิง') as gender,
-    v.hospmain, v.hospsub,
-    p.pttype , p.name as pttype_name
+    select v.vn, v.hn, v.vstdate AS "วันที่",
+    pt.pname AS "คำนำหน้า", pt.fname AS "ชื่อ", pt.lname AS "นามสกุล",
+    v.age_y as "อายุ",
+    if(v.sex='1','ชาย','หญิง') as "เพศ",
+    v.hospmain AS "รหัสโรงพยาบาลหลัก", v.hospsub AS "รหัสโรงพยาบาลรอง",
+    p.pttype AS "รหัสสิทธิ์", p.name as "ชื่อสิทธิ์"
     from vn_stat v
     join pttype p on v.pttype = p.pttype
     join patient pt on v.hn = pt.hn
@@ -41,16 +41,16 @@ export async function getNoEndpointReport(
     const [rows] = await db.query(
         `
     SELECT 
-      concat(day(o.vstdate),"/", month(o.vstdate),"/", year(o.vstdate)+543) AS DATE,
-      o.vsttime,
+      concat(day(o.vstdate),"/", month(o.vstdate),"/", year(o.vstdate)+543) AS "วันที่",
+      o.vsttime AS "เวลา",
       p.cid,
-      vv.income,
+      vv.income AS "รายได้",
       o.vn,
       o.hn,
-      CONVERT(CAST(CONVERT(concat(p.pname,p.fname,"  ",p.lname) USING tis620) AS BINARY) USING tis620) as Name,
-      CONVERT(CAST(CONVERT(k.department USING tis620) AS BINARY) USING tis620) as Department,
-      CONVERT(CAST(CONVERT(if(s.cc is null,'',s.cc) USING tis620) AS BINARY) USING tis620) as cc,
-      CONVERT(CAST(CONVERT(ptt.name USING tis620) AS BINARY) USING tis620) as pttypename
+      CONVERT(CAST(CONVERT(concat(p.pname,p.fname,"  ",p.lname) USING tis620) AS BINARY) USING tis620) as "ชื่อ",
+      CONVERT(CAST(CONVERT(k.department USING tis620) AS BINARY) USING tis620) as "แผนก",
+      CONVERT(CAST(CONVERT(if(s.cc is null,'',s.cc) USING tis620) AS BINARY) USING tis620) as "อาการสำคัญ",
+      CONVERT(CAST(CONVERT(ptt.name USING tis620) AS BINARY) USING tis620) as "ชื่อสิทธิ์"
     FROM ovst o
     LEFT JOIN visit_pttype vp ON vp.vn=o.vn
     LEFT JOIN pttype ptt on ptt.pttype=vp.pttype 
@@ -77,22 +77,22 @@ export async function getUcOutsideDentalReport(
     const [rows] = await db.query(
         `
     select 
-      v.vstdate,
+      v.vstdate AS "วันที่",
       v.vn,
       v.hn,
-      v.pdx,
-      v.aid,
-      v.pttype,
-      p.name as pttype_name,
-      v.hospmain,
-      h.name as hospmain_name,
-      v.income,
-      v.paid_money,
-      (v.inc08+v.inc10+v.inc14+v.inc15+v.inc16+v.inc17) as sum_other,
-      (v.income-v.inc11) as sum_total,
-      (v.income - v.paid_money) as ss,
-      op.cc,
-      k.department
+      v.pdx AS "การวินิจฉัย",
+      v.aid AS "รหัสที่อยู่",
+      v.pttype AS "รหัสสิทธิ์",
+      p.name as "ชื่อสิทธิ์",
+      v.hospmain AS "รหัสโรงพยาบาลหลัก",
+      h.name as "ชื่อโรงพยาบาลหลัก",
+      v.income AS "รายได้",
+      v.paid_money AS "เงินที่จ่าย",
+      (v.inc08+v.inc10+v.inc14+v.inc15+v.inc16+v.inc17) as "รวมอื่นๆ",
+      (v.income-v.inc11) as "รวมทั้งหมด",
+      (v.income - v.paid_money) as "ส่วนต่าง",
+      op.cc AS "อาการสำคัญ",
+      k.department AS "แผนก"
     from vn_stat v
     inner join ovst o on o.vn=v.vn
     left join opdscreen op on v.vn=op.vn
@@ -123,22 +123,22 @@ export async function getUcOutsideReport(
     SELECT 
         v.vn, 
         v.hn, 
-        v.vstdate, 
-        ov.vsttime,
-        ks.department,
-        pt.pname, 
-        pt.fname, 
-        pt.lname, 
-        pt.hometel,
-        v.age_y AS age,
-        IF(v.sex='1','ชาย','หญิง') AS gender, 
-        v.hospmain, 
-        h1.name AS hospmain_name, 
-        th.name AS province_name,
-        p.pttype, 
-        p.name AS pttype_name,
-        v.income,
-        p.hipdata_code
+        v.vstdate AS "วันที่", 
+        ov.vsttime AS "เวลา",
+        ks.department AS "แผนก",
+        pt.pname AS "คำนำหน้า", 
+        pt.fname AS "ชื่อ", 
+        pt.lname AS "นามสกุล", 
+        pt.hometel AS "เบอร์โทร",
+        v.age_y AS "อายุ",
+        IF(v.sex='1','ชาย','หญิง') AS "เพศ", 
+        v.hospmain AS "รหัสโรงพยาบาลหลัก", 
+        h1.name AS "ชื่อโรงพยาบาลหลัก", 
+        th.name AS "จังหวัด",
+        p.pttype AS "รหัสสิทธิ์", 
+        p.name AS "ชื่อสิทธิ์",
+        v.income AS "รายได้",
+        p.hipdata_code AS "รหัสสิทธิ์หลัก"
     FROM vn_stat v
     JOIN ovst ov ON v.vn = ov.vn
     JOIN kskdepartment ks ON ov.main_dep = ks.depcode
@@ -170,19 +170,19 @@ export async function getServiceUnitReport(
     const [rows] = await db.query(
         `
     SELECT 
-      CONCAT(pt.pname, pt.fname, " ", pt.lname) AS name,
+      CONCAT(pt.pname, pt.fname, " ", pt.lname) AS "ชื่อ-นามสกุล",
       pt.hn,
       pt.cid,
-      pt.hometel,
-      pt.informtel,
-      pt.addrpart,
-      pt.moopart,
-      t.full_name AS address_name,
-      v.vstdate,
-      pc.name AS pcode_name,
-      h.name AS hospmain_name,
-      v.hospmain,
-      v.pttype,
+      pt.hometel AS "เบอร์โทร",
+      pt.informtel AS "เบอร์ผู้แจ้ง",
+      pt.addrpart AS "บ้านเลขที่",
+      pt.moopart AS "หมู่",
+      t.full_name AS "ที่อยู่",
+      v.vstdate AS "วันที่",
+      pc.name AS "ชื่อสิทธิ์",
+      h.name AS "ชื่อโรงพยาบาลหลัก",
+      v.hospmain AS "รหัสโรงพยาบาลหลัก",
+      v.pttype AS "รหัสสิทธิ์",
 
       CASE
         WHEN v.aid = "311501" AND pt.moopart NOT IN ("4","04","8","08","11","13","15","17")
@@ -202,7 +202,7 @@ export async function getServiceUnitReport(
           THEN "PCUสะเดา"
 
         ELSE "รพสตสำโรง"
-      END AS service_unit
+      END AS "หน่วยบริการ"
 
     FROM vn_stat v
     LEFT JOIN pttype p ON p.pttype = v.pttype
@@ -220,7 +220,7 @@ export async function getServiceUnitReport(
     AND v.hospmain <> "10909"
 
     GROUP BY v.hn
-    ORDER BY service_unit, v.aid, pt.moopart, v.vstdate
+    ORDER BY "หน่วยบริการ", v.aid, pt.moopart, v.vstdate
     `,
         [start, end]
     );
