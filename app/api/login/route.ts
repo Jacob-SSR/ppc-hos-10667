@@ -48,15 +48,15 @@ export async function POST(req: Request) {
     const token = jwt.sign(
         { username: user.user },
         process.env.JWT_SECRET!,
-        { expiresIn: "1d" }
+        { expiresIn: "8h" }
     );
 
     const res = NextResponse.json({ message: "Login success" });
 
     res.cookies.set("token", token, {
         httpOnly: true,
+        secure: process.env.NODE_ENV === "production",
         path: "/",
     });
-
     return res;
 }

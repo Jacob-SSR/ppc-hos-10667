@@ -53,3 +53,9 @@ td:last-child {
 .animate-shimmer {
   animation: shimmer 1.6s infinite linear;
 }
+
+input[type="password"]::-ms-reveal,
+input[type="password"]::-ms-clear,
+input[type="password"]::-webkit-credentials-auto-fill-button {
+  display: none;
+}

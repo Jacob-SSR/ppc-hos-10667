@@ -38,7 +38,8 @@ function useToast() {
     return { show, ToastContainer };
 }
 
-// ── Floating Input + Animated Hint ─────────────────────
+// ── Floating Input ──────────────────────────────────────
+// hint อยู่ใน DOM ตลอด แต่ fade opacity → ไม่มี layout shift
 function FloatingInput({
     id, label, type = "text", value, onChange, required, hint, disabled,
 }: {
@@ -47,55 +48,79 @@ function FloatingInput({
     required?: boolean; hint?: string; disabled?: boolean;
 }) {
     const [focused, setFocused] = useState(false);
+    const [showPassword, setShowPassword] = useState(false);
+    const isPassword = type === "password";
+    const inputType = isPassword ? (showPassword ? "text" : "password") : type;
     const isFloating = focused || value.length > 0;
 
     return (
-        <div>
+        <div className="space-y-1">
             <div className="relative">
                 <input
                     id={id}
-                    type={type}
+                    type={inputType}
                     value={value}
                     onChange={onChange}
                     onFocus={() => setFocused(true)}
                     onBlur={() => setFocused(false)}
                     required={required}
                     disabled={disabled}
-                    className="w-full border-2 border-gray-300 rounded-xl px-4 pt-7 pb-3 text-lg text-gray-900 bg-white
-                               focus:outline-none focus:border-green-600 focus:ring-2 focus:ring-green-100
-                               transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+                    className={`w-full border-2 rounded-xl px-4 pt-7 pb-3 text-base text-gray-900 bg-white
+                               focus:outline-none transition-all disabled:opacity-40 disabled:cursor-not-allowed
+                               ${focused ? "border-green-600 ring-2 ring-green-100" : "border-gray-300"}
+                               ${isPassword ? "pr-11" : ""}`}
                 />
 
+                {/* Floating label */}
                 <motion.label
                     htmlFor={id}
                     animate={
                         isFloating
-                            ? { top: 8, left: 16, fontSize: "12px", color: focused ? "#16a34a" : "#6b7280" }
-                            : { top: 20, left: 16, fontSize: "17px", color: "#9ca3af" }
+                            ? { top: 8, left: 16, fontSize: "11px", color: focused ? "#16a34a" : "#6b7280" }
+                            : { top: 19, left: 16, fontSize: "15px", color: "#9ca3af" }
                     }
-                    transition={{ duration: 0.18, ease: "easeOut" }}
-                    className="absolute pointer-events-none font-medium leading-none"
-                    style={{ top: 20, left: 16 }}
+                    transition={{ duration: 0.15, ease: "easeOut" }}
+                    className="absolute pointer-events-none font-medium leading-none select-none"
+                    style={{ top: 19, left: 16 }}
                 >
                     {label}
                 </motion.label>
+
+                {/* Password toggle */}
+                {isPassword && (
+                    <button
+                        type="button"
+                        tabIndex={-1}
+                        onMouseDown={(e) => e.preventDefault()}
+                        onClick={() => setShowPassword((p) => !p)}
+                        disabled={disabled}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-green-700 transition-colors disabled:opacity-30"
+                    >
+                        {showPassword ? (
+                            // eye-off
+                            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94" />
+                                <path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19" />
+                                <line x1="1" y1="1" x2="23" y2="23" />
+                            </svg>
+                        ) : (
+                            // eye
+                            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+                                <circle cx="12" cy="12" r="3" />
+                            </svg>
+                        )}
+                    </button>
+                )}
             </div>
 
-            {/* ✨ Animated Hint */}
-            <AnimatePresence>
-                {focused && hint && (
-                    <motion.p
-                        key="hint"
-                        initial={{ opacity: 0, y: -4 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        exit={{ opacity: 0, y: -4 }}
-                        transition={{ duration: 0.25, ease: "easeOut" }}
-                        className="mt-1.5 ml-1 text-xs text-gray-400 flex items-center gap-1"
-                    >
-                        {hint}
-                    </motion.p>
-                )}
-            </AnimatePresence>
+            {/* Hint — always in DOM, fade in/out via opacity → ไม่ layout shift */}
+            <p
+                className="text-xs text-gray-400 ml-1 transition-opacity duration-200 select-none"
+                style={{ opacity: focused && hint ? 1 : 0, minHeight: "1rem" }}
+            >
+                {hint ?? ""}
+            </p>
         </div>
     );
 }
@@ -143,23 +168,12 @@ function SuccessOverlay({ show }: { show: boolean }) {
                             src="/logo.png"
                             alt="Hospital Logo"
                             className="object-contain drop-shadow-2xl"
-                            style={{
-                                width: 500,
-                                height: 500,
-                                opacity: logoOpacity,
-                                scale: logoScale,
-                            }}
+                            style={{ width: 500, height: 500, opacity: logoOpacity, scale: logoScale }}
                         />
-
                         <div className="text-center">
-                            <p className="text-xl font-semibold text-gray-900">
-                                เข้าสู่ระบบสำเร็จ
-                            </p>
-                            <p className="text-sm text-gray-400">
-                                กำลังนำทาง...
-                            </p>
+                            <p className="text-xl font-semibold text-gray-900">เข้าสู่ระบบสำเร็จ</p>
+                            <p className="text-sm text-gray-400">กำลังนำทาง...</p>
                         </div>
-
                         <div className="w-80">
                             <div className="w-full h-[6px] bg-gray-200 rounded-full overflow-hidden">
                                 <motion.div
@@ -225,7 +239,8 @@ export default function LoginPage() {
                     Login PPCHOS
                 </h1>
 
-                <div className="mb-5">
+                {/* ไม่มี mb คงที่ เพราะ FloatingInput มี hint space ในตัวแล้ว */}
+                <div className="space-y-4 mb-8">
                     <FloatingInput
                         id="username"
                         label="User"
@@ -235,9 +250,6 @@ export default function LoginPage() {
                         hint="ใช้ชื่อผู้ใช้เดียวกับที่ login เข้า HosXP"
                         disabled={loading || success}
                     />
-                </div>
-
-                <div className="mb-8">
                     <FloatingInput
                         id="password"
                         label="Password"
@@ -253,7 +265,7 @@ export default function LoginPage() {
                 <button
                     type="submit"
                     disabled={loading || success}
-                    className="w-full bg-green-700 text-white py-4 rounded-xl text-lg font-bold"
+                    className="w-full bg-green-700 hover:bg-green-800 active:scale-[0.98] transition-all text-white py-4 rounded-xl text-lg font-bold disabled:opacity-50"
                 >
                     {loading ? "กำลังตรวจสอบ..." : "เข้าสู่ระบบ"}
                 </button>
