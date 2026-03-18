@@ -235,9 +235,18 @@ export default function LoginPage() {
                 }
                 className="bg-white w-[440px] px-12 py-12 rounded-2xl border-2 border-black shadow-[8px_8px_0px_0px_rgba(0,0,0,1)]"
             >
-                <h1 className="text-3xl font-bold text-center mb-10 text-gray-900">
+                <h1 className="text-3xl font-bold text-center text-gray-900 tracking-tight">
                     Login PPCHOS
                 </h1>
+
+                {/* Divider + label */}
+                <div className="flex items-center gap-3 my-6">
+                    <div className="flex-1 h-px bg-gray-300" />
+                    <span className="text-xs font-bold uppercase tracking-[0.2em] text-gray-400">
+                        Health Data Report
+                    </span>
+                    <div className="flex-1 h-px bg-gray-300" />
+                </div>
 
                 {/* ไม่มี mb คงที่ เพราะ FloatingInput มี hint space ในตัวแล้ว */}
                 <div className="space-y-4 mb-8">
