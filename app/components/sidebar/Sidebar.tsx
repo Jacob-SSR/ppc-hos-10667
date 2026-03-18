@@ -47,10 +47,8 @@ export default function Sidebar() {
 
     return (
 
-        <aside className="flex flex-col w-60 h-screen bg-white border-r border-gray-300">
-
-            <nav className="flex-1 px-4 py-6 space-y-1 text-sm overflow-y-auto">
-
+        <aside className="flex flex-col w-60 h-full bg-white border-r border-gray-300 overflow-hidden">
+            <nav className="flex-1 px-4 py-6 space-y-1 text-sm overflow-y-auto min-h-0">
                 <NavGroup
                     label="Dashboard"
                     icon={LayoutDashboard}
