@@ -7,14 +7,23 @@ export default function ServiceUnitPage() {
         <ReportTable
             apiPath="/api/service-unit"
             exportFilePrefix="service-unit"
-            dateKeys={["vstdate"]}
+            dateKeys={["วันที่"]}
             sheetName="ServiceUnit"
-            columnFilterKeys={["service_unit", "pttype", "pcode_name", "hospmain_name"]}
+            columnFilterKeys={[
+                "หน่วยบริการ",
+                "รหัสสิทธิ์",
+                "ชื่อสิทธิ์",
+                "ชื่อโรงพยาบาลหลัก",
+                "ที่อยู่",
+                "หมู่",
+            ]}
             columnFilterLabels={{
-                service_unit: "หน่วยบริการ",
-                pttype: "ประเภทสิทธิ์",
-                pcode_name: "กลุ่มสิทธิ์",
-                hospmain_name: "โรงพยาบาลต้นสังกัด",
+                "หน่วยบริการ": "หน่วยบริการ",
+                "รหัสสิทธิ์": "รหัสสิทธิ์",
+                "ชื่อสิทธิ์": "กลุ่มสิทธิ์",
+                "ชื่อโรงพยาบาลหลัก": "โรงพยาบาลต้นสังกัด",
+                "ที่อยู่": "ที่อยู่ (ตำบล/อำเภอ)",
+                "หมู่": "หมู่บ้าน",
             }}
         />
     );

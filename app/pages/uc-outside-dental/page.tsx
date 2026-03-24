@@ -7,13 +7,19 @@ export default function UcOutsideDentalPage() {
         <ReportTable
             apiPath="/api/uc-outside-dental"
             exportFilePrefix="uc-outside-dental"
-            dateKeys={["vstdate"]}
+            dateKeys={["วันที่"]}
             sheetName="UCOutsideDental"
-            columnFilterKeys={["pttype_name", "hospmain_name", "department"]}
+            columnFilterKeys={[
+                "ชื่อสิทธิ์",
+                "ชื่อโรงพยาบาลหลัก",
+                "แผนก",
+                "การวินิจฉัย",
+            ]}
             columnFilterLabels={{
-                pttype_name: "ประเภทสิทธิ์",
-                hospmain_name: "โรงพยาบาลต้นสังกัด",
-                department: "แผนก",
+                "ชื่อสิทธิ์": "ประเภทสิทธิ์",
+                "ชื่อโรงพยาบาลหลัก": "โรงพยาบาลต้นสังกัด",
+                "แผนก": "แผนก",
+                "การวินิจฉัย": "การวินิจฉัย (ICD10)",
             }}
         />
     );

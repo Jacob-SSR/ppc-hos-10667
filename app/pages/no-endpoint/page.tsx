@@ -7,12 +7,15 @@ export default function NoEndpointPage() {
         <ReportTable
             apiPath="/api/no-endpoint"
             exportFilePrefix="no-endpoint-report"
-            dateKeys={["DATE", "vstdate"]}
+            dateKeys={[]}
             sheetName="NoEndpoint"
-            columnFilterKeys={["Department", "pttypename"]}
+            columnFilterKeys={[
+                "แผนก",
+                "ชื่อสิทธิ์",
+            ]}
             columnFilterLabels={{
-                Department: "แผนก",
-                pttypename: "ประเภทสิทธิ์",
+                "แผนก": "แผนก",
+                "ชื่อสิทธิ์": "ประเภทสิทธิ์",
             }}
         />
     );

@@ -46,7 +46,14 @@ export function useReportTable<T = any>({ apiPath, columnFilterKeys = [] }: UseR
                 new Set((data as any[]).map((row) => String(row[key] ?? "")))
             )
                 .filter(Boolean)
-                .sort((a, b) => a.localeCompare(b, "th"));
+                .sort((a, b) => {
+                    const aNum = Number(a);
+                    const bNum = Number(b);
+                    // ถ้าทั้งคู่เป็นตัวเลขล้วน → เรียงแบบตัวเลข
+                    if (!isNaN(aNum) && !isNaN(bNum)) return aNum - bNum;
+                    // ไม่งั้น → เรียงแบบข้อความภาษาไทย
+                    return a.localeCompare(b, "th");
+                });
         }
         return result;
     }, [data, columnFilterKeys.join(",")]);

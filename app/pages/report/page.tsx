@@ -7,14 +7,21 @@ export default function ReportPage() {
         <ReportTable
             apiPath="/api/report"
             exportFilePrefix="report"
-            dateKeys={["vstdate"]}
+            dateKeys={["วันที่"]}
             sheetName="Report"
-            columnFilterKeys={["pttype_name", "gender", "hospmain", "hospsub"]}
+            columnFilterKeys={[
+                "คำนำหน้า",
+                "เพศ",
+                "ชื่อสิทธิ์",
+                "รหัสโรงพยาบาลหลัก",
+                "รหัสโรงพยาบาลรอง",
+            ]}
             columnFilterLabels={{
-                pttype_name: "ประเภทสิทธิ์",
-                gender: "เพศ",
-                hospmain: "รหัส hospmain",
-                hospsub: "รหัส hospsub",
+                "คำนำหน้า": "คำนำหน้า",
+                "เพศ": "เพศ",
+                "ชื่อสิทธิ์": "ประเภทสิทธิ์",
+                "รหัสโรงพยาบาลหลัก": "รหัส hospmain",
+                "รหัสโรงพยาบาลรอง": "รหัส hospsub",
             }}
         />
     );

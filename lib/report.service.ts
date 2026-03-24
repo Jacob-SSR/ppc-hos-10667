@@ -44,7 +44,7 @@ export async function getNoEndpointReport(
       concat(day(o.vstdate),"/", month(o.vstdate),"/", year(o.vstdate)+543) AS "วันที่",
       o.vsttime AS "เวลา",
       p.cid,
-      vv.income AS "รายได้",
+      vv.income AS "มูลค่า",
       o.vn,
       o.hn,
       CONVERT(CAST(CONVERT(concat(p.pname,p.fname,"  ",p.lname) USING tis620) AS BINARY) USING tis620) as "ชื่อ",
@@ -86,7 +86,7 @@ export async function getUcOutsideDentalReport(
       p.name as "ชื่อสิทธิ์",
       v.hospmain AS "รหัสโรงพยาบาลหลัก",
       h.name as "ชื่อโรงพยาบาลหลัก",
-      v.income AS "รายได้",
+      v.income AS "มูลค่า",
       v.paid_money AS "เงินที่จ่าย",
       (v.inc08+v.inc10+v.inc14+v.inc15+v.inc16+v.inc17) as "รวมอื่นๆ",
       (v.income-v.inc11) as "รวมทั้งหมด",
@@ -137,7 +137,7 @@ export async function getUcOutsideReport(
         th.name AS "จังหวัด",
         p.pttype AS "รหัสสิทธิ์", 
         p.name AS "ชื่อสิทธิ์",
-        v.income AS "รายได้",
+        v.income AS "มูลค่า",
         p.hipdata_code AS "รหัสสิทธิ์หลัก"
     FROM vn_stat v
     JOIN ovst ov ON v.vn = ov.vn

@@ -1,20 +1,16 @@
 export interface ReportRow {
   vn: string;
   hn: string;
-  vstdate: string;
-
-  pname: string;
-  fname: string;
-  lname: string;
-
-  age: number;
-  gender: string;
-
-  hospmain: string;
-  hospsub: string;
-
-  pttype: string;
-  pttype_name: string;
+  "วันที่": string;
+  "คำนำหน้า": string;
+  "ชื่อ": string;
+  "นามสกุล": string;
+  "อายุ": number;
+  "เพศ": string;
+  "รหัสโรงพยาบาลหลัก": string;
+  "รหัสโรงพยาบาลรอง": string;
+  "รหัสสิทธิ์": string;
+  "ชื่อสิทธิ์": string;
 }
 
 export interface ExportOptions {
@@ -24,73 +20,73 @@ export interface ExportOptions {
 }
 
 export interface NoEndpointRow {
-  DATE: string;
-  vsttime: string;
+  "วันที่": string;
+  "เวลา": string;
   cid: string;
-  income: number;
+  "มูลค่า": number;
   vn: string;
   hn: string;
-  Name: string;
-  Department: string;
-  cc: string;
-  pttypename: string;
+  "ชื่อ": string;
+  "แผนก": string;
+  "อาการสำคัญ": string;
+  "ชื่อสิทธิ์": string;
 }
 
 export interface UcOutsideDentalRow {
-  vstdate: string;
+  "วันที่": string;
   vn: string;
   hn: string;
-  pdx: string;
-  aid: string;
-  pttype: string;
-  pttype_name: string;
-  hospmain: string;
-  hospmain_name: string;
-  income: number;
-  paid_money: number;
-  sum_other: number;
-  sum_total: number;
-  ss: number;
-  cc: string;
-  department: string;
+  "การวินิจฉัย": string;
+  "รหัสที่อยู่": string;
+  "รหัสสิทธิ์": string;
+  "ชื่อสิทธิ์": string;
+  "รหัสโรงพยาบาลหลัก": string;
+  "ชื่อโรงพยาบาลหลัก": string;
+  "มูลค่า": number;
+  "เงินที่จ่าย": number;
+  "รวมอื่นๆ": number;
+  "รวมทั้งหมด": number;
+  "ส่วนต่าง": number;
+  "อาการสำคัญ": string;
+  "แผนก": string;
 }
 
 export interface UcOutsideRow {
   vn: string;
   hn: string;
-  vstdate: string;
-  vsttime: string;
-  department: string;
-  pname: string;
-  fname: string;
-  lname: string;
-  hometel: string;
-  age: number;
-  gender: string;
-  hospmain: string;
-  hospmain_name: string;
-  province_name: string;
-  pttype: string;
-  pttype_name: string;
-  income: number;
-  hipdata_code: string;
+  "วันที่": string;
+  "เวลา": string;
+  "แผนก": string;
+  "คำนำหน้า": string;
+  "ชื่อ": string;
+  "นามสกุล": string;
+  "เบอร์โทร": string;
+  "อายุ": number;
+  "เพศ": string;
+  "รหัสโรงพยาบาลหลัก": string;
+  "ชื่อโรงพยาบาลหลัก": string;
+  "จังหวัด": string;
+  "รหัสสิทธิ์": string;
+  "ชื่อสิทธิ์": string;
+  "มูลค่า": number;
+  "รหัสสิทธิ์หลัก": string;
 }
 
 export interface ServiceUnitRow {
-  name: string;
+  "ชื่อ-นามสกุล": string;
   hn: string;
   cid: string;
-  hometel: string;
-  informtel: string;
-  addrpart: string;
-  moopart: string;
-  address_name: string;
-  vstdate: string;
-  pcode_name: string;
-  hospmain_name: string;
-  hospmain: string;
-  pttype: string;
-  service_unit: string;
+  "เบอร์โทร": string;
+  "เบอร์ผู้แจ้ง": string;
+  "บ้านเลขที่": string;
+  "หมู่": string;
+  "ที่อยู่": string;
+  "วันที่": string;
+  "ชื่อสิทธิ์": string;
+  "ชื่อโรงพยาบาลหลัก": string;
+  "รหัสโรงพยาบาลหลัก": string;
+  "รหัสสิทธิ์": string;
+  "หน่วยบริการ": string;
 }
 
 export interface DashboardSummary {

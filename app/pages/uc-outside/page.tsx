@@ -7,15 +7,23 @@ export default function UcOutsidePage() {
         <ReportTable
             apiPath="/api/uc-outside"
             exportFilePrefix="uc-outside"
-            dateKeys={["vstdate"]}
+            dateKeys={["วันที่"]}
             sheetName="UCOutside"
-            columnFilterKeys={["pttype_name", "gender", "province_name", "department", "hospmain_name"]}
+            columnFilterKeys={[
+                "ชื่อสิทธิ์",
+                "เพศ",
+                "จังหวัด",
+                "แผนก",
+                "ชื่อโรงพยาบาลหลัก",
+                "รหัสสิทธิ์หลัก",
+            ]}
             columnFilterLabels={{
-                pttype_name: "ประเภทสิทธิ์",
-                gender: "เพศ",
-                province_name: "จังหวัด",
-                department: "แผนก",
-                hospmain_name: "โรงพยาบาลต้นสังกัด",
+                "ชื่อสิทธิ์": "ประเภทสิทธิ์",
+                "เพศ": "เพศ",
+                "จังหวัด": "จังหวัด",
+                "แผนก": "แผนก",
+                "ชื่อโรงพยาบาลหลัก": "โรงพยาบาลต้นสังกัด",
+                "รหัสสิทธิ์หลัก": "รหัสสิทธิ์หลัก (hipdata)",
             }}
         />
     );
