@@ -14,11 +14,10 @@ export async function GET() {
         const decoded = jwt.verify(
             token,
             process.env.JWT_SECRET!
-        ) as { id: number; username: string };
+        ) as { username: string };
 
         return NextResponse.json({
             user: {
-                id: decoded.id,
                 username: decoded.username,
             },
         });

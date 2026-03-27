@@ -7,7 +7,7 @@ export default function ServiceUnitPage() {
         <ReportTable
             apiPath="/api/service-unit"
             exportFilePrefix="service-unit"
-            dateKeys={["วันที่"]}
+            dateKeys={["วันที่รับบริการ"]}
             sheetName="ServiceUnit"
             columnFilterKeys={[
                 "หน่วยบริการ",

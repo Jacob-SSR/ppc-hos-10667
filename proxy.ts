@@ -37,5 +37,6 @@ export const config = {
         "/api/dashboard/:path*",
         "/api/service-unit/:path*",
         "/api/ppa/:path*",
+        "/api/ipd/:path*",
     ],
 };

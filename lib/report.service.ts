@@ -178,7 +178,7 @@ export async function getServiceUnitReport(
       pt.addrpart AS "บ้านเลขที่",
       pt.moopart AS "หมู่",
       t.full_name AS "ที่อยู่",
-      v.vstdate AS "วันที่",
+      v.vstdate AS "วันที่รับบริการ",
       pc.name AS "ชื่อสิทธิ์",
       h.name AS "ชื่อโรงพยาบาลหลัก",
       v.hospmain AS "รหัสโรงพยาบาลหลัก",

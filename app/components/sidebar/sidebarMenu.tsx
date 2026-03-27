@@ -9,7 +9,8 @@ import {
     Users,
     HeartPulse,
     Activity,
-    Baby
+    Baby,
+    BedDouble,
 } from "lucide-react";
 
 import { SidebarItem } from "./types";
@@ -24,7 +25,12 @@ export const DASHBOARD_ITEMS: SidebarItem[] = [
         label: "สถิติผู้รับบริการแยกเวร",
         href: "/pages/shift-stats",
         icon: BarChart3
-    }
+    },
+    {
+        label: "IPD — การจำหน่ายผู้ป่วยใน",
+        href: "/pages/ipd",
+        icon: BedDouble
+    },
 ];
 
 export const REPORT_ITEMS: SidebarItem[] = [
