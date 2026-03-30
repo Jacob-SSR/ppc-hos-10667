@@ -1,6 +1,7 @@
-// ─────────────────────────────────────────────────────────────
-//  Shared primitive / utility types
-// ─────────────────────────────────────────────────────────────
+import { RowDataPacket } from "mysql2/promise";
+
+export interface DbRow extends RowDataPacket { }
+
 export type ToastType = "success" | "error";
 
 export interface ToastProps {
@@ -19,9 +20,6 @@ export interface ExportOptions {
   dateKeys?: string[];
 }
 
-// ─────────────────────────────────────────────────────────────
-//  Report rows
-// ─────────────────────────────────────────────────────────────
 export interface ReportRow {
   vn: string;
   hn: string;
@@ -50,91 +48,10 @@ export interface NoEndpointRow {
   ชื่อสิทธิ์: string;
 }
 
-export interface UcOutsideDentalRow {
-  วันที่: string;
-  vn: string;
+export interface IpdDischargeRow extends DbRow {
+  dchtype_name: string | null;
   hn: string;
-  การวินิจฉัย: string;
-  รหัสที่อยู่: string;
-  รหัสสิทธิ์: string;
-  ชื่อสิทธิ์: string;
-  รหัสโรงพยาบาลหลัก: string;
-  ชื่อโรงพยาบาลหลัก: string;
-  มูลค่า: number;
-  เงินที่จ่าย: number;
-  รวมอื่นๆ: number;
-  รวมทั้งหมด: number;
-  ส่วนต่าง: number;
-  อาการสำคัญ: string;
-  แผนก: string;
-}
-
-export interface UcOutsideRow {
-  vn: string;
-  hn: string;
-  วันที่: string;
-  เวลา: string;
-  แผนก: string;
-  คำนำหน้า: string;
-  ชื่อ: string;
-  นามสกุล: string;
-  เบอร์โทร: string;
-  อายุ: number;
-  เพศ: string;
-  รหัสโรงพยาบาลหลัก: string;
-  ชื่อโรงพยาบาลหลัก: string;
-  จังหวัด: string;
-  รหัสสิทธิ์: string;
-  ชื่อสิทธิ์: string;
-  มูลค่า: number;
-  รหัสสิทธิ์หลัก: string;
-}
-
-export interface ServiceUnitRow {
-  "ชื่อ-นามสกุล": string;
-  hn: string;
-  cid: string;
-  เบอร์โทร: string;
-  เบอร์ผู้แจ้ง: string;
-  บ้านเลขที่: string;
-  หมู่: string;
-  ที่อยู่: string;
-  วันที่: string;
-  ชื่อสิทธิ์: string;
-  ชื่อโรงพยาบาลหลัก: string;
-  รหัสโรงพยาบาลหลัก: string;
-  รหัสสิทธิ์: string;
-  หน่วยบริการ: string;
-}
-
-// ─────────────────────────────────────────────────────────────
-//  Dashboard
-// ─────────────────────────────────────────────────────────────
-export interface DashboardSummary {
-  totalVisit: number;
-  noEndpoint: number;
-  ucOutside: number;
-  unpaidTotal: number;
-}
-
-export interface DashboardDaily {
-  date: string;
-  total: number;
-  noEndpoint?: number;
-}
-
-export interface DashboardData {
-  summary: DashboardSummary;
-  daily: DashboardDaily[];
-}
-
-// ─────────────────────────────────────────────────────────────
-//  IPD
-// ─────────────────────────────────────────────────────────────
-export interface IpdDischargeRow {
-  dchtype_name: string;
-  hn: string;
-  cid: string;
+  cid: string | null;
   an: string;
   pname: string;
   fname: string;
@@ -144,7 +61,7 @@ export interface IpdDischargeRow {
   dchdate: string;
   dchtime: string;
   ward_code: string;
-  doctor_name: string;
+  doctor_name: string | null;
   admdate: string;
   pdx: string;
   pttype_name: string;
@@ -152,7 +69,7 @@ export interface IpdDischargeRow {
   address: string;
 }
 
-export interface IpdWardStat {
+export interface IpdWardStat extends DbRow {
   ward_code: string;
   total: number;
   unique_patients: number;
@@ -162,12 +79,12 @@ export interface IpdWardStat {
   admit_total: number;
 }
 
-export interface IpdPttypeRow {
+export interface IpdPttypeRow extends DbRow {
   pttype_name: string;
   total: number;
 }
 
-export interface IpdDchtypeRow {
+export interface IpdDchtypeRow extends DbRow {
   dchtype_name: string;
   total: number;
 }
@@ -183,9 +100,6 @@ export interface IpdSummaryData {
   byDchtype: IpdDchtypeRow[];
 }
 
-// ─────────────────────────────────────────────────────────────
-//  Shift stats
-// ─────────────────────────────────────────────────────────────
 export interface ShiftSlotStat {
   shiftName: string;
   slotLabel: string;
@@ -205,9 +119,6 @@ export interface ShiftStatsResult {
   summary: ShiftSummary[];
 }
 
-// ─────────────────────────────────────────────────────────────
-//  Monthly dashboard
-// ─────────────────────────────────────────────────────────────
 export interface MonthlyDashboardRow {
   month: string;
   label: string;
@@ -222,9 +133,6 @@ export interface MonthlyDashboardRow {
   ucOutsideChange: number | null;
 }
 
-// ─────────────────────────────────────────────────────────────
-//  Component props
-// ─────────────────────────────────────────────────────────────
 export interface ReportTableProps {
   apiPath: string;
   exportFilePrefix: string;

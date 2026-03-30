@@ -1,7 +1,8 @@
 import { db } from "@/lib/db";
 import { IpdDischargeRow, IpdWardStat, IpdPttypeRow, IpdDchtypeRow, IpdSummaryData } from "@/types/allTypes";
+import { RowDataPacket } from "mysql2";
 
-interface IpdSummaryRow {
+interface IpdSummaryRow extends RowDataPacket {
     total: number;
     unique_patients: number;
     avg_los: number;

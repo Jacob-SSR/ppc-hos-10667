@@ -1,5 +1,6 @@
 import { db } from "@/lib/db";
 import { ShiftSlotStat, ShiftSummary, ShiftStatsResult } from "@/types/allTypes";
+import { RowDataPacket } from "mysql2";
 
 export interface ShiftSlot {
     label: string;
@@ -43,7 +44,7 @@ const SHIFTS: ShiftGroup[] = [
     },
 ];
 
-interface SlotQueryRow {
+interface SlotQueryRow extends RowDataPacket {
     visits: string | number;
     patients: string | number;
 }

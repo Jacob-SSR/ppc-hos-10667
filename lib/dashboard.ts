@@ -1,8 +1,8 @@
 import { db } from "@/lib/db";
 import { MonthlyDashboardRow } from "@/types/allTypes";
+import { RowDataPacket } from "mysql2";
 
-// ── Types returned by DB queries ──────────────────────────────────────────────
-interface SummaryQueryRow {
+interface SummaryQueryRow extends RowDataPacket {
     totalVisit: string | number;
     totalPatient: string | number;
     noEndpoint: string | number;
@@ -11,25 +11,25 @@ interface SummaryQueryRow {
     unpaidTotal: string | number;
 }
 
-interface DailyVisitRow {
+interface DailyVisitRow extends RowDataPacket {
     date: Date | string;
     totalVisit: string | number;
     totalPatient: string | number;
 }
 
-interface DailyCountRow {
+interface DailyCountRow extends RowDataPacket {
     date: Date | string;
     count: string | number;
 }
 
-interface PpaSummaryRow {
+interface PpaSummaryRow extends RowDataPacket {
     ppaAging: string | number;
     ppaNcd: string | number;
     ppaMch01: string | number;
     ppaMch02: string | number;
 }
 
-interface LatestNoEndpointRow {
+interface LatestNoEndpointRow extends RowDataPacket {
     date: Date | string;
     time: string;
     name: string;
@@ -38,7 +38,7 @@ interface LatestNoEndpointRow {
     income: string | number;
 }
 
-interface LatestUcOutsideRow {
+interface LatestUcOutsideRow extends RowDataPacket {
     date: Date | string;
     name: string;
     hospName: string;
@@ -46,7 +46,14 @@ interface LatestUcOutsideRow {
     income: string | number;
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
+interface MonthlyQueryRow extends RowDataPacket {
+    month: string;
+    totalVisit: string | number;
+    totalPatient: string | number;
+    noEndpoint: string | number;
+    ucOutside: string | number;
+    unpaidTotal: string | number;
+}
 
 export async function getDashboardData(start: string, end: string) {
     const [[summary]] = await db.query<SummaryQueryRow[]>(
@@ -268,7 +275,6 @@ export async function getDashboardData(start: string, end: string) {
     };
 }
 
-// ── Monthly Dashboard ─────────────────────────────────────────────────────────
 const THAI_MONTHS_SHORT = [
     "", "ม.ค.", "ก.พ.", "มี.ค.", "เม.ย.", "พ.ค.", "มิ.ย.",
     "ก.ค.", "ส.ค.", "ก.ย.", "ต.ค.", "พ.ย.", "ธ.ค.",
