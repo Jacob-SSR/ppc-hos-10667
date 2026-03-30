@@ -44,28 +44,49 @@ export async function getIpdDischarge(start: string, end: string) {
 }
 
 export async function getIpdSummary(start: string, end: string) {
-    // Summary: total + per ward (discharge + admit)
+    // Summary: per ward — admit vs discharge แยกกันชัดเจน
     const [wardRows] = await db.query(
         `
         SELECT 
-            a.ward AS ward_code,
-            SUM(CASE WHEN ipt.dchdate BETWEEN ? AND ? THEN 1 ELSE 0 END) AS total,
-            COUNT(DISTINCT CASE WHEN ipt.dchdate BETWEEN ? AND ? THEN ipt.hn END) AS unique_patients,
-            ROUND(AVG(CASE WHEN ipt.dchdate BETWEEN ? AND ? THEN DATEDIFF(ipt.dchdate, ipt.regdate) END), 1) AS avg_los,
-            SUM(CASE WHEN ipt.dchdate BETWEEN ? AND ? AND ipt.dchtype = '1' THEN 1 ELSE 0 END) AS discharge_normal,
-            SUM(CASE WHEN ipt.dchdate BETWEEN ? AND ? AND ipt.dchtype != '1' THEN 1 ELSE 0 END) AS discharge_other,
-            SUM(CASE WHEN a.admdate BETWEEN ? AND ? THEN 1 ELSE 0 END) AS admit_total
-        FROM an_stat a
-        LEFT JOIN ipt ON ipt.an = a.an
-        WHERE a.ward IN ('14', '01', '15', '04')
-          AND (
-            ipt.dchdate BETWEEN ? AND ?
-            OR a.admdate BETWEEN ? AND ?
-          )
-        GROUP BY a.ward
-        ORDER BY admit_total DESC
+            w.ward_code,
+            COALESCE(d.total, 0)           AS total,
+            COALESCE(d.unique_patients, 0) AS unique_patients,
+            COALESCE(d.avg_los, 0)         AS avg_los,
+            COALESCE(d.discharge_normal, 0) AS discharge_normal,
+            COALESCE(d.discharge_other, 0)  AS discharge_other,
+            COALESCE(a.admit_total, 0)     AS admit_total
+        FROM (
+            SELECT '01' AS ward_code UNION ALL
+            SELECT '04' UNION ALL
+            SELECT '14' UNION ALL
+            SELECT '15'
+        ) w
+        LEFT JOIN (
+            SELECT 
+                a.ward                          AS ward_code,
+                COUNT(*)                        AS total,
+                COUNT(DISTINCT ipt.hn)          AS unique_patients,
+                ROUND(AVG(DATEDIFF(ipt.dchdate, ipt.regdate)), 1) AS avg_los,
+                SUM(ipt.dchtype = '1')          AS discharge_normal,
+                SUM(ipt.dchtype != '1')         AS discharge_other
+            FROM ipt
+            INNER JOIN an_stat a ON a.an = ipt.an
+            WHERE ipt.dchdate BETWEEN ? AND ?
+              AND a.ward IN ('01','04','14','15')
+            GROUP BY a.ward
+        ) d ON d.ward_code = w.ward_code
+        LEFT JOIN (
+            SELECT 
+                ward                AS ward_code,
+                COUNT(*)            AS admit_total
+            FROM an_stat
+            WHERE regdate BETWEEN ? AND ?
+              AND ward IN ('01','04','14','15')
+            GROUP BY ward
+        ) a ON a.ward_code = w.ward_code
+        ORDER BY COALESCE(a.admit_total, 0) DESC
         `,
-        [start, end, start, end, start, end, start, end, start, end, start, end, start, end, start, end]
+        [start, end, start, end]
     );
 
     // Total summary
