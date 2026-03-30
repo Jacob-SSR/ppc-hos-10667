@@ -1,8 +1,9 @@
 import { db } from "@/lib/db";
+import { ShiftSlotStat, ShiftSummary, ShiftStatsResult } from "@/types/allTypes";
 
 export interface ShiftSlot {
     label: string;
-    timeStart: string; // "HH:MM:SS"
+    timeStart: string;
     timeEnd: string;
     crossMidnight: boolean;
 }
@@ -11,11 +12,6 @@ export interface ShiftGroup {
     shiftName: string;
     slots: ShiftSlot[];
 }
-
-// ── ช่วงเวลาตาม requirement ────────────────────────────────────────────────────
-// เวรเช้า  08:30:00 – 16:30:59
-// เวรบ่าย  16:31:00 – 00:30:59  (ข้ามเที่ยงคืน)
-// เวรดึก   00:31:00 – 08:29:59
 
 const SHIFTS: ShiftGroup[] = [
     {
@@ -47,48 +43,29 @@ const SHIFTS: ShiftGroup[] = [
     },
 ];
 
-export interface SlotStat {
-    shiftName: string;
-    slotLabel: string;
-    visits: number;   // นับ VN
-    patients: number; // นับ HN unique
+interface SlotQueryRow {
+    visits: string | number;
+    patients: string | number;
 }
 
-export interface ShiftSummary {
-    shiftName: string;
-    totalVisits: number;
-    totalPatients: number;
-}
-
-export interface ShiftStatsResult {
-    month: string; // "YYYY-MM"
-    slots: SlotStat[];
-    summary: ShiftSummary[];
-}
-
-// ── Helper: สร้าง SQL WHERE สำหรับ 1 slot ────────────────────────────────────
 function buildTimeCondition(slot: ShiftSlot): string {
-    if (slot.crossMidnight) {
-        // เวรบ่าย slot สุดท้าย: 22:31 – 00:30 → 22:31–23:59:59 เท่านั้น (00:00–00:30 อยู่วันถัดไป)
-        return `o.vsttime BETWEEN '${slot.timeStart}' AND '${slot.timeEnd}'`;
-    }
     return `o.vsttime BETWEEN '${slot.timeStart}' AND '${slot.timeEnd}'`;
 }
 
 export async function getShiftStats(start: string, end: string): Promise<ShiftStatsResult> {
-    const slots: SlotStat[] = [];
+    const slots: ShiftSlotStat[] = [];
 
     for (const group of SHIFTS) {
         for (const slot of group.slots) {
             const sql = `
-                SELECT
-                    COUNT(o.vn)        AS visits,
-                    COUNT(DISTINCT o.hn) AS patients
-                FROM ovst o
-                WHERE o.vstdate BETWEEN ? AND ?
-                  AND ${buildTimeCondition(slot)}
-            `;
-            const [[row]]: any = await db.query(sql, [start, end]);
+        SELECT
+            COUNT(o.vn)          AS visits,
+            COUNT(DISTINCT o.hn) AS patients
+        FROM ovst o
+        WHERE o.vstdate BETWEEN ? AND ?
+          AND ${buildTimeCondition(slot)}
+      `;
+            const [[row]] = await db.query<SlotQueryRow[]>(sql, [start, end]);
 
             slots.push({
                 shiftName: group.shiftName,
@@ -99,7 +76,6 @@ export async function getShiftStats(start: string, end: string): Promise<ShiftSt
         }
     }
 
-    // Summary per shift
     const summary: ShiftSummary[] = SHIFTS.map((group) => {
         const groupSlots = slots.filter((s) => s.shiftName === group.shiftName);
         return {
@@ -109,7 +85,6 @@ export async function getShiftStats(start: string, end: string): Promise<ShiftSt
         };
     });
 
-    // Overall summary
     summary.push({
         shiftName: "รวมทั้งหมด",
         totalVisits: summary.reduce((a, b) => a + b.totalVisits, 0),

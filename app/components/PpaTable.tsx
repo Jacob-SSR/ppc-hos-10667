@@ -27,7 +27,7 @@ export default function PpaTable({
     sheetName = "Report",
     dateRangeLabel,
 }: PpaTableProps) {
-    const [data, setData] = useState<any[]>([]);
+    const [data, setData] = useState<Record<string, unknown>[]>([]);
     const [loading, setLoading] = useState(true);
     const [search, setSearch] = useState("");
     const [sortKey, setSortKey] = useState<string | null>(null);
@@ -39,8 +39,8 @@ export default function PpaTable({
             try {
                 const res = await fetch(apiPath, { credentials: "include" });
                 if (!res.ok) throw new Error(`HTTP ${res.status}`);
-                const json = await res.json();
-                setData(Array.isArray(json) ? json : []);
+                const json: unknown = await res.json();
+                setData(Array.isArray(json) ? (json as Record<string, unknown>[]) : []);
             } catch {
                 toast.error("โหลดข้อมูลไม่สำเร็จ");
             } finally {
@@ -50,12 +50,13 @@ export default function PpaTable({
     }, [apiPath]);
 
     const searched = useMemo(
-        () => data.filter((row) =>
-            Object.values(row).some((val) =>
-                String(val).toLowerCase().includes(search.toLowerCase())
-            )
-        ),
-        [data, search]
+        () =>
+            data.filter((row) =>
+                Object.values(row).some((val) =>
+                    String(val).toLowerCase().includes(search.toLowerCase()),
+                ),
+            ),
+        [data, search],
     );
 
     const sorted = useMemo(() => {
@@ -63,7 +64,7 @@ export default function PpaTable({
         return [...searched].sort((a, b) =>
             sortAsc
                 ? String(a[sortKey]).localeCompare(String(b[sortKey]), "th")
-                : String(b[sortKey]).localeCompare(String(a[sortKey]), "th")
+                : String(b[sortKey]).localeCompare(String(a[sortKey]), "th"),
         );
     }, [searched, sortKey, sortAsc]);
 
@@ -146,10 +147,7 @@ export default function PpaTable({
                     {/* Loading */}
                     {loading && (
                         <motion.div key="loading" variants={fadeSlide} initial="hidden" animate="visible" exit="exit">
-                            {/* Loading bar วิ่ง */}
                             <LoadingBar />
-
-                            {/* Label */}
                             <motion.div
                                 className="flex items-center gap-2 mb-4 text-sm font-medium text-gray-500"
                                 initial={{ opacity: 0 }}
@@ -162,8 +160,6 @@ export default function PpaTable({
                                 />
                                 กำลังโหลดข้อมูล...
                             </motion.div>
-
-                            {/* Skeleton table */}
                             <div className="overflow-hidden border border-gray-200 rounded-xl">
                                 <table className="min-w-full text-sm border-collapse">
                                     <thead>
@@ -206,7 +202,6 @@ export default function PpaTable({
                     {/* Table */}
                     {!loading && sorted.length > 0 && (
                         <motion.div key="table" variants={fadeSlide} initial="hidden" animate="visible" exit="exit">
-
                             <motion.div
                                 className="mb-4 text-sm font-semibold text-gray-600 flex items-center gap-2"
                                 initial={{ opacity: 0, x: -10 }}
@@ -263,12 +258,12 @@ export default function PpaTable({
                                         </tr>
                                     </thead>
                                     <tbody>
-                                        {paginated.map((row: any, i: number) => (
+                                        {paginated.map((row, i) => (
                                             <tr
                                                 key={i}
                                                 className={`border-b border-gray-200 transition-colors duration-100 hover:bg-green-50/70 ${i % 2 === 0 ? "bg-white" : "bg-gray-50"}`}
                                             >
-                                                {Object.entries(row).map(([key, val]: any, idx: number) => (
+                                                {Object.entries(row).map(([key, val], idx) => (
                                                     <td key={idx} className="px-4 py-2.5 text-sm whitespace-nowrap border-r border-gray-100 text-gray-800">
                                                         <div className="flex items-center justify-between gap-2 group">
                                                             <span>
@@ -333,7 +328,6 @@ export default function PpaTable({
                                     </motion.button>
                                 </div>
                             </motion.div>
-
                         </motion.div>
                     )}
                 </AnimatePresence>

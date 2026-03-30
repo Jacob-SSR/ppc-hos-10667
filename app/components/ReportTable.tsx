@@ -4,7 +4,7 @@ import DatePicker from "react-datepicker";
 import { th } from "date-fns/locale";
 import "react-datepicker/dist/react-datepicker.css";
 import { AnimatePresence, motion } from "framer-motion";
-import { FiChevronDown, FiChevronUp, FiCopy, FiX } from "react-icons/fi";
+import { FiChevronDown, FiChevronUp, FiCopy } from "react-icons/fi";
 import { LuFilterX } from "react-icons/lu";
 import toast, { Toaster } from "react-hot-toast";
 import { ReportTableProps } from "@/types/allTypes";
@@ -50,7 +50,6 @@ export default function ReportTable({
         exportToExcel(sortedData, { filePrefix: exportFilePrefix, sheetName, dateKeys });
     };
 
-    // label สวยๆ ถ้าไม่ได้ระบุ ก็ใช้ key เดิม
     const getLabel = (key: string) => columnFilterLabels[key] ?? key;
 
     return (
@@ -68,15 +67,14 @@ export default function ReportTable({
                 }}
             />
 
-            {/* ── FILTER BAR ──────────────────────────────────────── */}
+            {/* ── FILTER BAR ── */}
             <motion.div
                 variants={cardVariants}
                 className="bg-white border border-gray-200 rounded-2xl shadow-md px-6 py-5"
                 style={{ boxShadow: "0 4px 24px 0 rgba(22,101,52,0.07)" }}
             >
-                {/* Row 1: date pickers + search + buttons */}
+                {/* Row 1 */}
                 <div className="flex flex-wrap items-end gap-5">
-                    {/* วันที่เริ่ม */}
                     <motion.div custom={0} variants={filterItemVariants}>
                         <label className="block text-xs font-bold uppercase tracking-widest text-gray-400 mb-2">
                             วันที่เริ่ม
@@ -93,7 +91,6 @@ export default function ReportTable({
                         />
                     </motion.div>
 
-                    {/* วันที่สิ้นสุด */}
                     <motion.div custom={1} variants={filterItemVariants}>
                         <label className="block text-xs font-bold uppercase tracking-widest text-gray-400 mb-2">
                             วันที่สิ้นสุด
@@ -110,7 +107,6 @@ export default function ReportTable({
                         />
                     </motion.div>
 
-                    {/* ค้นหา */}
                     <motion.div custom={2} variants={filterItemVariants}>
                         <label className="block text-xs font-bold uppercase tracking-widest text-gray-400 mb-2">
                             ค้นหา
@@ -124,9 +120,7 @@ export default function ReportTable({
                         />
                     </motion.div>
 
-                    {/* Buttons */}
                     <motion.div custom={3} variants={filterItemVariants} className="flex gap-3 ml-auto items-end">
-                        {/* Search */}
                         <motion.button
                             onClick={fetchData}
                             disabled={loading}
@@ -155,7 +149,6 @@ export default function ReportTable({
                             </span>
                         </motion.button>
 
-                        {/* Export */}
                         <AnimatePresence>
                             {data.length > 0 && (
                                 <motion.button
@@ -168,12 +161,6 @@ export default function ReportTable({
                                     whileHover={{ scale: 1.04, boxShadow: "0 8px 28px rgba(5,150,105,0.35)" }}
                                     whileTap={{ scale: 0.95 }}
                                 >
-                                    <motion.span
-                                        className="absolute inset-0 bg-white/10 rounded-xl"
-                                        initial={{ scale: 0, opacity: 0 }}
-                                        whileHover={{ scale: 2.5, opacity: 1 }}
-                                        transition={{ duration: 0.4 }}
-                                    />
                                     <span className="relative">Export Excel</span>
                                 </motion.button>
                             )}
@@ -181,7 +168,7 @@ export default function ReportTable({
                     </motion.div>
                 </div>
 
-                {/* Row 2: Column filter dropdowns (แสดงหลัง fetch มีข้อมูลแล้ว) */}
+                {/* Row 2: Column filter dropdowns */}
                 <AnimatePresence>
                     {data.length > 0 && columnFilterKeys.length > 0 && (
                         <motion.div
@@ -192,8 +179,6 @@ export default function ReportTable({
                             className="overflow-hidden"
                         >
                             <div className="border-t border-gray-100 pt-4 flex flex-wrap items-end gap-4">
-
-                                {/* label */}
                                 <div className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-widest text-gray-400 mb-1 self-center">
                                     <FiChevronDown size={13} />
                                     กรองข้อมูล
@@ -218,7 +203,7 @@ export default function ReportTable({
                                                     value={columnFilters[key] ?? ""}
                                                     onChange={(e) => setColumnFilter(key, e.target.value)}
                                                     className={`appearance-none pr-7 pl-3 py-2 rounded-lg border-2 text-sm font-medium cursor-pointer focus:outline-none focus:ring-2 focus:ring-green-500 transition-all duration-150
-                                                        ${active
+                            ${active
                                                             ? "border-green-600 bg-green-50 text-green-800"
                                                             : "border-gray-200 bg-white text-gray-700 hover:border-gray-300"
                                                         }`}
@@ -229,11 +214,9 @@ export default function ReportTable({
                                                         <option key={opt} value={opt}>{opt}</option>
                                                     ))}
                                                 </select>
-                                                {/* chevron icon */}
                                                 <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-gray-400">
                                                     <FiChevronDown size={13} />
                                                 </span>
-                                                {/* active dot */}
                                                 {active && (
                                                     <motion.span
                                                         layoutId={`dot-${key}`}
@@ -247,7 +230,6 @@ export default function ReportTable({
                                     );
                                 })}
 
-                                {/* Clear all filters */}
                                 <AnimatePresence>
                                     {activeFilterCount > 0 && (
                                         <motion.button
@@ -264,14 +246,13 @@ export default function ReportTable({
                                         </motion.button>
                                     )}
                                 </AnimatePresence>
-
                             </div>
                         </motion.div>
                     )}
                 </AnimatePresence>
             </motion.div>
 
-            {/* ── TABLE CARD ──────────────────────────────────────── */}
+            {/* ── TABLE CARD ── */}
             <motion.div
                 variants={cardVariants}
                 className="bg-white border border-gray-200 rounded-2xl shadow-md px-6 py-6"
@@ -316,7 +297,7 @@ export default function ReportTable({
                         </motion.div>
                     )}
 
-                    {/* Empty — ยังไม่ fetch */}
+                    {/* Empty */}
                     {!loading && data.length === 0 && (
                         <motion.div
                             key="empty" variants={fadeSlide} initial="hidden" animate="visible" exit="exit"
@@ -343,10 +324,7 @@ export default function ReportTable({
                         >
                             <div className="w-16 h-16 rounded-2xl bg-amber-50 flex items-center justify-center text-3xl">🔍</div>
                             <p className="text-gray-500 font-medium text-sm">ไม่พบข้อมูลที่ตรงกับ Filter ที่เลือก</p>
-                            <button
-                                onClick={clearAllFilters}
-                                className="text-sm text-green-700 underline font-semibold"
-                            >
+                            <button onClick={clearAllFilters} className="text-sm text-green-700 underline font-semibold">
                                 ล้าง Filter ทั้งหมด
                             </button>
                         </motion.div>
@@ -355,8 +333,6 @@ export default function ReportTable({
                     {/* Table */}
                     {!loading && sortedData.length > 0 && (
                         <motion.div key="table" variants={fadeSlide} initial="hidden" animate="visible" exit="exit">
-
-                            {/* Result count */}
                             <motion.div
                                 className="mb-4 text-sm font-semibold text-gray-600 flex items-center gap-2 flex-wrap"
                                 initial={{ opacity: 0, x: -10 }}
@@ -375,7 +351,6 @@ export default function ReportTable({
                                 )}
                             </motion.div>
 
-                            {/* Table — animate ทั้งก้อนครั้งเดียว ไม่ใช่ทีละ row */}
                             <motion.div
                                 key={sortedData.length + String(Object.values(columnFilters).join())}
                                 className="overflow-auto max-h-[520px] border border-gray-200 rounded-xl"
@@ -417,16 +392,16 @@ export default function ReportTable({
                                     </thead>
 
                                     <tbody>
-                                        {paginatedData.map((row: any, i: number) => (
+                                        {paginatedData.map((row, i) => (
                                             <tr
                                                 key={i}
                                                 className={`border-b border-gray-200 transition-colors duration-100 hover:bg-green-50/70 ${i % 2 === 0 ? "bg-white" : "bg-gray-50"}`}
                                             >
-                                                {Object.entries(row).map(([key, val]: any, idx: number) => (
+                                                {Object.entries(row).map(([key, val], idx) => (
                                                     <td
                                                         key={idx}
                                                         className={`px-4 py-2.5 text-sm whitespace-nowrap border-r border-gray-100 text-gray-800
-                                                            ${columnFilters[key] ? "bg-green-50/60" : ""}`}
+                              ${columnFilters[key] ? "bg-green-50/60" : ""}`}
                                                     >
                                                         <div className="flex items-center justify-between gap-2 group">
                                                             <span>
@@ -475,7 +450,6 @@ export default function ReportTable({
                                     >
                                         ← ก่อนหน้า
                                     </motion.button>
-
                                     <motion.span
                                         key={page}
                                         initial={{ scale: 0.7, opacity: 0 }}
@@ -485,7 +459,6 @@ export default function ReportTable({
                                     >
                                         {page}
                                     </motion.span>
-
                                     <motion.button
                                         onClick={() => setPage((p) => Math.min(p + 1, totalPages))}
                                         disabled={page === totalPages}
@@ -496,7 +469,6 @@ export default function ReportTable({
                                     </motion.button>
                                 </div>
                             </motion.div>
-
                         </motion.div>
                     )}
                 </AnimatePresence>

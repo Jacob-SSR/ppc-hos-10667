@@ -5,7 +5,9 @@ import toast from "react-hot-toast";
 
 const PAGE_SIZE = 50;
 
-export function useReportTable<T = any>({ apiPath, columnFilterKeys = [] }: UseReportTableOptions) {
+export function useReportTable<T extends Record<string, unknown> = Record<string, unknown>>(
+    { apiPath, columnFilterKeys = [] }: UseReportTableOptions,
+) {
     const [data, setData] = useState<T[]>([]);
     const [loading, setLoading] = useState(false);
     const [start, setStart] = useState<Date | null>(new Date(2026, 0, 1));
@@ -22,11 +24,11 @@ export function useReportTable<T = any>({ apiPath, columnFilterKeys = [] }: UseR
         setLoading(true);
         try {
             const res = await fetch(
-                `${apiPath}?start=${formatDate(start)}&end=${formatDate(end)}`
+                `${apiPath}?start=${formatDate(start)}&end=${formatDate(end)}`,
             );
             if (!res.ok) throw new Error(`HTTP ${res.status}`);
-            const json = await res.json();
-            setData(Array.isArray(json) ? json : []);
+            const json: unknown = await res.json();
+            setData(Array.isArray(json) ? (json as T[]) : []);
             setPage(1);
             setColumnFiltersState({});
             toast.success("โหลดข้อมูลสำเร็จ");
@@ -37,36 +39,34 @@ export function useReportTable<T = any>({ apiPath, columnFilterKeys = [] }: UseR
         }
     };
 
-    // ── Unique options for each specified filter key ────────────────────────────
+    // ── Unique options for each specified filter key ──────────────────────────
     const columnFilterOptions = useMemo(() => {
         if (!data.length || !columnFilterKeys.length) return {} as Record<string, string[]>;
         const result: Record<string, string[]> = {};
         for (const key of columnFilterKeys) {
             result[key] = Array.from(
-                new Set((data as any[]).map((row) => String(row[key] ?? "")))
+                new Set(data.map((row) => String(row[key] ?? ""))),
             )
                 .filter(Boolean)
                 .sort((a, b) => {
                     const aNum = Number(a);
                     const bNum = Number(b);
-                    // ถ้าทั้งคู่เป็นตัวเลขล้วน → เรียงแบบตัวเลข
                     if (!isNaN(aNum) && !isNaN(bNum)) return aNum - bNum;
-                    // ไม่งั้น → เรียงแบบข้อความภาษาไทย
                     return a.localeCompare(b, "th");
                 });
         }
         return result;
-    }, [data, columnFilterKeys.join(",")]);
+    }, [data, columnFilterKeys.join(",")]); // eslint-disable-line react-hooks/exhaustive-deps
 
     // ── Global search ──────────────────────────────────────────────────────────
     const searchFiltered = useMemo(
         () =>
             data.filter((row) =>
-                Object.values(row as any).some((val) =>
-                    String(val).toLowerCase().includes(search.toLowerCase())
-                )
+                Object.values(row).some((val) =>
+                    String(val).toLowerCase().includes(search.toLowerCase()),
+                ),
             ),
-        [data, search]
+        [data, search],
     );
 
     // ── Column filters ─────────────────────────────────────────────────────────
@@ -74,19 +74,19 @@ export function useReportTable<T = any>({ apiPath, columnFilterKeys = [] }: UseR
         () =>
             searchFiltered.filter((row) =>
                 Object.entries(columnFilters).every(([key, val]) =>
-                    !val ? true : String((row as any)[key] ?? "") === val
-                )
+                    !val ? true : String(row[key] ?? "") === val,
+                ),
             ),
-        [searchFiltered, columnFilters]
+        [searchFiltered, columnFilters],
     );
 
     // ── Sort ───────────────────────────────────────────────────────────────────
     const sortedData = useMemo(() => {
         if (!sortKey) return filteredData;
-        return [...filteredData].sort((a: any, b: any) =>
+        return [...filteredData].sort((a, b) =>
             sortAsc
                 ? String(a[sortKey]).localeCompare(String(b[sortKey]), "th")
-                : String(b[sortKey]).localeCompare(String(a[sortKey]), "th")
+                : String(b[sortKey]).localeCompare(String(a[sortKey]), "th"),
         );
     }, [filteredData, sortKey, sortAsc]);
 
