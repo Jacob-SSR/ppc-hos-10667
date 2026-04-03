@@ -179,7 +179,7 @@ export async function getServiceUnitReport(
       pt.moopart AS "หมู่",
       t.full_name AS "ที่อยู่",
       v.vstdate AS "วันที่รับบริการ",
-      pc.name AS "ชื่อสิทธิ์",
+      p.name AS "ชื่อสิทธิ์",
       h.name AS "ชื่อโรงพยาบาลหลัก",
       v.hospmain AS "รหัสโรงพยาบาลหลัก",
       v.pttype AS "รหัสสิทธิ์",

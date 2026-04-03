@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import jwt from "jsonwebtoken";
 import bcrypt from "bcrypt";
 import md5 from "md5";
-import { db } from "@/lib/db";
+import { db2 } from "@/lib/db";
 
 export async function POST(req: Request) {
     const body = await req.json();
@@ -14,7 +14,7 @@ export async function POST(req: Request) {
         return NextResponse.json({ message: "Invalid" }, { status: 400 });
     }
 
-    const [rows]: any = await db.query(
+    const [rows]: any = await db2.query(
         "SELECT `user`, passweb FROM ppchos.users WHERE `user` = ? LIMIT 1",
         [username]
     );
@@ -34,7 +34,7 @@ export async function POST(req: Request) {
 
         if (isValid) {
             const newHash = await bcrypt.hash(password, 12);
-            await db.query(
+            await db2.query(
                 "UPDATE ppchos.users SET passweb = ? WHERE `user` = ?",
                 [newHash, username]
             );

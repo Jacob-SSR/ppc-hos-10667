@@ -16,3 +16,12 @@ export const db = mysql.createPool({
     database: process.env.DB_NAME,
     charset: "tis620",
 });
+
+export const db2 = mysql.createPool({
+    host: process.env.DB_HOST2,
+    port: Number(process.env.DB_PORT),
+    user: process.env.DB_USER,
+    password: process.env.DB_PASS,
+    database: process.env.DB_NAME,
+    charset: "tis620",
+});
