@@ -66,7 +66,7 @@ export async function appendRowsWithDedup(
   const dataHeaders = Object.keys(rawRows[0]);
   // ตรวจว่า Sheet มี header อยู่แล้วหรือยัง
   const isFirstWrite = existingKeys.size === 0;
-  const fullHeaders = [...dataHeaders, "สถานะ", "sync_date"];
+  const fullHeaders = [...dataHeaders, "สถานะ"];
 
   // ── 3. เปรียบเทียบและ mark ──
   let duplicates = 0;
@@ -74,7 +74,6 @@ export async function appendRowsWithDedup(
 
   const dataRows = rawRows.map((row) => {
     const cid = String(row["cid"] ?? "").trim();
-    // ชื่อ-นามสกุล มาจาก concat ใน query → ดึงจาก key "ชื่อ-นามสกุล"
     const name = String(row["ชื่อ-นามสกุล"] ?? "").trim();
     const key = `${cid}||${name}`;
 
@@ -83,19 +82,12 @@ export async function appendRowsWithDedup(
       duplicates++;
     } else {
       newRows++;
-      // เพิ่ม key ใหม่เพื่อป้องกัน dup ภายใน batch เดียวกัน
       existingKeys.add(key);
     }
 
     const status = isDuplicate ? "ซ้ำ" : "ใหม่";
-    const syncDate = new Date().toLocaleDateString("th-TH", {
-      timeZone: "Asia/Bangkok",
-      day: "2-digit",
-      month: "2-digit",
-      year: "numeric",
-    });
 
-    return [...dataHeaders.map((h) => String(row[h] ?? "")), status, syncDate];
+    return [...dataHeaders.map((h) => String(row[h] ?? "")), status];
   });
 
   // ── 4. สร้าง separator row ──
