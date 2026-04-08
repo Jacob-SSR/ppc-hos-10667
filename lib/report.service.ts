@@ -190,9 +190,9 @@ export async function getServiceUnitReport(
         WHEN v.aid = "311501" AND pt.moopart IN ("4","04","8","08","11","13","15","17")
           THEN "รพสตโคกเจริญ"
 
-        WHEN v.aid = "311502" AND pt.moopart NOT IN ("01","1","2","02","4","04","5","05","9","09","12","13")
-          THEN "รพสตตาพระ"
         WHEN v.aid = "311502" AND pt.moopart IN ("01","1","2","02","4","04","5","05","9","09","12","13")
+          THEN "รพสตตาพระ"
+        WHEN v.aid = "311502" AND pt.moopart NOT IN ("01","1","2","02","4","04","5","05","9","09","12","13")
           THEN "รพสตโคกขมิ้น"
 
         WHEN v.aid = "311503"
