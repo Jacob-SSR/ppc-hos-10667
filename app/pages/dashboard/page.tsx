@@ -1,38 +1,62 @@
 "use client";
 
-import SectionCard from "@/app/components/dashboard/SectionCard";
-import ReportChart from "@/app/components/dashboard/ReportChart";
-import Card from "@/app/components/dashboard/Card";
+import { useEffect, useState } from "react";
+import OpdSection from "@/app/components/dashboard/OpdSection";
+import IpdSection from "@/app/components/dashboard/IpdSection";
+import AnnualChart from "@/app/components/dashboard/AnnualChart";
+import BedOccupancyChart from "@/app/components/dashboard/BedOccupancyChart";
+import HomeWardTable from "@/app/components/dashboard/HomeWardTable";
+import Top10Tables from "@/app/components/dashboard/Top10Tables";
+import PpaOverview from "@/app/components/dashboard/PpaOverview";
 
 export default function DashboardPage() {
+  const [dashData, setDashData] = useState<any>(null);
+  const [monthlyData, setMonthlyData] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+
+  const today = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Bangkok" }));
+  const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
+
+  useEffect(() => {
+    Promise.all([
+      fetch(`/api/dashboard?start=${todayStr}&end=${todayStr}`, { credentials: "include" }).then((r) => r.json()),
+      fetch(`/api/dashboard/monthly?months=6`, { credentials: "include" }).then((r) => r.json()),
+    ])
+      .then(([dash, monthly]) => {
+        setDashData(dash);
+        setMonthlyData(monthly);
+      })
+      .catch(console.error)
+      .finally(() => setLoading(false));
+  }, []);
+
   return (
-    <div>
+    <div className="space-y-4">
       {/* Header */}
-      <div className="border bg-white rounded-lg p-4">
-        <h1 className="text-xl font-bold text-[#717171]">
-          Dashboard โรงพยาบาลพลับพลาชัย
-        </h1>
+      <div className="bg-white border border-gray-200 rounded-xl p-4 shadow-sm">
+        <h1 className="text-lg font-bold text-gray-700">Dashboard โรงพยาบาลพลับพลาชัย</h1>
       </div>
 
-      {/* Sections */}
-      <SectionCard title="ภาพรวมผู้รับบริการ OPD วันนี้">
-        <Card />
-      </SectionCard>
+      {/* OPD */}
+      <OpdSection data={dashData} loading={loading} dateLabel={todayStr} />
 
-      <SectionCard title="ภาพรวมผู้รับบริการ IPD วันนี้">
-        <Card />
-      </SectionCard>
+      {/* IPD */}
+      <IpdSection loading={loading} dateLabel={todayStr} />
 
-      {/* Chart */}
-      <div className="border bg-white rounded-lg p-4 mt-4">
-        <ReportChart />
-      </div>
+      {/* Annual OPD/IPD Chart */}
+      <AnnualChart months={monthlyData?.months ?? []} loading={loading} />
 
-      <div className="border bg-white rounded-lg p-4 mt-4">
-        <SectionCard title="อัตราการครองเตียง ปีงบประมาณ 2569 (01-10-2568 ถึง 30-09-2569)">
-          <ReportChart />
-        </SectionCard>
-      </div>
+      {/* Bed Occupancy Chart */}
+      <BedOccupancyChart months={monthlyData?.months ?? []} loading={loading} />
+
+      {/* Home Ward Tables */}
+      <HomeWardTable start={todayStr} end={todayStr} />
+
+      {/* Top 10 OPD / IPD */}
+      <Top10Tables start={todayStr} end={todayStr} />
+
+      {/* PPA Overview */}
+      <PpaOverview />
     </div>
   );
 }

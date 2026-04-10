@@ -2,11 +2,11 @@ import { db } from "@/lib/db";
 import { ReportRow } from "@/types/allTypes";
 
 export async function getReport(
-    start: string,
-    end: string
+  start: string,
+  end: string,
 ): Promise<ReportRow[]> {
-    const [rows] = await db.query(
-        `
+  const [rows] = await db.query(
+    `
     select v.vn, v.hn, v.vstdate AS "วันที่",
     pt.pname AS "คำนำหน้า", pt.fname AS "ชื่อ", pt.lname AS "นามสกุล",
     v.age_y as "อายุ",
@@ -27,19 +27,15 @@ export async function getReport(
     AND p.hipdata_code IN ('UCS','WEL')
     order by v.vstdate asc;
     `,
-        [start, end]
-    );
+    [start, end],
+  );
 
-    return rows as ReportRow[];
+  return rows as ReportRow[];
 }
 
-
-export async function getNoEndpointReport(
-    start: string,
-    end: string
-) {
-    const [rows] = await db.query(
-        `
+export async function getNoEndpointReport(start: string, end: string) {
+  const [rows] = await db.query(
+    `
     SELECT 
       concat(day(o.vstdate),"/", month(o.vstdate),"/", year(o.vstdate)+543) AS "วันที่",
       o.vsttime AS "เวลา",
@@ -64,18 +60,15 @@ export async function getNoEndpointReport(
     AND o.vstdate < DATE_ADD(?, INTERVAL 1 DAY)
     ORDER BY o.vsttime ASC;
     `,
-        [start, end]
-    );
+    [start, end],
+  );
 
-    return rows;
+  return rows;
 }
 
-export async function getUcOutsideDentalReport(
-    start: string,
-    end: string
-) {
-    const [rows] = await db.query(
-        `
+export async function getUcOutsideDentalReport(start: string, end: string) {
+  const [rows] = await db.query(
+    `
     select 
       v.vstdate AS "วันที่",
       v.vn,
@@ -108,18 +101,15 @@ export async function getUcOutsideDentalReport(
       and v.pdx BETWEEN "K000" and "K149"
     order by v.vn;
     `,
-        [start, end]
-    );
+    [start, end],
+  );
 
-    return rows;
+  return rows;
 }
 
-export async function getUcOutsideReport(
-    start: string,
-    end: string
-) {
-    const [rows] = await db.query(
-        `
+export async function getUcOutsideReport(start: string, end: string) {
+  const [rows] = await db.query(
+    `
     SELECT 
         v.vn, 
         v.hn, 
@@ -157,18 +147,15 @@ export async function getUcOutsideReport(
       AND p.hipdata_code IN ('UCS','WEL')
     ORDER BY v.vstdate DESC;
     `,
-        [start, end]
-    );
+    [start, end],
+  );
 
-    return rows;
+  return rows;
 }
 
-export async function getServiceUnitReport(
-    start: string,
-    end: string
-) {
-    const [rows] = await db.query(
-        `
+export async function getServiceUnitReport(start: string, end: string) {
+  const [rows] = await db.query(
+    `
     SELECT 
       CONCAT(pt.pname, pt.fname, " ", pt.lname) AS "ชื่อ-นามสกุล",
       pt.hn,
@@ -222,8 +209,34 @@ export async function getServiceUnitReport(
     GROUP BY v.hn
     ORDER BY "หน่วยบริการ", v.aid, pt.moopart, v.vstdate
     `,
-        [start, end]
-    );
+    [start, end],
+  );
 
-    return rows;
+  return rows;
+}
+
+export async function getDeathNotDischarged() {
+  const [rows] = await db.query(
+    `
+        SELECT 
+            p.cid,
+            p.pname,
+            p.fname,
+            p.lname,
+            p.age_y AS "อายุ",
+            h.address AS "ที่อยู่",
+            v.village_moo AS "หมู่"
+        FROM person p
+        LEFT JOIN village v ON v.village_id = p.village_id
+        LEFT JOIN house h ON p.house_id = h.house_id
+        INNER JOIN death_nhso d ON p.cid = d.cid
+        WHERE p.village_id <> '13'
+          AND p.death <> 'Y'
+          AND p.person_discharge_id = '9'
+          AND p.nationality = '99'
+          AND v.village_moo BETWEEN '01' AND '13'
+        ORDER BY v.village_moo
+        `,
+  );
+  return rows;
 }
