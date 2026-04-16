@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   X,
@@ -20,50 +20,53 @@ import {
   Venus,
 } from "lucide-react";
 import { formatThaiDate } from "@/lib/dateUtils";
-import { usePatientModal, usePatientHistory } from "../hooks/usePatientModal";
 
-import type {
-  PatientRow,
-  HistoryRow,
-  GenderFilter,
-} from "../types/dashboard.types";
-import { isMale } from "./utils/dashboard.utils";
-
-// ─── Slide animation preset ───────────────────────────────────────────────────
-
-const slideIn = {
-  initial: { x: "100%", opacity: 0 },
-  animate: { x: 0, opacity: 1 },
-  exit: { x: "100%", opacity: 0 },
-  transition: { type: "spring", stiffness: 400, damping: 36 },
-} as const;
-
-// ─── Field Row ────────────────────────────────────────────────────────────────
-
-function FieldRow({
-  icon: Icon,
-  label,
-  value,
-}: {
-  icon: React.ElementType;
-  label: string;
-  value: string;
-}) {
-  return (
-    <div className="flex items-start gap-3 bg-white rounded-xl px-4 py-3 border border-gray-100">
-      <div className="w-8 h-8 rounded-lg bg-gray-100 flex items-center justify-center shrink-0 mt-0.5">
-        <Icon size={14} className="text-gray-500" />
-      </div>
-      <div className="flex-1 min-w-0">
-        <p className="text-[11px] font-semibold text-gray-400 mb-1">{label}</p>
-        <p className="text-sm text-gray-900 font-bold leading-snug">{value}</p>
-      </div>
-    </div>
-  );
+export interface PatientRow {
+  vn: string;
+  hn: string;
+  cid: string;
+  pname: string;
+  fname: string;
+  lname: string;
+  age_y: number;
+  sex: string;
+  vstdate: string;
+  vsttime: string;
+  pdx: string;
+  dx_name: string;
+  department: string;
+  pttype: string;
+  pttype_name: string;
+  doctor_name: string;
+  income: number;
 }
 
-// ─── Visit Detail ─────────────────────────────────────────────────────────────
+interface HistoryRow {
+  vn: string;
+  vstdate: string;
+  vsttime: string;
+  pdx: string;
+  dx_name: string;
+  department: string;
+  pttype_name: string;
+  doctor_name: string;
+}
 
+interface PatientDetailModalProps {
+  isOpen: boolean;
+  onClose: () => void;
+  cardLabel: string;
+  cardType: string;
+  start: string;
+  end: string;
+  infoLabel: string;
+}
+
+function isMale(sex: string) {
+  return sex === "1";
+}
+
+// ── Visit Detail Panel ────────────────────────────────────────────────────────
 function VisitDetail({
   visit,
   patient,
@@ -73,6 +76,7 @@ function VisitDetail({
   patient: PatientRow;
   onBack: () => void;
 }) {
+  const male = isMale(patient.sex);
   const fields = [
     {
       icon: Calendar,
@@ -96,12 +100,16 @@ function VisitDetail({
       value: visit.doctor_name || "—",
     },
   ];
-
   return (
     <div className="flex flex-col h-full w-full bg-white">
-      <div className="px-5 py-4 border-b border-gray-100">
+      <div className="px-5 py-4 border-b border-gray-100 bg-white">
         <div className="flex items-center gap-2 mb-3">
-          <BackButton onClick={onBack} />
+          <button
+            onClick={onBack}
+            className="w-8 h-8 rounded-xl bg-gray-100 hover:bg-gray-200 flex items-center justify-center text-gray-600 transition-colors shrink-0"
+          >
+            <ArrowLeft size={15} />
+          </button>
           <div>
             <p className="text-sm font-bold text-gray-900">
               {formatThaiDate(visit.vstdate)}
@@ -114,16 +122,30 @@ function VisitDetail({
         </div>
       </div>
       <div className="flex-1 overflow-y-auto px-5 py-4 space-y-3">
-        {fields.map((f) => (
-          <FieldRow key={f.label} {...f} />
+        {fields.map(({ icon: Icon, label, value }) => (
+          <div
+            key={label}
+            className="flex items-start gap-3 bg-white rounded-xl px-4 py-3 border border-gray-100"
+          >
+            <div className="w-8 h-8 rounded-lg bg-gray-100 flex items-center justify-center shrink-0 mt-0.5">
+              <Icon size={14} className="text-gray-500" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-[11px] font-semibold text-gray-400 mb-1">
+                {label}
+              </p>
+              <p className="text-sm text-gray-900 font-bold leading-snug">
+                {value}
+              </p>
+            </div>
+          </div>
         ))}
       </div>
     </div>
   );
 }
 
-// ─── History Panel ────────────────────────────────────────────────────────────
-
+// ── History Panel ──────────────────────────────────────────────────────────────
 function HistoryPanel({
   patient,
   onBack,
@@ -131,19 +153,40 @@ function HistoryPanel({
   patient: PatientRow;
   onBack: () => void;
 }) {
-  const { history, loading } = usePatientHistory(patient.hn);
+  const [history, setHistory] = useState<HistoryRow[]>([]);
+  const [loading, setLoading] = useState(true);
   const [selectedVisit, setSelectedVisit] = useState<HistoryRow | null>(null);
+
+  useEffect(() => {
+    fetch(
+      `/api/dashboard/patients?start=2020-01-01&end=2099-12-31&hn=${patient.hn}`,
+      { credentials: "include" },
+    )
+      .then((r) => r.json())
+      .then((d) => setHistory(d.history ?? []))
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, [patient.hn]);
 
   return (
     <motion.div
-      className="absolute inset-0 flex flex-col bg-white rounded-2xl overflow-hidden z-10"
-      {...slideIn}
+      className="absolute inset-0 flex flex-col bg-white rounded-2xl overflow-hidden"
+      style={{ zIndex: 10 }}
+      initial={{ x: "100%", opacity: 0 }}
+      animate={{ x: 0, opacity: 1 }}
+      exit={{ x: "100%", opacity: 0 }}
+      transition={{ type: "spring", stiffness: 400, damping: 36 }}
     >
+      {/* VisitDetail slides over everything inside this panel */}
       <AnimatePresence>
         {selectedVisit && (
           <motion.div
-            className="absolute inset-0 flex flex-col bg-white rounded-2xl overflow-hidden z-20"
-            {...slideIn}
+            className="absolute inset-0 flex flex-col bg-white rounded-2xl overflow-hidden"
+            style={{ zIndex: 20 }}
+            initial={{ x: "100%", opacity: 0 }}
+            animate={{ x: 0, opacity: 1 }}
+            exit={{ x: "100%", opacity: 0 }}
+            transition={{ type: "spring", stiffness: 400, damping: 36 }}
           >
             <VisitDetail
               visit={selectedVisit}
@@ -154,8 +197,14 @@ function HistoryPanel({
         )}
       </AnimatePresence>
 
+      {/* Header */}
       <div className="flex items-center gap-3 px-5 py-4 border-b border-gray-100 shrink-0">
-        <BackButton onClick={onBack} />
+        <button
+          onClick={onBack}
+          className="w-8 h-8 rounded-xl bg-gray-100 hover:bg-gray-200 flex items-center justify-center text-gray-600 transition-colors"
+        >
+          <ArrowLeft size={15} />
+        </button>
         <div className="flex-1 min-w-0">
           <p className="text-sm font-bold text-gray-900 truncate">
             {patient.pname}
@@ -168,6 +217,7 @@ function HistoryPanel({
         <History size={15} className="text-green-600 shrink-0" />
       </div>
 
+      {/* Timeline */}
       <div className="flex-1 overflow-y-auto px-5 py-4">
         {loading ? (
           <div className="space-y-2">
@@ -239,12 +289,31 @@ function HistoryPanel({
           </div>
         )}
       </div>
+
+      {/* VisitDetail overlay — อยู่หลังสุดใน DOM เพื่อทับทุกอย่างรวม header */}
+      <AnimatePresence>
+        {selectedVisit && (
+          <motion.div
+            className="absolute inset-0 flex flex-col bg-white rounded-2xl overflow-hidden"
+            style={{ zIndex: 20 }}
+            initial={{ x: "100%", opacity: 0 }}
+            animate={{ x: 0, opacity: 1 }}
+            exit={{ x: "100%", opacity: 0 }}
+            transition={{ type: "spring", stiffness: 400, damping: 36 }}
+          >
+            <VisitDetail
+              visit={selectedVisit}
+              patient={patient}
+              onBack={() => setSelectedVisit(null)}
+            />
+          </motion.div>
+        )}
+      </AnimatePresence>
     </motion.div>
   );
 }
 
-// ─── Patient Detail ───────────────────────────────────────────────────────────
-
+// ── Patient Detail Panel ───────────────────────────────────────────────────────
 function PatientDetail({
   patient,
   onClose,
@@ -286,7 +355,10 @@ function PatientDetail({
   return (
     <motion.div
       className="absolute inset-0 bg-white rounded-2xl flex flex-col z-10 overflow-hidden"
-      {...slideIn}
+      initial={{ x: "100%", opacity: 0 }}
+      animate={{ x: 0, opacity: 1 }}
+      exit={{ x: "100%", opacity: 0 }}
+      transition={{ type: "spring", stiffness: 400, damping: 36 }}
     >
       <AnimatePresence>
         {showHistory && (
@@ -298,9 +370,14 @@ function PatientDetail({
       </AnimatePresence>
 
       {/* Header */}
-      <div className="px-5 pt-4 pb-5 border-b border-gray-100">
+      <div className="px-5 pt-4 pb-5 border-b border-gray-100 bg-white">
         <div className="flex items-center gap-2 mb-4">
-          <BackButton onClick={onClose} />
+          <button
+            onClick={onClose}
+            className="w-8 h-8 rounded-xl bg-gray-100 hover:bg-gray-200 flex items-center justify-center text-gray-600 transition-colors shrink-0"
+          >
+            <ArrowLeft size={15} />
+          </button>
           <span style={{ color: male ? "#2563eb" : "#ec4899" }}>
             {male ? <Mars size={16} /> : <Venus size={16} />}
           </span>
@@ -312,7 +389,6 @@ function PatientDetail({
           </span>
           <span className="text-xs text-gray-400">· {patient.age_y} ปี</span>
         </div>
-
         <div className="flex items-center gap-3">
           <div
             className="w-12 h-12 rounded-2xl flex items-center justify-center shrink-0 text-xl font-black"
@@ -334,11 +410,25 @@ function PatientDetail({
           </div>
         </div>
       </div>
-
       {/* Fields */}
       <div className="flex-1 overflow-y-auto px-5 py-4 space-y-3">
-        {fields.map((f) => (
-          <FieldRow key={f.label} {...f} />
+        {fields.map(({ icon: Icon, label, value }) => (
+          <div
+            key={label}
+            className="flex items-start gap-3 bg-white rounded-xl px-4 py-3 border border-gray-100"
+          >
+            <div className="w-8 h-8 rounded-lg bg-gray-100 flex items-center justify-center shrink-0 mt-0.5">
+              <Icon size={14} className="text-gray-500" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-[11px] font-semibold text-gray-400 mb-1">
+                {label}
+              </p>
+              <p className="text-sm text-gray-900 font-bold leading-snug">
+                {value}
+              </p>
+            </div>
+          </div>
         ))}
         {patient.cid && (
           <div className="flex items-start gap-3 bg-white rounded-xl px-4 py-3 border border-gray-100">
@@ -369,8 +459,7 @@ function PatientDetail({
   );
 }
 
-// ─── Patient Card ─────────────────────────────────────────────────────────────
-
+// ── Patient Row Card ───────────────────────────────────────────────────────────
 function PatientCard({
   patient,
   index,
@@ -390,6 +479,7 @@ function PatientCard({
       transition={{ delay: Math.min(index * 0.01, 0.2), duration: 0.15 }}
     >
       <div className="flex items-center gap-3 px-4 py-3 rounded-xl bg-white border border-gray-100 hover:border-green-300 hover:shadow-sm transition-all duration-150">
+        {/* Avatar */}
         <div
           className="w-9 h-9 rounded-full flex items-center justify-center shrink-0"
           style={{ backgroundColor: male ? "#dbeafe" : "#fce7f3" }}
@@ -440,87 +530,59 @@ function PatientCard({
   );
 }
 
-// ─── Stats Row ────────────────────────────────────────────────────────────────
-
+// ── Stats Row ──────────────────────────────────────────────────────────────────
 function StatsRow({
   patients,
   genderFilter,
   setGenderFilter,
 }: {
   patients: PatientRow[];
-  genderFilter: GenderFilter;
-  setGenderFilter: (g: GenderFilter) => void;
+  genderFilter: "all" | "male" | "female";
+  setGenderFilter: (g: "all" | "male" | "female") => void;
 }) {
   const total = patients.length;
   const male = patients.filter((p) => isMale(p.sex)).length;
   const female = total - male;
-
-  const buttons: Array<{
-    key: GenderFilter;
-    label: string;
-    activeClass: string;
-  }> = [
-    {
-      key: "all",
-      label: `ทั้งหมด ${total} ราย`,
-      activeClass:
-        "bg-gray-800 text-white border-gray-800 ring-2 ring-gray-300",
-    },
-    {
-      key: "male",
-      label: `♂ ชาย ${male}`,
-      activeClass:
-        "bg-blue-500 text-white border-blue-500 ring-2 ring-blue-200",
-    },
-    {
-      key: "female",
-      label: `♀ หญิง ${female}`,
-      activeClass:
-        "bg-pink-500 text-white border-pink-500 ring-2 ring-pink-200",
-    },
-  ];
+  const malePct = total > 0 ? (male / total) * 100 : 50;
 
   return (
-    <div className="flex items-center gap-2 flex-wrap">
-      {buttons.map(({ key, label, activeClass }) => (
-        <button
-          key={key}
-          onClick={() => setGenderFilter(key)}
-          className={`text-xs font-semibold px-3 py-1.5 rounded-full border transition-all
-            ${genderFilter === key ? activeClass : "bg-gray-100 border-gray-300 text-gray-700 hover:border-gray-400 hover:bg-gray-200"}`}
-        >
-          {label}
-        </button>
-      ))}
+    <div className="space-y-2.5">
+      <div className="flex items-center gap-2 flex-wrap">
+        {[
+          {
+            key: "all" as const,
+            label: `ทั้งหมด ${total.toLocaleString()} ราย`,
+            active: genderFilter === "all",
+            cls: "bg-gray-800 text-white border-gray-800 ring-2 ring-gray-300",
+          },
+          {
+            key: "male" as const,
+            label: `♂ ชาย ${male}`,
+            active: genderFilter === "male",
+            cls: "bg-blue-500 text-white border-blue-500 ring-2 ring-blue-200",
+          },
+          {
+            key: "female" as const,
+            label: `♀ หญิง ${female}`,
+            active: genderFilter === "female",
+            cls: "bg-pink-500 text-white border-pink-500 ring-2 ring-pink-200",
+          },
+        ].map(({ key, label, active, cls }) => (
+          <button
+            key={key}
+            onClick={() => setGenderFilter(key)}
+            className={`text-xs font-semibold px-3 py-1.5 rounded-full border transition-all
+              ${active ? cls : "bg-gray-100 border-gray-300 text-gray-700 hover:border-gray-400 hover:bg-gray-200"}`}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
     </div>
   );
 }
 
-// ─── Back Button ──────────────────────────────────────────────────────────────
-
-function BackButton({ onClick }: { onClick: () => void }) {
-  return (
-    <button
-      onClick={onClick}
-      className="w-8 h-8 rounded-xl bg-gray-100 hover:bg-gray-200 flex items-center justify-center text-gray-600 transition-colors shrink-0"
-    >
-      <ArrowLeft size={15} />
-    </button>
-  );
-}
-
-// ─── PatientDetailModal ───────────────────────────────────────────────────────
-
-export interface PatientDetailModalProps {
-  isOpen: boolean;
-  onClose: () => void;
-  cardLabel: string;
-  cardType: string;
-  start: string;
-  end: string;
-  infoLabel: string;
-}
-
+// ── Resizable Modal ────────────────────────────────────────────────────────────
 export default function PatientDetailModal({
   isOpen,
   onClose,
@@ -530,45 +592,111 @@ export default function PatientDetailModal({
   end,
   infoLabel,
 }: PatientDetailModalProps) {
-  const {
-    patients,
-    loading,
-    search,
-    setSearch,
-    genderFilter,
-    setGenderFilter,
-    filtered,
-    selectedPatient,
-    selectPatient,
-    clearPatient,
-    modalSize,
-    startResize,
-  } = usePatientModal(isOpen, start, end, cardType);
+  const [patients, setPatients] = useState<PatientRow[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [search, setSearch] = useState("");
+  const [selectedPatient, setSelectedPatient] = useState<PatientRow | null>(
+    null,
+  );
+  const [genderFilter, setGenderFilter] = useState<"all" | "male" | "female">(
+    "all",
+  );
 
-  // Close on Escape
+  // Resize state
+  const [modalSize, setModalSize] = useState({ w: 480, h: 640 });
+  const isResizing = useRef(false);
+  const resizeStart = useRef({ x: 0, y: 0, w: 480, h: 640 });
+
+  const startResize = (e: React.MouseEvent) => {
+    e.preventDefault();
+    isResizing.current = true;
+    resizeStart.current = {
+      x: e.clientX,
+      y: e.clientY,
+      w: modalSize.w,
+      h: modalSize.h,
+    };
+    const onMove = (ev: MouseEvent) => {
+      if (!isResizing.current) return;
+      const dw = ev.clientX - resizeStart.current.x;
+      const dh = ev.clientY - resizeStart.current.y;
+      setModalSize({
+        w: Math.max(360, Math.min(900, resizeStart.current.w + dw)),
+        h: Math.max(
+          400,
+          Math.min(window.innerHeight * 0.95, resizeStart.current.h + dh),
+        ),
+      });
+    };
+    const onUp = () => {
+      isResizing.current = false;
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+    };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+  };
+
+  const fetchPatients = useCallback(async () => {
+    if (!isOpen) return;
+    setLoading(true);
+    setPatients([]);
+    setSearch("");
+    setSelectedPatient(null);
+    setGenderFilter("all");
+    try {
+      const res = await fetch(
+        `/api/dashboard/patients?start=${start}&end=${end}&type=${cardType}`,
+        { credentials: "include" },
+      );
+      const data = await res.json();
+      setPatients(data.patients ?? []);
+    } catch {}
+    setLoading(false);
+  }, [isOpen, start, end, cardType]);
+
   useEffect(() => {
-    const handler = (e: KeyboardEvent) => {
+    fetchPatients();
+  }, [fetchPatients]);
+  useEffect(() => {
+    const h = (e: KeyboardEvent) => {
       if (e.key === "Escape") onClose();
     };
-    window.addEventListener("keydown", handler);
-    return () => window.removeEventListener("keydown", handler);
+    window.addEventListener("keydown", h);
+    return () => window.removeEventListener("keydown", h);
   }, [onClose]);
+
+  const filtered = patients.filter((p) => {
+    const q = search.toLowerCase();
+    const matchSearch =
+      !q ||
+      `${p.pname}${p.fname} ${p.lname}`.toLowerCase().includes(q) ||
+      p.hn.includes(q) ||
+      p.cid?.includes(q) ||
+      p.dx_name?.toLowerCase().includes(q) ||
+      p.department?.toLowerCase().includes(q);
+    const matchGender =
+      genderFilter === "all" ||
+      (genderFilter === "male" && p.sex === "1") ||
+      (genderFilter === "female" && p.sex !== "1");
+    return matchSearch && matchGender;
+  });
 
   return (
     <AnimatePresence>
       {isOpen && (
         <>
-          {/* Backdrop */}
           <motion.div
             className="fixed inset-0 z-[9998] bg-black/40 backdrop-blur-[2px]"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            onClick={onClose}
           />
 
-          {/* Modal */}
-          <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4">
+          <div
+            className="fixed inset-0 z-[9999] flex items-center justify-center p-4"
+            onClick={onClose}
+          >
             <motion.div
               className="relative bg-gray-50 rounded-2xl flex flex-col overflow-hidden"
               style={{
@@ -583,7 +711,7 @@ export default function PatientDetailModal({
               transition={{ type: "spring", stiffness: 360, damping: 32 }}
               onClick={(e) => e.stopPropagation()}
             >
-              {/* Header */}
+              {/* HEADER */}
               <div className="bg-white border-b border-gray-100 px-5 pt-4 pb-3 shrink-0">
                 <div className="flex items-center gap-3 mb-3">
                   <div className="w-9 h-9 rounded-xl bg-green-700 flex items-center justify-center shrink-0">
@@ -599,6 +727,7 @@ export default function PatientDetailModal({
                   </div>
                   <button
                     onClick={onClose}
+                    aria-label="ปิด"
                     className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-red-500 hover:bg-red-600 text-white text-xs font-bold transition-all active:scale-95 shrink-0"
                   >
                     <X size={12} strokeWidth={2.5} /> ปิด
@@ -606,16 +735,14 @@ export default function PatientDetailModal({
                 </div>
 
                 {patients.length > 0 && !loading && (
-                  <div className="mb-3">
-                    <StatsRow
-                      patients={patients}
-                      genderFilter={genderFilter}
-                      setGenderFilter={setGenderFilter}
-                    />
-                  </div>
+                  <StatsRow
+                    patients={patients}
+                    genderFilter={genderFilter}
+                    setGenderFilter={setGenderFilter}
+                  />
                 )}
 
-                <div className="flex items-center gap-2 px-3.5 py-2.5 bg-gray-50 border border-gray-200 rounded-xl focus-within:border-green-500 focus-within:bg-white focus-within:ring-2 focus-within:ring-green-100 transition-all">
+                <div className="mt-3 flex items-center gap-2 px-3.5 py-2.5 bg-gray-50 border border-gray-200 rounded-xl focus-within:border-green-500 focus-within:bg-white focus-within:ring-2 focus-within:ring-green-100 transition-all">
                   <Search size={14} className="text-gray-400 shrink-0" />
                   <input
                     type="text"
@@ -635,7 +762,7 @@ export default function PatientDetailModal({
                 </div>
               </div>
 
-              {/* List */}
+              {/* LIST */}
               <div className="flex-1 overflow-y-auto px-4 py-3 space-y-1.5">
                 {loading && (
                   <div className="space-y-2 pt-1">
@@ -648,7 +775,6 @@ export default function PatientDetailModal({
                     ))}
                   </div>
                 )}
-
                 {!loading && filtered.length === 0 && (
                   <div className="flex flex-col items-center justify-center h-48 gap-3">
                     <div className="w-14 h-14 rounded-2xl bg-gray-100 flex items-center justify-center">
@@ -667,31 +793,31 @@ export default function PatientDetailModal({
                     )}
                   </div>
                 )}
-
                 {!loading &&
+                  filtered.length > 0 &&
                   filtered.map((p, i) => (
                     <PatientCard
                       key={p.vn || `${p.hn}-${i}`}
                       patient={p}
                       index={i}
-                      onSelect={selectPatient}
+                      onSelect={setSelectedPatient}
                     />
                   ))}
               </div>
 
-              {/* Patient detail panel */}
+              {/* Detail panel */}
               <AnimatePresence>
                 {selectedPatient && (
                   <div className="absolute inset-0 z-30 rounded-2xl overflow-hidden">
                     <PatientDetail
                       patient={selectedPatient}
-                      onClose={clearPatient}
+                      onClose={() => setSelectedPatient(null)}
                     />
                   </div>
                 )}
               </AnimatePresence>
 
-              {/* Footer */}
+              {/* FOOTER */}
               {!loading && patients.length > 0 && (
                 <div className="px-5 py-2.5 bg-white border-t border-gray-100 shrink-0">
                   <p className="text-[11px] text-gray-400 text-center">
@@ -715,10 +841,11 @@ export default function PatientDetailModal({
                 </div>
               )}
 
-              {/* Resize handle */}
+              {/* RESIZE HANDLE */}
               <div
                 onMouseDown={startResize}
                 className="absolute bottom-0 right-0 w-6 h-6 flex items-center justify-center cursor-se-resize text-gray-300 hover:text-gray-500 transition-colors z-40"
+                title="ลากเพื่อขยาย"
               >
                 <GripHorizontal size={14} className="rotate-45" />
               </div>
