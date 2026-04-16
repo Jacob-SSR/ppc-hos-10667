@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback, useRef } from "react";
+import { useEffect, useState, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   X,
@@ -76,7 +76,6 @@ function VisitDetail({
   patient: PatientRow;
   onBack: () => void;
 }) {
-  const male = isMale(patient.sex);
   const fields = [
     {
       icon: Calendar,
@@ -158,14 +157,23 @@ function HistoryPanel({
   const [selectedVisit, setSelectedVisit] = useState<HistoryRow | null>(null);
 
   useEffect(() => {
+    let cancelled = false;
     fetch(
       `/api/dashboard/patients?start=2020-01-01&end=2099-12-31&hn=${patient.hn}`,
       { credentials: "include" },
     )
       .then((r) => r.json())
-      .then((d) => setHistory(d.history ?? []))
+      .then((d) => {
+        if (!cancelled) setHistory(d.history ?? []);
+      })
       .catch(() => {})
-      .finally(() => setLoading(false));
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
   }, [patient.hn]);
 
   return (
@@ -177,26 +185,6 @@ function HistoryPanel({
       exit={{ x: "100%", opacity: 0 }}
       transition={{ type: "spring", stiffness: 400, damping: 36 }}
     >
-      {/* VisitDetail slides over everything inside this panel */}
-      <AnimatePresence>
-        {selectedVisit && (
-          <motion.div
-            className="absolute inset-0 flex flex-col bg-white rounded-2xl overflow-hidden"
-            style={{ zIndex: 20 }}
-            initial={{ x: "100%", opacity: 0 }}
-            animate={{ x: 0, opacity: 1 }}
-            exit={{ x: "100%", opacity: 0 }}
-            transition={{ type: "spring", stiffness: 400, damping: 36 }}
-          >
-            <VisitDetail
-              visit={selectedVisit}
-              patient={patient}
-              onBack={() => setSelectedVisit(null)}
-            />
-          </motion.div>
-        )}
-      </AnimatePresence>
-
       {/* Header */}
       <div className="flex items-center gap-3 px-5 py-4 border-b border-gray-100 shrink-0">
         <button
@@ -290,7 +278,7 @@ function HistoryPanel({
         )}
       </div>
 
-      {/* VisitDetail overlay — อยู่หลังสุดใน DOM เพื่อทับทุกอย่างรวม header */}
+      {/* VisitDetail overlay */}
       <AnimatePresence>
         {selectedVisit && (
           <motion.div
@@ -410,6 +398,7 @@ function PatientDetail({
           </div>
         </div>
       </div>
+
       {/* Fields */}
       <div className="flex-1 overflow-y-auto px-5 py-4 space-y-3">
         {fields.map(({ icon: Icon, label, value }) => (
@@ -479,7 +468,6 @@ function PatientCard({
       transition={{ delay: Math.min(index * 0.01, 0.2), duration: 0.15 }}
     >
       <div className="flex items-center gap-3 px-4 py-3 rounded-xl bg-white border border-gray-100 hover:border-green-300 hover:shadow-sm transition-all duration-150">
-        {/* Avatar */}
         <div
           className="w-9 h-9 rounded-full flex items-center justify-center shrink-0"
           style={{ backgroundColor: male ? "#dbeafe" : "#fce7f3" }}
@@ -543,7 +531,6 @@ function StatsRow({
   const total = patients.length;
   const male = patients.filter((p) => isMale(p.sex)).length;
   const female = total - male;
-  const malePct = total > 0 ? (male / total) * 100 : 50;
 
   return (
     <div className="space-y-2.5">
@@ -602,7 +589,6 @@ export default function PatientDetailModal({
     "all",
   );
 
-  // Resize state
   const [modalSize, setModalSize] = useState({ w: 480, h: 640 });
   const isResizing = useRef(false);
   const resizeStart = useRef({ x: 0, y: 0, w: 480, h: 640 });
@@ -637,27 +623,37 @@ export default function PatientDetailModal({
     window.addEventListener("mouseup", onUp);
   };
 
-  const fetchPatients = useCallback(async () => {
+  useEffect(() => {
     if (!isOpen) return;
-    setLoading(true);
-    setPatients([]);
-    setSearch("");
-    setSelectedPatient(null);
-    setGenderFilter("all");
-    try {
-      const res = await fetch(
-        `/api/dashboard/patients?start=${start}&end=${end}&type=${cardType}`,
-        { credentials: "include" },
-      );
-      const data = await res.json();
-      setPatients(data.patients ?? []);
-    } catch {}
-    setLoading(false);
+
+    let cancelled = false;
+
+    const run = async () => {
+      setLoading(true);
+      setPatients([]);
+      setSearch("");
+      setSelectedPatient(null);
+      setGenderFilter("all");
+
+      try {
+        const res = await fetch(
+          `/api/dashboard/patients?start=${start}&end=${end}&type=${cardType}`,
+          { credentials: "include" },
+        );
+        const data = await res.json();
+        if (!cancelled) setPatients(data.patients ?? []);
+      } catch {}
+
+      if (!cancelled) setLoading(false);
+    };
+
+    run();
+
+    return () => {
+      cancelled = true;
+    };
   }, [isOpen, start, end, cardType]);
 
-  useEffect(() => {
-    fetchPatients();
-  }, [fetchPatients]);
   useEffect(() => {
     const h = (e: KeyboardEvent) => {
       if (e.key === "Escape") onClose();

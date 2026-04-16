@@ -40,40 +40,44 @@ export function usePatientModal(
   const isResizing = useRef(false);
   const resizeStart = useRef({ x: 0, y: 0, w: 480, h: 640 });
 
-  // Fetch patients when modal opens
   useEffect(() => {
     if (!isOpen) return;
+
     let cancelled = false;
 
-    const fetch_ = async () => {
-      setLoading(true);
-      setPatients([]);
-      setSearch("");
-      setSelectedPatient(null);
-      setGenderFilter("all");
+    const fetchData = async () => {
       try {
+        setLoading(true);
+
         const res = await fetch(
           `/api/dashboard/patients?start=${start}&end=${end}&type=${cardType}`,
           { credentials: "include" },
         );
         const data = await res.json();
-        if (!cancelled) setPatients(data.patients ?? []);
+
+        if (!cancelled) {
+          setPatients(data.patients ?? []);
+          setSearch("");
+          setSelectedPatient(null);
+          setGenderFilter("all");
+        }
       } catch {
-        // silently fail
+        // ignore
       } finally {
         if (!cancelled) setLoading(false);
       }
     };
 
-    fetch_();
+    fetchData();
+
     return () => {
       cancelled = true;
     };
   }, [isOpen, start, end, cardType]);
 
-  // Keyboard close (handled at modal level but hook can expose escape handler)
   const filtered = patients.filter((p) => {
     const q = search.toLowerCase();
+
     const matchSearch =
       !q ||
       `${p.pname}${p.fname} ${p.lname}`.toLowerCase().includes(q) ||
@@ -94,6 +98,7 @@ export function usePatientModal(
     (e: React.MouseEvent) => {
       e.preventDefault();
       isResizing.current = true;
+
       resizeStart.current = {
         x: e.clientX,
         y: e.clientY,
@@ -103,6 +108,7 @@ export function usePatientModal(
 
       const onMove = (ev: MouseEvent) => {
         if (!isResizing.current) return;
+
         setModalSize({
           w: Math.max(
             360,
@@ -120,11 +126,13 @@ export function usePatientModal(
           ),
         });
       };
+
       const onUp = () => {
         isResizing.current = false;
         window.removeEventListener("mousemove", onMove);
         window.removeEventListener("mouseup", onUp);
       };
+
       window.addEventListener("mousemove", onMove);
       window.addEventListener("mouseup", onUp);
     },
@@ -156,22 +164,32 @@ interface UsePatientHistoryReturn {
 
 export function usePatientHistory(hn: string): UsePatientHistoryReturn {
   const [history, setHistory] = useState<HistoryRow[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false); // ✅ เปลี่ยนตรงนี้
 
   useEffect(() => {
     let cancelled = false;
-    setLoading(true);
-    fetch(`/api/dashboard/patients?start=2020-01-01&end=2099-12-31&hn=${hn}`, {
-      credentials: "include",
-    })
-      .then((r) => r.json())
-      .then((d) => {
-        if (!cancelled) setHistory(d.history ?? []);
-      })
-      .catch(() => {})
-      .finally(() => {
+
+    const fetchData = async () => {
+      try {
+        setLoading(true);
+
+        const res = await fetch(
+          `/api/dashboard/patients?start=2020-01-01&end=2099-12-31&hn=${hn}`,
+          { credentials: "include" },
+        );
+        const data = await res.json();
+
+        if (!cancelled) {
+          setHistory(data.history ?? []);
+        }
+      } catch {
+        // ignore
+      } finally {
         if (!cancelled) setLoading(false);
-      });
+      }
+    };
+
+    fetchData();
 
     return () => {
       cancelled = true;

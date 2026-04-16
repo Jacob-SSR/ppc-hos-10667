@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useRef } from "react";
 import {
   CalendarDays,
   Search,
@@ -23,14 +23,11 @@ import "react-datepicker/dist/react-datepicker.css";
 import ThaiDateInput from "@/app/components/ThaiDateInput";
 import PatientDetailModal from "./PatientDetailModal";
 
-// ── สีแต่ละการ์ด: pastel อบอุ่น สม่ำเสมอ ───────────────────────────────────
-// bg = พื้นหลัง pastel อ่อน
-// accent = สีข้อความและ icon (เข้มกว่าพื้น 40%)
 const OPD_CARDS = [
   {
     label: "ผู้รับบริการทั้งหมด",
-    bg: "#E0F2FE", // sky-100
-    accent: "#0369A1", // sky-700
+    bg: "#E0F2FE",
+    accent: "#0369A1",
     visitKey: "totalVisit",
     patKey: "totalPatient",
     Icon: User,
@@ -38,8 +35,8 @@ const OPD_CARDS = [
   },
   {
     label: "OPD ในเวลา",
-    bg: "#FCE7F3", // pink-100
-    accent: "#9D174D", // pink-800
+    bg: "#FCE7F3",
+    accent: "#9D174D",
     visitKey: "opdOnTime",
     patKey: null,
     Icon: UserCheck,
@@ -47,8 +44,8 @@ const OPD_CARDS = [
   },
   {
     label: "OPD นอกเวลา",
-    bg: "#D1FAE5", // emerald-100
-    accent: "#065F46", // emerald-800
+    bg: "#D1FAE5",
+    accent: "#065F46",
     visitKey: "opdOffTime",
     patKey: null,
     Icon: UserCheck,
@@ -56,8 +53,8 @@ const OPD_CARDS = [
   },
   {
     label: "Admit",
-    bg: "#EDE9FE", // violet-100
-    accent: "#5B21B6", // violet-800
+    bg: "#EDE9FE",
+    accent: "#5B21B6",
     visitKey: "admitToday",
     patKey: null,
     Icon: BedDouble,
@@ -65,8 +62,8 @@ const OPD_CARDS = [
   },
   {
     label: "สิทธิ์บัตรทอง UC",
-    bg: "#FEF9C3", // yellow-100
-    accent: "#854D0E", // yellow-800
+    bg: "#FEF9C3",
+    accent: "#854D0E",
     visitKey: "opdUc",
     patKey: null,
     Icon: UserCheck,
@@ -74,8 +71,8 @@ const OPD_CARDS = [
   },
   {
     label: "สิทธิ์ราชการ",
-    bg: "#DBEAFE", // blue-100
-    accent: "#1E40AF", // blue-800
+    bg: "#DBEAFE",
+    accent: "#1E40AF",
     visitKey: "opdGov",
     patKey: null,
     Icon: Shield,
@@ -83,8 +80,8 @@ const OPD_CARDS = [
   },
   {
     label: "ประกันสังคม",
-    bg: "#CCFBF1", // teal-100
-    accent: "#134E4A", // teal-900
+    bg: "#CCFBF1",
+    accent: "#134E4A",
     visitKey: "opdSso",
     patKey: null,
     Icon: UserCog,
@@ -92,8 +89,8 @@ const OPD_CARDS = [
   },
   {
     label: "ชำระเงิน / พรบ.",
-    bg: "#FEE2E2", // red-100
-    accent: "#991B1B", // red-800
+    bg: "#FEE2E2",
+    accent: "#991B1B",
     visitKey: "opdCash",
     patKey: null,
     Icon: UserCheck,
@@ -101,8 +98,8 @@ const OPD_CARDS = [
   },
   {
     label: "แรงงานต่างด้าว",
-    bg: "#F3E8FF", // purple-100
-    accent: "#6B21A8", // purple-800
+    bg: "#F3E8FF",
+    accent: "#6B21A8",
     visitKey: "opdForeign",
     patKey: null,
     Icon: Globe,
@@ -110,8 +107,8 @@ const OPD_CARDS = [
   },
   {
     label: "Refer In",
-    bg: "#E0F2FE", // cyan-100
-    accent: "#164E63", // cyan-900
+    bg: "#E0F2FE",
+    accent: "#164E63",
     visitKey: "referIn",
     patKey: null,
     Icon: PhoneIncoming,
@@ -119,8 +116,8 @@ const OPD_CARDS = [
   },
   {
     label: "Refer Out",
-    bg: "#FFF7ED", // orange-50
-    accent: "#9A3412", // orange-800
+    bg: "#FFF7ED",
+    accent: "#9A3412",
     visitKey: "referOut",
     patKey: null,
     Icon: PhoneOutgoing,
@@ -128,8 +125,8 @@ const OPD_CARDS = [
   },
   {
     label: "ผู้ป่วยฉุกเฉิน (ER)",
-    bg: "#FFE4E6", // rose-100
-    accent: "#9F1239", // rose-800
+    bg: "#FFE4E6",
+    accent: "#9F1239",
     visitKey: "erEmergency",
     patKey: null,
     Icon: Siren,
@@ -137,8 +134,8 @@ const OPD_CARDS = [
   },
   {
     label: "อุบัติเหตุ",
-    bg: "#FFEDD5", // orange-100
-    accent: "#7C2D12", // orange-900
+    bg: "#FFEDD5",
+    accent: "#7C2D12",
     visitKey: "erAccident",
     patKey: null,
     Icon: AlertTriangle,
@@ -183,7 +180,6 @@ function Shimmer() {
   return <div className="h-[168px] rounded-2xl bg-gray-200 animate-pulse" />;
 }
 
-// ── Modal state type ───────────────────────────────────────────────────────────
 interface ModalState {
   open: boolean;
   cardLabel: string;
@@ -200,14 +196,14 @@ export default function OpdSection() {
   const [loading, setLoading] = useState(true);
   const [infoLabel, setInfoLabel] = useState("");
 
-  // Modal state
   const [modal, setModal] = useState<ModalState>({
     open: false,
     cardLabel: "",
     cardType: "all",
   });
 
-  const fetchData = useCallback(async (s: Date, e: Date) => {
+  // ใช้ ref เก็บ function เพื่อไม่ให้เป็น dependency ของ useEffect
+  const fetchData = async (s: Date, e: Date) => {
     setLoading(true);
     try {
       const res = await fetch(`/api/dashboard?start=${fmt(s)}&end=${fmt(e)}`, {
@@ -222,10 +218,42 @@ export default function OpdSection() {
       }
     } catch {}
     setLoading(false);
-  }, []);
+  };
+
+  // โหลดครั้งแรก — ใช้ ref ดักค่า start/end ณ ตอน mount
+  const initialStart = useRef(start);
+  const initialEnd = useRef(end);
 
   useEffect(() => {
-    fetchData(start, end);
+    let cancelled = false;
+
+    const run = async () => {
+      setLoading(true);
+      try {
+        const s = initialStart.current;
+        const e = initialEnd.current;
+        const res = await fetch(
+          `/api/dashboard?start=${fmt(s)}&end=${fmt(e)}`,
+          {
+            credentials: "include",
+          },
+        );
+        if (res.ok && !cancelled) {
+          const json = await res.json();
+          setSummary(json.summary ?? null);
+          const sLabel = toThaiDate(fmt(s));
+          const eLabel = toThaiDate(fmt(e));
+          setInfoLabel(sLabel === eLabel ? sLabel : `${sLabel} – ${eLabel}`);
+        }
+      } catch {}
+      if (!cancelled) setLoading(false);
+    };
+
+    run();
+
+    return () => {
+      cancelled = true;
+    };
   }, []); // eslint-disable-line
 
   const handlePreset = (p: string) => {
@@ -347,7 +375,6 @@ export default function OpdSection() {
                     className="rounded-2xl p-5 flex flex-col items-center gap-3 relative transition-all duration-200 hover:scale-[1.02] hover:shadow-lg"
                     style={{ backgroundColor: card.bg }}
                   >
-                    {/* Icon circle — สีอ่อนกว่า accent 25% */}
                     <div
                       className="w-11 h-11 rounded-2xl flex items-center justify-center"
                       style={{ backgroundColor: card.accent + "22" }}
@@ -390,7 +417,6 @@ export default function OpdSection() {
         </div>
       </div>
 
-      {/* Patient Detail Modal */}
       <PatientDetailModal
         isOpen={modal.open}
         onClose={() => setModal((m) => ({ ...m, open: false }))}
