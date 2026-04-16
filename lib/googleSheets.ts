@@ -1,5 +1,20 @@
 import { google, sheets_v4 } from "googleapis";
 
+function toThaiDate(val: unknown): string {
+  if (!val) return "";
+  const date = new Date(String(val));
+  if (isNaN(date.getTime())) return String(val);
+  const [d, m, y] = date
+    .toLocaleDateString("en-GB", {
+      timeZone: "Asia/Bangkok",
+      day: "2-digit",
+      month: "2-digit",
+      year: "numeric",
+    })
+    .split("/");
+  return `${d}/${m}/${Number(y) + 543}`;
+}
+
 export async function getSheetClient() {
   const auth = new google.auth.GoogleAuth({
     credentials: {
@@ -23,9 +38,8 @@ export async function getExistingKeys(sheetName: string): Promise<Set<string>> {
     });
 
     const rows = res.data.values ?? [];
-    if (rows.length < 2) return new Set(); // ว่างหรือมีแค่ header
+    if (rows.length < 2) return new Set();
 
-    // หาตำแหน่ง column ของ cid, ชื่อ-นามสกุล จาก header row
     const header = rows[0].map((h: string) => String(h).trim());
     const cidIdx = header.indexOf("cid");
     const nameIdx = header.indexOf("ชื่อ-นามสกุล");
@@ -43,7 +57,6 @@ export async function getExistingKeys(sheetName: string): Promise<Set<string>> {
     }
     return keys;
   } catch {
-    // Sheet ว่างหรือยังไม่มี header → ถือว่าไม่มีข้อมูลเดิม
     return new Set();
   }
 }
@@ -64,7 +77,6 @@ export async function appendRowsWithDedup(
 
   // ── 2. สร้าง header + เพิ่มคอลัมน์ สถานะ ──
   const dataHeaders = Object.keys(rawRows[0]);
-  // ตรวจว่า Sheet มี header อยู่แล้วหรือยัง
   const isFirstWrite = existingKeys.size === 0;
   const fullHeaders = [...dataHeaders, "สถานะ"];
 
@@ -87,7 +99,16 @@ export async function appendRowsWithDedup(
 
     const status = isDuplicate ? "ซ้ำ" : "ใหม่";
 
-    return [...dataHeaders.map((h) => String(row[h] ?? "")), status];
+    return [
+      ...dataHeaders.map((h) => {
+        const val = row[h];
+        if (h === "วันที่รับบริการ" && val) {
+          return toThaiDate(val);
+        }
+        return String(val ?? "");
+      }),
+      status,
+    ];
   });
 
   // ── 4. สร้าง separator row ──
@@ -98,7 +119,6 @@ export async function appendRowsWithDedup(
   // ── 5. Append ──
   const valuesToAppend: string[][] = [];
 
-  // เขียน header เฉพาะครั้งแรก
   if (isFirstWrite) {
     valuesToAppend.push(fullHeaders);
   }
@@ -129,7 +149,6 @@ async function highlightDuplicateRows(
   sheetName: string,
   dataRows: string[][],
 ) {
-  // ดึง sheetId จากชื่อ sheet
   const meta = await sheets.spreadsheets.get({ spreadsheetId });
   const sheetMeta = meta.data.sheets?.find(
     (s: sheets_v4.Schema$Sheet) => s.properties?.title === sheetName,
@@ -139,21 +158,18 @@ async function highlightDuplicateRows(
 
   const sheetId = sheetMeta.properties.sheetId;
 
-  // หา index สุดท้ายของ sheet (เพื่อรู้ว่า append ไปแถวไหน)
   const currentData = await sheets.spreadsheets.values.get({
     spreadsheetId,
     range: `${sheetName}!A:A`,
   });
   const totalRows = (currentData.data.values ?? []).length;
 
-  // หา offset ของ data rows ที่เพิ่งเพิ่มไป
-  // (+1 separator, +1 เผื่อ header)
   const startRowIndex = totalRows - dataRows.length;
 
   const requests: sheets_v4.Schema$Request[] = [];
 
   dataRows.forEach((row, i) => {
-    const statusColIndex = row.length - 2; // คอลัมน์ "สถานะ"
+    const statusColIndex = row.length - 2;
     const isDuplicate = row[statusColIndex] === "ซ้ำ";
 
     if (isDuplicate) {
@@ -169,7 +185,7 @@ async function highlightDuplicateRows(
               backgroundColor: {
                 red: 1.0,
                 green: 0.95,
-                blue: 0.6, // สีเหลืองอ่อน
+                blue: 0.6,
               },
             },
           },

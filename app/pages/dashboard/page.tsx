@@ -10,44 +10,35 @@ import Top10Tables from "@/app/components/dashboard/Top10Tables";
 import PpaOverview from "@/app/components/dashboard/PpaOverview";
 
 export default function DashboardPage() {
-  const [dashData, setDashData] = useState<any>(null);
   const [monthlyData, setMonthlyData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
 
-  const today = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Bangkok" }));
+  const today = new Date(
+    new Date().toLocaleString("en-US", { timeZone: "Asia/Bangkok" }),
+  );
   const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
 
   useEffect(() => {
-    Promise.all([
-      fetch(`/api/dashboard?start=${todayStr}&end=${todayStr}`, { credentials: "include" }).then((r) => r.json()),
-      fetch(`/api/dashboard/monthly?months=6`, { credentials: "include" }).then((r) => r.json()),
-    ])
-      .then(([dash, monthly]) => {
-        setDashData(dash);
-        setMonthlyData(monthly);
-      })
+    fetch(`/api/dashboard/monthly?months=6`, { credentials: "include" })
+      .then((r) => r.json())
+      .then(setMonthlyData)
       .catch(console.error)
       .finally(() => setLoading(false));
   }, []);
 
   return (
     <div className="space-y-4">
-      {/* Header */}
-      <div className="bg-white border border-gray-200 rounded-xl p-4 shadow-sm">
-        <h1 className="text-lg font-bold text-gray-700">Dashboard โรงพยาบาลพลับพลาชัย</h1>
-      </div>
+      {/* OPD Section — จัดการ fetch เอง ตาม date picker */}
+      <OpdSection />
 
-      {/* OPD */}
-      <OpdSection data={dashData} loading={loading} dateLabel={todayStr} />
+      {/* IPD Section */}
+      <IpdSection loading={false} dateLabel={todayStr} />
 
-      {/* IPD */}
-      <IpdSection loading={loading} dateLabel={todayStr} />
-
-      {/* Annual OPD/IPD Chart */}
+      {/* Annual Chart */}
       <AnnualChart months={monthlyData?.months ?? []} loading={loading} />
 
-      {/* Bed Occupancy Chart */}
-      <BedOccupancyChart months={monthlyData?.months ?? []} loading={loading} />
+      {/* Bed Occupancy Chart — ดึงข้อมูลจริงจาก API */}
+      <BedOccupancyChart />
 
       {/* Home Ward Tables */}
       <HomeWardTable start={todayStr} end={todayStr} />

@@ -1,110 +1,311 @@
 "use client";
 
-import { CalendarDays, Search, Info, ArrowRight, User } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState, useCallback } from "react";
+import {
+  CalendarDays,
+  Search,
+  Info,
+  ArrowRight,
+  User,
+  UserCheck,
+  BedDouble,
+  Shield,
+  UserCog,
+  Globe,
+  PhoneIncoming,
+  PhoneOutgoing,
+  Siren,
+  AlertTriangle,
+} from "lucide-react";
+import DatePicker from "react-datepicker";
+import { th } from "date-fns/locale";
+import "react-datepicker/dist/react-datepicker.css";
+import ThaiDateInput from "@/app/components/ThaiDateInput";
 
 const OPD_CARDS = [
-  { label: "ผู้รับบริการทั้งหมด", color: "bg-[#22d3ee]", key: "totalVisit", patKey: "totalPatient" },
-  { label: "OPD สิทธิ์ UC", color: "bg-[#4ade80]", key: "totalVisit", patKey: "totalPatient" },
-  { label: "OPD สิทธิ์ราชการ", color: "bg-[#a78bfa]", key: null, patKey: null },
-  { label: "OPD สิทธิ์ประกันสังคม", color: "bg-[#f472b6]", key: null, patKey: null },
-  { label: "OPD ไม่มี Endpoint", color: "bg-[#f87171]", key: "noEndpoint", patKey: null },
-  { label: "OPD UC ต่างจังหวัด", color: "bg-[#fb923c]", key: "ucOutside", patKey: null },
-  { label: "OPD ทำฟัน UC", color: "bg-[#60a5fa]", key: "ucOutsideDental", patKey: null },
-  { label: "OPD รับชำระเงิน", color: "bg-[#2dd4bf]", key: null, patKey: null },
-  { label: "OPD เบิก DF", color: "bg-[#fb7185]", key: null, patKey: null },
-  { label: "OPD Refer In", color: "bg-[#818cf8]", key: null, patKey: null },
-  { label: "OPD Refer Out", color: "bg-[#fbbf24]", key: null, patKey: null },
-  { label: "OPD รายได้รวม", color: "bg-[#a3e635]", key: "unpaidTotal", patKey: null },
+  {
+    label: "ผู้รับบริการทั้งหมด",
+    bg: "#80E9FF",
+    visitKey: "totalVisit",
+    patKey: "totalPatient",
+    Icon: User,
+  },
+  {
+    label: "OPD ในเวลา",
+    bg: "#FF8080",
+    visitKey: "opdOnTime",
+    patKey: null,
+    Icon: UserCheck,
+  },
+  {
+    label: "OPD นอกเวลา",
+    bg: "#7DE8B0",
+    visitKey: "opdOffTime",
+    patKey: null,
+    Icon: UserCheck,
+  },
+  {
+    label: "Admit",
+    bg: "#9B9CF4",
+    visitKey: "admitToday",
+    patKey: null,
+    Icon: BedDouble,
+  },
+  {
+    label: "สิทธิ์บัตรทอง UC",
+    bg: "#FF8080",
+    visitKey: "opdUc",
+    patKey: null,
+    Icon: UserCheck,
+  },
+  {
+    label: "สิทธิ์ราชการ",
+    bg: "#FF8080",
+    visitKey: "opdGov",
+    patKey: null,
+    Icon: Shield,
+  },
+  {
+    label: "ประกันสังคม",
+    bg: "#FF8080",
+    visitKey: "opdSso",
+    patKey: null,
+    Icon: UserCog,
+  },
+  {
+    label: "ชำระเงิน / พรบ.",
+    bg: "#FF8080",
+    visitKey: "opdCash",
+    patKey: null,
+    Icon: UserCheck,
+  },
+  {
+    label: "แรงงานต่างด้าว",
+    bg: "#FF8080",
+    visitKey: "opdForeign",
+    patKey: null,
+    Icon: Globe,
+  },
+  {
+    label: "Refer In",
+    bg: "#FF8080",
+    visitKey: "referIn",
+    patKey: null,
+    Icon: PhoneIncoming,
+  },
+  {
+    label: "Refer Out",
+    bg: "#FF8080",
+    visitKey: "referOut",
+    patKey: null,
+    Icon: PhoneOutgoing,
+  },
+  {
+    label: "ผู้ป่วยฉุกเฉิน (ER)",
+    bg: "#FF6B6B",
+    visitKey: "erEmergency",
+    patKey: null,
+    Icon: Siren,
+  },
+  {
+    label: "อุบัติเหตุ",
+    bg: "#FF8C42",
+    visitKey: "erAccident",
+    patKey: null,
+    Icon: AlertTriangle,
+  },
 ];
 
+const PRESETS = ["วันนี้", "สัปดาห์นี้", "เดือนนี้"];
+
+function fmt(d: Date) {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+function toThaiDate(dateStr: string) {
+  if (!dateStr) return "";
+  const [y, m, d] = dateStr.split("-");
+  return `${d}/${m}/${Number(y) + 543}`;
+}
+
+function getPresetRange(preset: string): { start: Date; end: Date } {
+  const now = new Date(
+    new Date().toLocaleString("en-US", { timeZone: "Asia/Bangkok" }),
+  );
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+
+  if (preset === "สัปดาห์นี้") {
+    const day = today.getDay();
+    const mon = new Date(today);
+    mon.setDate(today.getDate() - (day === 0 ? 6 : day - 1));
+    return { start: mon, end: today };
+  }
+  if (preset === "เดือนนี้") {
+    return {
+      start: new Date(today.getFullYear(), today.getMonth(), 1),
+      end: today,
+    };
+  }
+  return { start: today, end: today };
+}
+
 function Shimmer() {
-  return <div className="h-[160px] rounded-xl bg-gray-200 animate-pulse" />;
+  return <div className="h-[168px] rounded-2xl bg-gray-200 animate-pulse" />;
 }
 
-interface OpdSectionProps {
-  data: any;
-  loading: boolean;
-  dateLabel: string;
-}
-
-export default function OpdSection({ data, loading, dateLabel }: OpdSectionProps) {
+export default function OpdSection() {
   const [preset, setPreset] = useState("วันนี้");
+  const [start, setStart] = useState<Date>(
+    () => getPresetRange("วันนี้").start,
+  );
+  const [end, setEnd] = useState<Date>(() => getPresetRange("วันนี้").end);
+  const [summary, setSummary] = useState<Record<string, number> | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [infoLabel, setInfoLabel] = useState("");
 
-  const thaiDate = (() => {
-    if (!dateLabel) return "";
-    const [y, m, d] = dateLabel.split("-");
-    return `${d}/${m}/${Number(y) + 543}`;
-  })();
+  const fetchData = useCallback(async (s: Date, e: Date) => {
+    setLoading(true);
+    try {
+      const res = await fetch(`/api/dashboard?start=${fmt(s)}&end=${fmt(e)}`, {
+        credentials: "include",
+      });
+      if (res.ok) {
+        const json = await res.json();
+        setSummary(json.summary ?? null);
+        const sLabel = toThaiDate(fmt(s));
+        const eLabel = toThaiDate(fmt(e));
+        setInfoLabel(sLabel === eLabel ? sLabel : `${sLabel} – ${eLabel}`);
+      }
+    } catch {}
+    setLoading(false);
+  }, []);
 
-  const getValue = (key: string | null) => {
-    if (!key || !data?.summary) return null;
-    const v = data.summary[key];
-    if (v == null) return null;
-    return Number(v).toLocaleString();
+  useEffect(() => {
+    fetchData(start, end);
+  }, []); // eslint-disable-line
+
+  const handlePreset = (p: string) => {
+    setPreset(p);
+    const { start: s, end: e } = getPresetRange(p);
+    setStart(s);
+    setEnd(e);
+    fetchData(s, e);
+  };
+
+  const handleSearch = () => fetchData(start, end);
+
+  const getDisplay = (card: (typeof OPD_CARDS)[0]) => {
+    if (!summary) return "—";
+    const visits = summary[card.visitKey];
+    const patients = card.patKey ? summary[card.patKey] : null;
+    if (visits == null) return "—";
+    if (patients != null)
+      return `${Number(patients).toLocaleString()} คน (${Number(visits).toLocaleString()} ครั้ง)`;
+    return `${Number(visits).toLocaleString()} ราย`;
   };
 
   return (
-    <div className="bg-white border border-gray-200 rounded-xl shadow-sm p-5">
-      {/* Title */}
-      <h2 className="text-sm font-bold text-gray-600 mb-4">ภาพรวมผู้รับบริการ OPD วันนี้</h2>
+    <div className="bg-white border border-gray-200 rounded-lg p-4">
+      <h4 className="text-lg font-bold text-[#717171] mb-3">
+        ภาพรวมผู้รับบริการ OPD วันนี้
+      </h4>
 
-      {/* Filter */}
-      <div className="flex flex-wrap items-center gap-3 mb-3">
-        <div className="flex items-center gap-2 text-gray-500">
-          <CalendarDays size={15} />
-          <span className="text-xs">ข้อมูลตามช่วงเวลา (สำหรับการ์ด)</span>
+      {/* Toolbar */}
+      <div className="flex flex-wrap items-center gap-3 mb-2">
+        <div className="flex items-center gap-2 text-[#717171]">
+          <CalendarDays size={16} />
+          <div>
+            <p className="text-sm">ข้อมูลตามช่วงเวลา (สำหรับ การ์ด)</p>
+            <p className="text-xs text-gray-400">เลือกช่วงเวลาที่ต้องการ</p>
+          </div>
         </div>
         <div className="flex items-center gap-2 ml-auto flex-wrap">
           <select
             value={preset}
-            onChange={(e) => setPreset(e.target.value)}
-            className="border border-gray-300 rounded-md px-2 py-1 text-xs text-gray-600 bg-white"
+            onChange={(e) => handlePreset(e.target.value)}
+            className="border border-gray-300 rounded px-2 py-1.5 text-sm text-gray-600 bg-white"
           >
-            <option>วันนี้</option>
-            <option>สัปดาห์นี้</option>
-            <option>เดือนนี้</option>
+            {PRESETS.map((p) => (
+              <option key={p}>{p}</option>
+            ))}
           </select>
-          <input readOnly value={thaiDate} className="border border-gray-300 rounded-md px-2 py-1 text-xs w-[110px]" />
-          <input readOnly value={thaiDate} className="border border-gray-300 rounded-md px-2 py-1 text-xs w-[110px]" />
-          <button className="border border-gray-300 rounded-md px-3 py-1 text-xs flex items-center gap-1 hover:bg-gray-50">
-            <Search size={12} /> ค้นหา
+          <DatePicker
+            selected={start}
+            onChange={(d: Date | null) => {
+              if (d) {
+                setStart(d);
+                setPreset("กำหนดเอง");
+              }
+            }}
+            dateFormat="dd/MM/yyyy"
+            locale={th}
+            showMonthDropdown
+            showYearDropdown
+            dropdownMode="select"
+            customInput={<ThaiDateInput />}
+          />
+          <DatePicker
+            selected={end}
+            onChange={(d: Date | null) => {
+              if (d) {
+                setEnd(d);
+                setPreset("กำหนดเอง");
+              }
+            }}
+            dateFormat="dd/MM/yyyy"
+            locale={th}
+            showMonthDropdown
+            showYearDropdown
+            dropdownMode="select"
+            customInput={<ThaiDateInput />}
+          />
+          <button
+            onClick={handleSearch}
+            disabled={loading}
+            className="border border-gray-300 rounded px-3 py-1.5 flex items-center gap-1.5 text-sm hover:bg-gray-50 text-gray-600 disabled:opacity-50"
+          >
+            {loading ? (
+              <span className="w-3 h-3 border-2 border-gray-400 border-t-gray-700 rounded-full animate-spin inline-block" />
+            ) : (
+              <Search size={14} />
+            )}
+            ค้นหา
           </button>
         </div>
       </div>
 
       {/* Info bar */}
-      <div className="flex items-center gap-2 text-xs text-gray-500 mb-4">
-        <Info size={13} />
-        <span>แสดงข้อมูล การ์ด: <strong className="text-gray-700">วันนี้ ({thaiDate})</strong></span>
+      <div className="flex items-center gap-2 text-sm text-[#717171] mb-4">
+        <Info size={14} />
+        <span>
+          แสดงข้อมูล การ์ด:{" "}
+          <span className="font-bold">{infoLabel || "—"}</span>
+        </span>
       </div>
 
-      {/* Cards grid */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 mt-2">
+      {/* Cards grid — 13 ใบ */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3">
         {loading
-          ? Array.from({ length: 12 }).map((_, i) => <Shimmer key={i} />)
+          ? Array.from({ length: 13 }).map((_, i) => <Shimmer key={i} />)
           : OPD_CARDS.map((card, i) => {
-              const visits = getValue(card.key);
-              const patients = getValue(card.patKey);
-              const display =
-                visits != null && patients != null
-                  ? `${patients} คน (${visits} ครั้ง)`
-                  : visits != null
-                  ? `${visits} ราย`
-                  : "999 คน (1,000 ครั้ง)";
-
+              const { Icon } = card;
               return (
                 <div
                   key={i}
-                  className={`${card.color} rounded-xl p-4 flex flex-col items-center gap-3 text-white`}
+                  className="rounded-2xl p-4 flex flex-col items-center gap-3 text-white"
+                  style={{ backgroundColor: card.bg }}
                 >
-                  <p className="text-xs font-semibold text-center leading-tight opacity-95">{card.label}</p>
-                  <div className="w-9 h-9 rounded-full bg-white/30 flex items-center justify-center">
-                    <User size={18} fill="white" stroke="none" />
+                  <p className="text-sm font-semibold text-center leading-snug">
+                    {card.label}
+                  </p>
+                  <div className="w-12 h-12 rounded-full bg-white/30 flex items-center justify-center">
+                    <Icon size={24} color="white" strokeWidth={1.5} />
                   </div>
-                  <p className="text-xs font-bold text-center">{display}</p>
-                  <button className="flex items-center gap-1 border border-white/80 rounded-full px-3 py-1 text-[11px] hover:bg-white/20 transition-colors">
-                    รายละเอียด <ArrowRight size={11} />
+                  <p className="text-sm font-bold text-center">
+                    {getDisplay(card)}
+                  </p>
+                  <button className="flex items-center gap-1.5 border border-white rounded-full px-4 py-1 text-xs hover:bg-white/20 transition-colors">
+                    รายละเอียด <ArrowRight size={12} />
                   </button>
                 </div>
               );
