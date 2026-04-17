@@ -273,7 +273,7 @@ export default function OpdSection() {
     if (visits == null) return "—";
     if (patients != null)
       return `${Number(patients).toLocaleString()} คน (${Number(visits).toLocaleString()} ครั้ง)`;
-    return `${Number(visits).toLocaleString()} ราย`;
+    return `${Number(visits).toLocaleString()} ราย`; // ← ลบ (ครั้ง) ออก
   };
 
   const openModal = (card: (typeof OPD_CARDS)[0]) => {

@@ -133,7 +133,7 @@ export async function GET(req: Request) {
         WHERE v.hn = ?
           AND o.an IS NULL
         ORDER BY v.vstdate DESC, o.vsttime DESC
-        LIMIT 20`,
+         `,
         [hn],
       );
       return NextResponse.json({ history: histRows });
@@ -169,8 +169,7 @@ export async function GET(req: Request) {
         LEFT JOIN ipt ip ON ip.an = a.an
         LEFT JOIN doctor d ON d.code = ip.dch_doctor
         WHERE a.regdate BETWEEN ? AND ?
-        ORDER BY a.regdate DESC
-        LIMIT 200`,
+        ORDER BY a.regdate DESC`,
         [start, end],
       );
       return NextResponse.json({ patients: rows });
@@ -207,8 +206,7 @@ export async function GET(req: Request) {
         LEFT JOIN doctor d ON d.code = o.doctor
         WHERE o.vstdate BETWEEN ? AND ?
           AND er.er_pt_type = ?
-        ORDER BY o.vstdate DESC, o.vsttime DESC
-        LIMIT 200`,
+        ORDER BY o.vstdate DESC, o.vsttime DESC`,
         [start, end, erType],
       );
       return NextResponse.json({ patients: rows });
@@ -243,8 +241,7 @@ export async function GET(req: Request) {
       LEFT JOIN pttype p2 ON p2.pttype = v.pttype
       LEFT JOIN doctor d ON d.code = o.doctor
       WHERE ${where}
-      ORDER BY v.vstdate DESC, o.vsttime DESC
-      LIMIT 300`,
+      ORDER BY v.vstdate DESC, o.vsttime DESC`,
       params,
     );
 
