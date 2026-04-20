@@ -326,13 +326,31 @@ export default function LoginPage() {
             disabled={loading || success}
           />
         </div>
-
         <button
           type="submit"
           disabled={loading || success}
           className="w-full bg-green-700 hover:bg-green-800 active:scale-[0.98] transition-all text-white py-4 rounded-xl text-lg font-bold disabled:opacity-50"
         >
           {loading ? "กำลังตรวจสอบ..." : "เข้าสู่ระบบ"}
+        </button>
+
+        {/* ── Divider ── */}
+        <div className="flex items-center gap-3 my-5">
+          <div className="flex-1 h-px bg-gray-200" />
+          <span className="text-[11px] font-semibold uppercase tracking-widest text-gray-400">
+            หรือ
+          </span>
+          <div className="flex-1 h-px bg-gray-200" />
+        </div>
+
+        {/* ── Guest Button ── */}
+        <button
+          type="button"
+          onClick={() => router.push("/pages/dashboard")}
+          disabled={loading || success}
+          className="w-full bg-white hover:bg-gray-50 active:scale-[0.98] transition-all text-gray-700 py-3 rounded-xl text-base font-semibold border-2 border-gray-300 hover:border-green-700 hover:text-green-800 disabled:opacity-50"
+        >
+          เข้าดูแบบ Guest (Dashboard เท่านั้น)
         </button>
 
         <div className="mt-10 flex justify-center">

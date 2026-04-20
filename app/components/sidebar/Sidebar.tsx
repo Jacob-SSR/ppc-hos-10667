@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { usePathname } from "next/navigation";
 import {
   LayoutDashboard,
@@ -18,6 +18,11 @@ import {
 } from "./sidebarMenu";
 import { SidebarItem } from "./types";
 
+// Guest เห็นแค่ Overview
+const GUEST_DASHBOARD_ITEMS = DASHBOARD_ITEMS.filter(
+  (item) => item.href === "/pages/dashboard",
+);
+
 // ─── helpers ──────────────────────────────────────────────────────────────────
 const isInGroup = (pathname: string | null, items: SidebarItem[]) =>
   items.some((i) => pathname === i.href || pathname?.startsWith(i.href + "/"));
@@ -25,8 +30,25 @@ const isInGroup = (pathname: string | null, items: SidebarItem[]) =>
 export default function Sidebar() {
   const pathname = usePathname();
 
-  // User override: null = ยังไม่กด (ใช้ auto ตาม pathname)
-  //                true/false = user กดแล้ว (ใช้ค่านี้แทน)
+  // ── Guest check ──
+  const [isGuest, setIsGuest] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/me", { credentials: "include" })
+      .then((r) => r.json())
+      .then((data) => {
+        if (!cancelled) setIsGuest(data.user?.role === "guest");
+      })
+      .catch(() => {
+        if (!cancelled) setIsGuest(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // ── Override state (user กดแล้ว override pathname) ──
   const [dashboardOverride, setDashboardOverride] = useState<boolean | null>(
     null,
   );
@@ -35,8 +57,6 @@ export default function Sidebar() {
   const [primaryCareOverride, setPrimaryCareOverride] = useState<
     boolean | null
   >(null);
-
-  // ค่าที่ใช้จริง: ถ้า user กดแล้ว → ใช้ override, ไม่งั้นคำนวณจาก pathname
   const dashboardOpen =
     dashboardOverride ?? isInGroup(pathname, DASHBOARD_ITEMS);
   const reportOpen = reportOverride ?? isInGroup(pathname, REPORT_ITEMS);
@@ -47,44 +67,74 @@ export default function Sidebar() {
   const toggle = (current: boolean, setter: (v: boolean | null) => void) =>
     setter(!current);
 
+  // Loading role
+  if (isGuest === null) {
+    return (
+      <aside className="flex flex-col w-60 h-full bg-white border-r border-gray-300 overflow-hidden">
+        <nav className="flex-1 px-4 py-6 space-y-1 text-sm">
+          <div className="h-10 bg-gray-100 rounded-md animate-pulse" />
+        </nav>
+      </aside>
+    );
+  }
+
   return (
     <aside className="flex flex-col w-60 h-full bg-white border-r border-gray-300 overflow-hidden">
       <nav className="flex-1 px-4 py-6 space-y-1 text-sm overflow-y-auto min-h-0">
         <NavGroup
           label="Dashboard"
           icon={LayoutDashboard}
-          items={DASHBOARD_ITEMS}
+          items={isGuest ? GUEST_DASHBOARD_ITEMS : DASHBOARD_ITEMS}
           isOpen={dashboardOpen}
           onToggle={() => toggle(dashboardOpen, setDashboardOverride)}
           isActive={isInGroup(pathname, DASHBOARD_ITEMS)}
         />
 
-        <NavGroup
-          label="รายงาน"
-          icon={FileText}
-          items={REPORT_ITEMS}
-          isOpen={reportOpen}
-          onToggle={() => toggle(reportOpen, setReportOverride)}
-          isActive={isInGroup(pathname, REPORT_ITEMS)}
-        />
+        {/* เมนูเหล่านี้ซ่อนสำหรับ Guest */}
+        {!isGuest && (
+          <>
+            <NavGroup
+              label="รายงาน"
+              icon={FileText}
+              items={REPORT_ITEMS}
+              isOpen={reportOpen}
+              onToggle={() => toggle(reportOpen, setReportOverride)}
+              isActive={isInGroup(pathname, REPORT_ITEMS)}
+            />
 
-        <NavGroup
-          label="ปฐมภูมิ"
-          icon={HeartHandshake}
-          items={PRIMARY_CARE_ITEMS}
-          isOpen={primaryCareOpen}
-          onToggle={() => toggle(primaryCareOpen, setPrimaryCareOverride)}
-          isActive={isInGroup(pathname, PRIMARY_CARE_ITEMS)}
-        />
+            <NavGroup
+              label="ปฐมภูมิ"
+              icon={HeartHandshake}
+              items={PRIMARY_CARE_ITEMS}
+              isOpen={primaryCareOpen}
+              onToggle={() => toggle(primaryCareOpen, setPrimaryCareOverride)}
+              isActive={isInGroup(pathname, PRIMARY_CARE_ITEMS)}
+            />
 
-        <NavGroup
-          label="PPA"
-          icon={Stethoscope}
-          items={PPA_ITEMS}
-          isOpen={ppaOpen}
-          onToggle={() => toggle(ppaOpen, setPpaOverride)}
-          isActive={pathname?.startsWith("/pages/ppa") || false}
-        />
+            <NavGroup
+              label="PPA"
+              icon={Stethoscope}
+              items={PPA_ITEMS}
+              isOpen={ppaOpen}
+              onToggle={() => toggle(ppaOpen, setPpaOverride)}
+              isActive={pathname?.startsWith("/pages/ppa") || false}
+            />
+          </>
+        )}
+
+        {/* Guest Notice */}
+        {isGuest && (
+          <div className="mt-4 mx-1 p-3 bg-amber-50 border border-amber-200 rounded-lg">
+            <p className="text-xs font-semibold text-amber-800 mb-1">
+              โหมด Guest
+            </p>
+            <p className="text-[11px] text-amber-700 leading-snug">
+              เข้าดูได้เฉพาะ Dashboard Overview
+              <br />
+              Login เพื่อเข้าถึงรายงานอื่น
+            </p>
+          </div>
+        )}
       </nav>
     </aside>
   );
