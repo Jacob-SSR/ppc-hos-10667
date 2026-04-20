@@ -255,6 +255,7 @@ export default function LoginPage() {
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(false);
+  const [mode, setMode] = useState<"select" | "login">("select");
   const { show: showToast, ToastContainer } = useToast();
 
   const handleLogin = async (e?: React.FormEvent) => {
@@ -281,86 +282,103 @@ export default function LoginPage() {
       <ToastContainer />
       <SuccessOverlay show={success} />
 
-      <motion.form
-        onSubmit={handleLogin}
-        initial={{ opacity: 0, scale: 0.92, y: 20 }}
-        animate={
-          success
-            ? { opacity: 0, scale: 0.94, filter: "blur(10px)", y: -8 }
-            : { opacity: 1, scale: 1, filter: "blur(0px)", y: 0 }
-        }
-        className="bg-white w-[440px] px-12 py-12 rounded-2xl border-2 border-black shadow-[8px_8px_0px_0px_rgba(0,0,0,1)]"
-      >
-        <h1 className="text-3xl font-bold text-center text-gray-900 tracking-tight">
-          Login PPCHOS
-        </h1>
+      <AnimatePresence mode="wait">
+        {mode === "select" ? (
+          <motion.div
+            key="select"
+            initial={{ opacity: 0, scale: 0.92, y: 20 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.92, y: -10 }}
+            className="bg-white w-[440px] px-12 py-12 rounded-2xl border-2 border-black shadow-[8px_8px_0px_0px_rgba(0,0,0,1)] flex flex-col gap-6"
+          >
+            <h1 className="text-3xl font-bold text-center">Login PPCHOS</h1>
 
-        {/* Divider + label */}
-        <div className="flex items-center gap-3 my-6">
-          <div className="flex-1 h-px bg-gray-300" />
-          <span className="text-xs font-bold uppercase tracking-[0.2em] text-gray-400">
-            Health Data Report
-          </span>
-          <div className="flex-1 h-px bg-gray-300" />
-        </div>
+            <div className="flex items-center gap-3 my-2">
+              <div className="flex-1 h-px bg-gray-300" />
+              <span className="text-xs font-bold uppercase tracking-[0.2em] text-gray-400">
+                Health Data Report
+              </span>
+              <div className="flex-1 h-px bg-gray-300" />
+            </div>
+            {/* guest */}
+            <button
+              onClick={() => router.push("/pages/dashboard")}
+              className="w-full bg-white border-2 border-gray-300 py-4 rounded-xl font-semibold hover:border-green-700"
+            >
+              เข้าชมข้อมูลสำหรับบุคคลภายนอก
+            </button>
 
-        {/* ไม่มี mb คงที่ เพราะ FloatingInput มี hint space ในตัวแล้ว */}
-        <div className="space-y-4 mb-8">
-          <FloatingInput
-            id="username"
-            label="User"
-            value={username}
-            onChange={(e) => setUsername(e.target.value)}
-            required
-            hint="ใช้ชื่อผู้ใช้เดียวกับที่ login เข้า HosXP"
-            disabled={loading || success}
-          />
-          <FloatingInput
-            id="password"
-            label="Password"
-            type="password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            required
-            hint="ใช้รหัสผ่านเดียวกับที่ใช้เข้า HosXP"
-            disabled={loading || success}
-          />
-        </div>
-        <button
-          type="submit"
-          disabled={loading || success}
-          className="w-full bg-green-700 hover:bg-green-800 active:scale-[0.98] transition-all text-white py-4 rounded-xl text-lg font-bold disabled:opacity-50"
-        >
-          {loading ? "กำลังตรวจสอบ..." : "เข้าสู่ระบบ"}
-        </button>
+            {/* ปุ่ม login */}
+            <button
+              onClick={() => setMode("login")}
+              className="w-full bg-green-600 hover:bg-green-700 text-white py-4 rounded-xl font-bold"
+            >
+              เข้าสู่ระบบสำหรับบุคลากรของโรงพยาบาล
+            </button>
 
-        {/* ── Divider ── */}
-        <div className="flex items-center gap-3 my-5">
-          <div className="flex-1 h-px bg-gray-200" />
-          <span className="text-[11px] font-semibold uppercase tracking-widest text-gray-400">
-            หรือ
-          </span>
-          <div className="flex-1 h-px bg-gray-200" />
-        </div>
+            <div className="mt-6 flex justify-center">
+              <img src="/logo.png" className="h-14 opacity-80" />
+            </div>
+          </motion.div>
+        ) : (
+          <motion.form
+            key="login"
+            onSubmit={handleLogin}
+            initial={{ opacity: 0, x: 80 }}
+            animate={{ opacity: 1, x: 0 }}
+            exit={{ opacity: 0, x: -80 }}
+            className="bg-white w-[440px] px-12 py-12 rounded-2xl border-2 border-black shadow-[8px_8px_0px_0px_rgba(0,0,0,1)]"
+          >
+            <h1 className="text-3xl font-bold text-center">Login PPCHOS</h1>
 
-        {/* ── Guest Button ── */}
-        <button
-          type="button"
-          onClick={() => router.push("/pages/dashboard")}
-          disabled={loading || success}
-          className="w-full bg-white hover:bg-gray-50 active:scale-[0.98] transition-all text-gray-700 py-3 rounded-xl text-base font-semibold border-2 border-gray-300 hover:border-green-700 hover:text-green-800 disabled:opacity-50"
-        >
-          เข้าดูแบบ Guest (Dashboard เท่านั้น)
-        </button>
+            <div className="flex items-center gap-3 my-6">
+              <div className="flex-1 h-px bg-gray-300" />
+              <span className="text-xs font-bold uppercase tracking-[0.2em] text-gray-400">
+                Health Data Report
+              </span>
+              <div className="flex-1 h-px bg-gray-300" />
+            </div>
 
-        <div className="mt-10 flex justify-center">
-          <img
-            src="/logo.png"
-            alt="Hospital Logo"
-            className="h-16 opacity-90"
-          />
-        </div>
-      </motion.form>
+            <div className="space-y-4 mb-8">
+              <FloatingInput
+                id="username"
+                label="User"
+                value={username}
+                onChange={(e) => setUsername(e.target.value)}
+                required
+                hint="ใช้ชื่อผู้ใช้เดียวกับที่ login เข้า HosXP"
+                disabled={loading || success}
+              />
+              <FloatingInput
+                id="password"
+                label="Password"
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                required
+                hint="ใช้รหัสผ่านเดียวกับที่ใช้เข้า HosXP"
+                disabled={loading || success}
+              />
+            </div>
+
+            <button
+              type="submit"
+              disabled={loading || success}
+              className="w-full bg-green-700 hover:bg-green-800 text-white py-4 rounded-xl font-bold"
+            >
+              {loading ? "กำลังตรวจสอบ..." : "เข้าสู่ระบบ"}
+            </button>
+            {/* ปุ่มย้อนกลับ */}
+            <button
+              type="button"
+              onClick={() => setMode("select")}
+              className="w-full mt-3 border-2 border-gray-300 bg-white hover:bg-gray-50 active:scale-[0.98] transition-all text-gray-700 py-3 rounded-xl text-base font-semibold hover:border-green-700 hover:text-green-800"
+            >
+              ย้อนกลับ
+            </button>
+          </motion.form>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

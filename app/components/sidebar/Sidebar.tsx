@@ -131,7 +131,7 @@ export default function Sidebar() {
             <p className="text-[11px] text-amber-700 leading-snug">
               เข้าดูได้เฉพาะ Dashboard Overview
               <br />
-              Login เพื่อเข้าถึงรายงานอื่น
+              Login เพื่อเข้าถึงฟีเจอร์ทั้งหมด
             </p>
           </div>
         )}
