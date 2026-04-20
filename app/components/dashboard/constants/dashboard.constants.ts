@@ -13,7 +13,6 @@ import {
 import type { OpdCardKey, DatePreset } from "../types/dashboard.types";
 
 // ─── OPD Cards ────────────────────────────────────────────────────────────────
-
 export interface OpdCardConfig {
   label: string;
   bg: string;
@@ -130,31 +129,11 @@ export const OPD_CARDS: OpdCardConfig[] = [
   },
 ];
 
-// ─── Date Presets ─────────────────────────────────────────────────────────────
-
 export const DATE_PRESETS: DatePreset[] = ["วันนี้", "สัปดาห์นี้", "เดือนนี้"];
 
-// ─── Ward Config (IPD) ────────────────────────────────────────────────────────
-
-export interface WardConfig {
-  label: string;
-  totalBeds: number;
-}
-
-export const WARD_CONFIG: Record<string, WardConfig> = {
-  "1":  { label: "ผู้ป่วยใน",      totalBeds: 39 },
-  "4":  { label: "ห้องพิเศษ",      totalBeds: 14 },
-  "13": { label: "Ward LR",        totalBeds: 10 },
-  "14": { label: "HW ยาเสพติด",    totalBeds: 31 },
-  "15": { label: "พลับพลารักษ์",   totalBeds: 10 },
-  "16": { label: "HW Palliative",  totalBeds: 5  },
-  "17": { label: "IMC",            totalBeds: 3  },
-};
-
 // ─── Bed Occupancy Colors ─────────────────────────────────────────────────────
-
 export function getBedOccupancyColor(rate: number): string {
-  if (rate >= 90) return "#f87171"; // แดง — เกือบเต็ม
-  if (rate >= 70) return "#fbbf24"; // เหลือง — ค่อนข้างเต็ม
-  return "#add8e6";                 // ฟ้าอ่อน — ปกติ
+  if (rate >= 90) return "#f87171";
+  if (rate >= 70) return "#fbbf24";
+  return "#add8e6";
 }

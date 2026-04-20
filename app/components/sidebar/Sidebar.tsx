@@ -1,9 +1,8 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname } from "next/navigation";
 import {
-  LogOut,
   LayoutDashboard,
   FileText,
   Stethoscope,
@@ -20,12 +19,10 @@ import {
 
 export default function Sidebar() {
   const pathname = usePathname();
-  const router = useRouter();
 
   const [dashboardOpen, setDashboardOpen] = useState(false);
   const [reportOpen, setReportOpen] = useState(false);
   const [ppaOpen, setPpaOpen] = useState(false);
-  const [loggingOut, setLoggingOut] = useState(false);
   const [primaryCareOpen, setPrimaryCareOpen] = useState(false);
 
   useEffect(() => {
@@ -39,17 +36,6 @@ export default function Sidebar() {
 
   const isAnyActive = (items: any[]) =>
     items.some((i) => pathname === i.href || pathname?.startsWith(i.href));
-
-  const handleLogout = async () => {
-    setLoggingOut(true);
-
-    await fetch("/api/logout", {
-      method: "POST",
-      credentials: "include",
-    });
-
-    router.replace("/auth/login");
-  };
 
   return (
     <aside className="flex flex-col w-60 h-full bg-white border-r border-gray-300 overflow-hidden">
@@ -88,18 +74,6 @@ export default function Sidebar() {
           isActive={isAnyActive(PPA_ITEMS)}
         />
       </nav>
-
-      <div className="border-t border-gray-200 p-4">
-        <button
-          onClick={handleLogout}
-          disabled={loggingOut}
-          className="flex items-center justify-center gap-2 w-full bg-green-800 hover:bg-green-900 text-white text-sm font-semibold px-4 py-2 rounded-lg shadow"
-        >
-          <LogOut size={16} />
-
-          {loggingOut ? "กำลังออก..." : "Logout"}
-        </button>
-      </div>
     </aside>
   );
 }
