@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { usePathname } from "next/navigation";
 import {
   LayoutDashboard,
@@ -16,26 +16,36 @@ import {
   PPA_ITEMS,
   PRIMARY_CARE_ITEMS,
 } from "./sidebarMenu";
+import { SidebarItem } from "./types";
+
+// ─── helpers ──────────────────────────────────────────────────────────────────
+const isInGroup = (pathname: string | null, items: SidebarItem[]) =>
+  items.some((i) => pathname === i.href || pathname?.startsWith(i.href + "/"));
 
 export default function Sidebar() {
   const pathname = usePathname();
 
-  const [dashboardOpen, setDashboardOpen] = useState(false);
-  const [reportOpen, setReportOpen] = useState(false);
-  const [ppaOpen, setPpaOpen] = useState(false);
-  const [primaryCareOpen, setPrimaryCareOpen] = useState(false);
+  // User override: null = ยังไม่กด (ใช้ auto ตาม pathname)
+  //                true/false = user กดแล้ว (ใช้ค่านี้แทน)
+  const [dashboardOverride, setDashboardOverride] = useState<boolean | null>(
+    null,
+  );
+  const [reportOverride, setReportOverride] = useState<boolean | null>(null);
+  const [ppaOverride, setPpaOverride] = useState<boolean | null>(null);
+  const [primaryCareOverride, setPrimaryCareOverride] = useState<
+    boolean | null
+  >(null);
 
-  useEffect(() => {
-    if (pathname?.startsWith("/pages/ppa")) setPpaOpen(true);
-    if (REPORT_ITEMS.some((i) => pathname === i.href)) setReportOpen(true);
-    if (DASHBOARD_ITEMS.some((i) => pathname === i.href))
-      setDashboardOpen(true);
-    if (PRIMARY_CARE_ITEMS.some((i) => pathname === i.href))
-      setPrimaryCareOpen(true);
-  }, [pathname]);
+  // ค่าที่ใช้จริง: ถ้า user กดแล้ว → ใช้ override, ไม่งั้นคำนวณจาก pathname
+  const dashboardOpen =
+    dashboardOverride ?? isInGroup(pathname, DASHBOARD_ITEMS);
+  const reportOpen = reportOverride ?? isInGroup(pathname, REPORT_ITEMS);
+  const ppaOpen = ppaOverride ?? (pathname?.startsWith("/pages/ppa") || false);
+  const primaryCareOpen =
+    primaryCareOverride ?? isInGroup(pathname, PRIMARY_CARE_ITEMS);
 
-  const isAnyActive = (items: any[]) =>
-    items.some((i) => pathname === i.href || pathname?.startsWith(i.href));
+  const toggle = (current: boolean, setter: (v: boolean | null) => void) =>
+    setter(!current);
 
   return (
     <aside className="flex flex-col w-60 h-full bg-white border-r border-gray-300 overflow-hidden">
@@ -45,8 +55,8 @@ export default function Sidebar() {
           icon={LayoutDashboard}
           items={DASHBOARD_ITEMS}
           isOpen={dashboardOpen}
-          onToggle={() => setDashboardOpen((v) => !v)}
-          isActive={isAnyActive(DASHBOARD_ITEMS)}
+          onToggle={() => toggle(dashboardOpen, setDashboardOverride)}
+          isActive={isInGroup(pathname, DASHBOARD_ITEMS)}
         />
 
         <NavGroup
@@ -54,24 +64,26 @@ export default function Sidebar() {
           icon={FileText}
           items={REPORT_ITEMS}
           isOpen={reportOpen}
-          onToggle={() => setReportOpen((v) => !v)}
-          isActive={isAnyActive(REPORT_ITEMS)}
+          onToggle={() => toggle(reportOpen, setReportOverride)}
+          isActive={isInGroup(pathname, REPORT_ITEMS)}
         />
+
         <NavGroup
           label="ปฐมภูมิ"
           icon={HeartHandshake}
           items={PRIMARY_CARE_ITEMS}
           isOpen={primaryCareOpen}
-          onToggle={() => setPrimaryCareOpen((v) => !v)}
-          isActive={isAnyActive(PRIMARY_CARE_ITEMS)}
+          onToggle={() => toggle(primaryCareOpen, setPrimaryCareOverride)}
+          isActive={isInGroup(pathname, PRIMARY_CARE_ITEMS)}
         />
+
         <NavGroup
           label="PPA"
           icon={Stethoscope}
           items={PPA_ITEMS}
           isOpen={ppaOpen}
-          onToggle={() => setPpaOpen((v) => !v)}
-          isActive={isAnyActive(PPA_ITEMS)}
+          onToggle={() => toggle(ppaOpen, setPpaOverride)}
+          isActive={pathname?.startsWith("/pages/ppa") || false}
         />
       </nav>
     </aside>
