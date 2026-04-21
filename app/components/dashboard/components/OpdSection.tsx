@@ -143,7 +143,7 @@ const OPD_CARDS = [
   },
 ];
 
-const PRESETS = ["วันนี้", "สัปดาห์นี้", "เดือนนี้"];
+const PRESETS = ["วันนี้", "สัปดาห์นี้", "เดือนนี้", "ปีนี้"];
 
 function fmt(d: Date) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
@@ -173,7 +173,44 @@ function getPresetRange(preset: string): { start: Date; end: Date } {
       end: today,
     };
   }
+  if (preset === "ปีนี้") {
+    return {
+      start: new Date(today.getFullYear(), 0, 1), // 1 ม.ค.
+      end: today,
+    };
+  }
   return { start: today, end: today };
+}
+
+// ── สร้าง title ให้สอดคล้องกับ preset / ช่วงวันที่ ────────────────────────
+function buildTitle(preset: string, start: Date, end: Date): string {
+  const base = "ภาพรวมผู้รับบริการ OPD";
+
+  const now = new Date(
+    new Date().toLocaleString("en-US", { timeZone: "Asia/Bangkok" }),
+  );
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+
+  const isSameDay = (a: Date, b: Date) =>
+    a.getFullYear() === b.getFullYear() &&
+    a.getMonth() === b.getMonth() &&
+    a.getDate() === b.getDate();
+
+  if (
+    preset === "วันนี้" ||
+    (isSameDay(start, end) && isSameDay(start, today))
+  ) {
+    return `${base} วันนี้`;
+  }
+  if (preset === "สัปดาห์นี้") return `${base} สัปดาห์นี้`;
+  if (preset === "เดือนนี้") return `${base} เดือนนี้`;
+  if (preset === "ปีนี้") return `${base} ปีนี้`;
+
+  // กำหนดเอง — แสดงช่วงวันที่
+  const s = toThaiDate(fmt(start));
+  const e = toThaiDate(fmt(end));
+  if (s === e) return `${base} วันที่ ${s}`;
+  return `${base} ${s} – ${e}`;
 }
 
 function Shimmer() {
@@ -195,6 +232,7 @@ export default function OpdSection() {
   const [summary, setSummary] = useState<Record<string, number> | null>(null);
   const [loading, setLoading] = useState(true);
   const [infoLabel, setInfoLabel] = useState("");
+  const [titleLabel, setTitleLabel] = useState("ภาพรวมผู้รับบริการ OPD วันนี้");
 
   const [modal, setModal] = useState<ModalState>({
     open: false,
@@ -202,8 +240,8 @@ export default function OpdSection() {
     cardType: "all",
   });
 
-  // ใช้ ref เก็บ function เพื่อไม่ให้เป็น dependency ของ useEffect
-  const fetchData = async (s: Date, e: Date) => {
+  // รับ preset เข้ามาได้ เพราะ setPreset เป็น async state
+  const fetchData = async (s: Date, e: Date, p: string = preset) => {
     setLoading(true);
     try {
       const res = await fetch(`/api/dashboard?start=${fmt(s)}&end=${fmt(e)}`, {
@@ -215,6 +253,7 @@ export default function OpdSection() {
         const sLabel = toThaiDate(fmt(s));
         const eLabel = toThaiDate(fmt(e));
         setInfoLabel(sLabel === eLabel ? sLabel : `${sLabel} – ${eLabel}`);
+        setTitleLabel(buildTitle(p, s, e));
       }
     } catch {}
     setLoading(false);
@@ -244,6 +283,7 @@ export default function OpdSection() {
           const sLabel = toThaiDate(fmt(s));
           const eLabel = toThaiDate(fmt(e));
           setInfoLabel(sLabel === eLabel ? sLabel : `${sLabel} – ${eLabel}`);
+          setTitleLabel(buildTitle("วันนี้", s, e));
         }
       } catch {}
       if (!cancelled) setLoading(false);
@@ -261,10 +301,10 @@ export default function OpdSection() {
     const { start: s, end: e } = getPresetRange(p);
     setStart(s);
     setEnd(e);
-    fetchData(s, e);
+    fetchData(s, e, p);
   };
 
-  const handleSearch = () => fetchData(start, end);
+  const handleSearch = () => fetchData(start, end, preset);
 
   const getDisplay = (card: (typeof OPD_CARDS)[0]) => {
     if (!summary) return "—";
@@ -273,7 +313,7 @@ export default function OpdSection() {
     if (visits == null) return "—";
     if (patients != null)
       return `${Number(patients).toLocaleString()} คน (${Number(visits).toLocaleString()} ครั้ง)`;
-    return `${Number(visits).toLocaleString()} ราย`; // ← ลบ (ครั้ง) ออก
+    return `${Number(visits).toLocaleString()} ราย`;
   };
 
   const openModal = (card: (typeof OPD_CARDS)[0]) => {
@@ -283,9 +323,7 @@ export default function OpdSection() {
   return (
     <>
       <div className="bg-white border border-gray-200 rounded-lg p-4">
-        <h4 className="text-lg font-bold text-[#717171] mb-3">
-          ภาพรวมผู้รับบริการ OPD วันนี้
-        </h4>
+        <h4 className="text-lg font-bold text-[#717171] mb-3">{titleLabel}</h4>
 
         {/* Toolbar */}
         <div className="flex flex-wrap items-center gap-3 mb-2">
