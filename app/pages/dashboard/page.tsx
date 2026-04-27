@@ -53,7 +53,7 @@ export default function DashboardPage() {
   return (
     <div className="space-y-4">
       <OpdSection />
-      <IpdSection dateLabel={todayStr} />
+      <IpdSection />
       <AnnualChart months={monthlyData?.months ?? []} loading={loading} />
       <BedOccupancyChart />
       <HomeWardTable start={todayStr} end={todayStr} />

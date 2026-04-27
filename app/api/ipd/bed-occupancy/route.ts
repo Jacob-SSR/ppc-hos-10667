@@ -1,9 +1,13 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { getBedOccupancy } from "@/lib/ipd.service";
 
-export async function GET() {
+export async function GET(req: NextRequest) {
   try {
-    const data = await getBedOccupancy();
+    const { searchParams } = new URL(req.url);
+    const start = searchParams.get("start");
+    const end = searchParams.get("end");
+
+    const data = await getBedOccupancy(start ?? undefined, end ?? undefined);
     return NextResponse.json(data);
   } catch (error) {
     console.error("Bed occupancy error:", error);

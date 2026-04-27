@@ -20,11 +20,6 @@ interface WardInfoRow extends RowDataPacket {
   total_beds: number;
 }
 
-// ─── Ward Config (source of truth) ────────────────────────────────────────────
-// key = ward_code ใน DB
-// - label: ชื่อที่จะแสดงบน UI (ถ้าไม่ใส่ ใช้ชื่อจาก DB)
-// - totalBeds: จำนวนเตียงจริง (override ค่าจาก bedno table)
-// - isHomeWard: true = จะถูกยุบรวมเป็น "Home Ward" รายการเดียว
 interface WardConfigItem {
   label?: string;
   totalBeds: number;
@@ -32,21 +27,19 @@ interface WardConfigItem {
 }
 
 const WARD_CONFIG: Record<string, WardConfigItem> = {
-  "01": { label: "ผู้ป่วยใน", totalBeds: 39 },
-  "04": { label: "ห้องพิเศษ", totalBeds: 14 },
-  "05": { label: "COHORT WARD", totalBeds: 2 },
-  "11": { label: "Ward Colono 2 (PP)", totalBeds: 7 },
-  "12": { label: "Ward Colono 1 (IP)", totalBeds: 3 },
-  "13": { label: "Ward LR", totalBeds: 10 },
-  "14": { label: "HW ยาเสพติด", totalBeds: 31, isHomeWard: true },
-  "15": { label: "พลับพลารักษ์", totalBeds: 10, isHomeWard: true },
+  "04": { label: "ห้องพิเศษ", totalBeds: 11 },
+  "01": { label: "Ward", totalBeds: 26 },
+  "17": { label: "ห้องINC", totalBeds: 2 },
+  "15": { label: "ห้องพลับพลารักษ์", totalBeds: 10 },
+  "11": { label: "เตียงเสริม", totalBeds: 16 },
+  "05": { label: "ห้องแยกโรค", totalBeds: 2 },
+  "13": { label: "ห้องNegative", totalBeds: 2 },
+  "14": { label: "HW ยาเสพติด", totalBeds: 5, isHomeWard: true },
   "16": { label: "HW Palliative", totalBeds: 5, isHomeWard: true },
-  "17": { label: "IMC", totalBeds: 3 },
 };
 
 const ACTIVE_WARD_CODES = Object.keys(WARD_CONFIG);
 
-// ─── Cache ────────────────────────────────────────────────────────────────────
 interface CachedWards {
   data: WardInfoRow[];
   expiresAt: number;
@@ -59,28 +52,26 @@ async function getActiveWards(): Promise<WardInfoRow[]> {
     return wardCache.data;
   }
 
-  if (ACTIVE_WARD_CODES.length === 0) {
+  const wardCodes = Object.keys(WARD_CONFIG);
+  if (wardCodes.length === 0) {
     wardCache = { data: [], expiresAt: now + 5 * 60 * 1000 };
     return [];
   }
 
-  const placeholders = ACTIVE_WARD_CODES.map(() => "?").join(",");
+  const placeholders = wardCodes.map(() => "?").join(",");
 
-  // ดึงชื่อจริงจาก DB เพื่อ fallback ถ้า config ไม่ได้ตั้ง label ไว้
   const [rows] = await db.query<WardInfoRow[]>(
     `
     SELECT
       w.ward AS ward_code,
-      w.name,
-      0 AS total_beds
+      w.name
     FROM ward w
     WHERE w.ward IN (${placeholders})
     ORDER BY FIELD(w.ward, ${placeholders})
     `,
-    [...ACTIVE_WARD_CODES, ...ACTIVE_WARD_CODES],
+    [...wardCodes, ...wardCodes],
   );
 
-  // Override ด้วย config (label + totalBeds)
   const merged: WardInfoRow[] = rows.map((r) => {
     const cfg = WARD_CONFIG[r.ward_code];
     return {
@@ -161,10 +152,10 @@ export async function getIpdSummary(
   const wardCodes = wards.map((w) => w.ward_code);
   const placeholders = wardCodes.map(() => "?").join(",");
 
-  // ── Ward stats (ทุก ward แม้ไม่มีข้อมูล) ───────────────────────────────────
   const wardUnion = wardCodes
     .map(() => `SELECT ? AS ward_code`)
     .join(" UNION ALL ");
+
   const [rawWardRows] = await db.query<IpdWardStat[]>(
     `
     SELECT
@@ -197,18 +188,9 @@ export async function getIpdSummary(
       GROUP BY ward
     ) a ON a.ward_code = w.ward_code
     `,
-    [
-      ...wardCodes, // UNION values
-      start,
-      end,
-      ...wardCodes, // discharge filter
-      start,
-      end,
-      ...wardCodes, // admit filter
-    ],
+    [...wardCodes, start, end, ...wardCodes, start, end, ...wardCodes],
   );
 
-  // ── Overall summary ────────────────────────────────────────────────────────
   const [totalRows] = await db.query<IpdSummaryRow[]>(
     `
     SELECT
@@ -222,7 +204,6 @@ export async function getIpdSummary(
     [start, end, ...wardCodes],
   );
 
-  // ── Pttype + Dchtype ───────────────────────────────────────────────────────
   const [pttypeRows] = await db.query<IpdPttypeRow[]>(
     `
     SELECT p1.name AS pttype_name, COUNT(*) AS total
@@ -261,7 +242,6 @@ export async function getIpdSummary(
   };
 }
 
-// ─── Bed Occupancy ────────────────────────────────────────────────────────────
 export interface BedOccupancyRow {
   ward_code: string;
   label: string;
@@ -270,31 +250,48 @@ export interface BedOccupancyRow {
   occupancy_rate: number;
 }
 
-export async function getBedOccupancy(): Promise<BedOccupancyRow[]> {
+export async function getBedOccupancy(
+  start?: string,
+  end?: string,
+): Promise<BedOccupancyRow[]> {
   const wards = await getActiveWards();
   if (wards.length === 0) return [];
 
   const wardCodes = wards.map((w) => w.ward_code);
   const placeholders = wardCodes.map(() => "?").join(",");
 
-  // นับ admit ปัจจุบัน (ยังไม่จำหน่าย)
-  const [admitRows] = await db.query<RowDataPacket[]>(
-    `
-    SELECT a.ward AS ward_code, COUNT(*) AS current_admit
-    FROM an_stat a
-    WHERE a.dchdate IS NULL
-      AND a.ward IN (${placeholders})
-    GROUP BY a.ward
-    `,
-    wardCodes,
-  );
+  // ถ้ามี date range → นับ admit ในช่วงนั้น (regdate BETWEEN)
+  // ถ้าไม่มี → นับผู้ป่วยที่ยังอยู่ปัจจุบัน (dchdate IS NULL)
+  let admitQuery: string;
+  let admitParams: (string | string[])[];
+
+  if (start && end) {
+    admitQuery = `
+      SELECT a.ward AS ward_code, COUNT(*) AS current_admit
+      FROM an_stat a
+      WHERE a.regdate BETWEEN ? AND ?
+        AND a.ward IN (${placeholders})
+      GROUP BY a.ward
+    `;
+    admitParams = [start, end, ...wardCodes];
+  } else {
+    admitQuery = `
+      SELECT a.ward AS ward_code, COUNT(*) AS current_admit
+      FROM an_stat a
+      WHERE a.dchdate IS NULL
+        AND a.ward IN (${placeholders})
+      GROUP BY a.ward
+    `;
+    admitParams = wardCodes;
+  }
+
+  const [admitRows] = await db.query<RowDataPacket[]>(admitQuery, admitParams);
 
   const admitMap: Record<string, number> = {};
   for (const r of admitRows) {
     admitMap[String(r.ward_code)] = Number(r.current_admit);
   }
 
-  // สร้างรายการแยก ward พร้อม merge Home Ward
   const rows: BedOccupancyRow[] = [];
   let homeWardTotal = 0;
   let homeWardAdmit = 0;
@@ -319,7 +316,6 @@ export async function getBedOccupancy(): Promise<BedOccupancyRow[]> {
     });
   }
 
-  // เพิ่ม Home Ward รวม (ถ้ามี)
   if (homeWardTotal > 0) {
     rows.push({
       ward_code: "__home__",
