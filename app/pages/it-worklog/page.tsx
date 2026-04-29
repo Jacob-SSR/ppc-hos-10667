@@ -6,11 +6,11 @@ import {
     ResponsiveContainer, PieChart, Pie, Cell,
     AreaChart, Area,
 } from "recharts";
-import { motion } from "framer-motion";
+import { motion, AnimatePresence } from "framer-motion";
 import {
     Monitor, Wifi, FileText, Server, Database,
     Clock, AlertTriangle, TrendingUp, Calendar, Users,
-    Activity, Info, RefreshCw,
+    Activity, Info, RefreshCw, ChevronDown, ChevronRight,
 } from "lucide-react";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -18,12 +18,14 @@ interface WorkRow {
     date: string;
     staff: string;
     mainTask: string;
+    subTask: string;
     subHosXP: string;
     subIntranet: string;
     subComputer: string;
     subNetwork: string;
     subReport: string;
     subOther: string;
+    subDoc: string;
     urgency: string;
     devType: string;
     duration: number;
@@ -31,7 +33,7 @@ interface WorkRow {
     timeliness: string;
 }
 
-// ── Design tokens (mirrors globals.css) ───────────────────────────────────────
+// ── Design tokens ─────────────────────────────────────────────────────────────
 const MINT = {
     50: "#f0faf4",
     100: "#d6f0e0",
@@ -146,6 +148,184 @@ function ChartTooltip({ active, payload, label }: {
     );
 }
 
+// ── SubTask Breakdown Card ────────────────────────────────────────────────────
+// แสดงรายการหมวดย่อยภายในหมวดหลัก พร้อม bar สัดส่วน
+function SubTaskBreakdown({ data }: { data: { mainTask: string; subTask: string; count: number }[] }) {
+    const [expandedTask, setExpandedTask] = useState<string | null>(null);
+
+    // Group by mainTask
+    const grouped = useMemo(() => {
+        const map = new Map<string, { sub: string; count: number }[]>();
+        for (const row of data) {
+            if (!row.subTask) continue;
+            if (!map.has(row.mainTask)) map.set(row.mainTask, []);
+            const existing = map.get(row.mainTask)!.find((s) => s.sub === row.subTask);
+            if (existing) {
+                existing.count += row.count;
+            } else {
+                map.get(row.mainTask)!.push({ sub: row.subTask, count: row.count });
+            }
+        }
+        // sort sub by count desc
+        for (const [, subs] of map) subs.sort((a, b) => b.count - a.count);
+        // sort main by total count desc
+        return Array.from(map.entries())
+            .map(([main, subs]) => ({
+                main,
+                subs,
+                total: subs.reduce((s, r) => s + r.count, 0),
+            }))
+            .sort((a, b) => b.total - a.total);
+    }, [data]);
+
+    if (grouped.length === 0) return null;
+
+    return (
+        <div className="bg-white border border-gray-200 rounded-lg p-4">
+            <h4 className="text-base font-bold text-[#717171] mb-1">หมวดย่อยภายในแต่ละหมวดหลัก</h4>
+            <p className="text-xs text-gray-400 mb-4">คลิกหมวดหลักเพื่อดูรายละเอียดหมวดย่อย</p>
+
+            <div className="space-y-2">
+                {grouped.map((g, gi) => {
+                    const color = taskColor(g.main);
+                    const isOpen = expandedTask === g.main;
+                    const maxSub = g.subs[0]?.count ?? 0;
+
+                    return (
+                        <div key={g.main} className="border border-gray-100 rounded-xl overflow-hidden">
+                            {/* Header row — คลิกเพื่อ expand */}
+                            <button
+                                onClick={() => setExpandedTask(isOpen ? null : g.main)}
+                                className="w-full flex items-center gap-3 px-4 py-3 hover:bg-gray-50 transition-colors text-left"
+                            >
+                                {/* Color dot */}
+                                <div className="w-3 h-3 rounded-full shrink-0" style={{ background: color }} />
+
+                                {/* Main task label */}
+                                <span className="flex-1 text-sm font-semibold text-gray-800 truncate">
+                                    {g.main}
+                                </span>
+
+                                {/* Subtask count badge */}
+                                <span
+                                    className="text-[10px] font-bold px-2 py-0.5 rounded-full shrink-0"
+                                    style={{ background: color + "18", color }}
+                                >
+                                    {g.subs.length} หมวดย่อย
+                                </span>
+
+                                {/* Total jobs */}
+                                <span className="text-sm font-extrabold tabular-nums shrink-0" style={{ color }}>
+                                    {g.total} งาน
+                                </span>
+
+                                {/* Chevron */}
+                                <motion.span
+                                    animate={{ rotate: isOpen ? 90 : 0 }}
+                                    transition={{ duration: 0.15 }}
+                                    className="text-gray-400 shrink-0"
+                                >
+                                    <ChevronRight size={16} />
+                                </motion.span>
+                            </button>
+
+                            {/* Expanded sub-task list */}
+                            <AnimatePresence>
+                                {isOpen && (
+                                    <motion.div
+                                        initial={{ height: 0, opacity: 0 }}
+                                        animate={{ height: "auto", opacity: 1 }}
+                                        exit={{ height: 0, opacity: 0 }}
+                                        transition={{ duration: 0.2, ease: "easeOut" }}
+                                        className="overflow-hidden border-t border-gray-100"
+                                    >
+                                        <div className="px-4 py-3 space-y-2.5 bg-gray-50/60">
+                                            {g.subs.map((s, si) => {
+                                                const pct = maxSub > 0 ? (s.count / maxSub) * 100 : 0;
+                                                return (
+                                                    <motion.div
+                                                        key={s.sub}
+                                                        initial={{ opacity: 0, x: -8 }}
+                                                        animate={{ opacity: 1, x: 0 }}
+                                                        transition={{ delay: si * 0.03 }}
+                                                    >
+                                                        <div className="flex items-center justify-between mb-1">
+                                                            <span className="text-xs text-gray-700 truncate max-w-[75%]">
+                                                                {s.sub}
+                                                            </span>
+                                                            <span className="text-xs font-bold tabular-nums" style={{ color }}>
+                                                                {s.count}
+                                                            </span>
+                                                        </div>
+                                                        <div className="h-1.5 rounded-full overflow-hidden" style={{ background: "#e5e7eb" }}>
+                                                            <motion.div
+                                                                className="h-full rounded-full"
+                                                                style={{ background: color + "cc" }}
+                                                                initial={{ width: 0 }}
+                                                                animate={{ width: `${pct}%` }}
+                                                                transition={{ duration: 0.5, ease: "easeOut", delay: si * 0.03 }}
+                                                            />
+                                                        </div>
+                                                    </motion.div>
+                                                );
+                                            })}
+                                        </div>
+                                    </motion.div>
+                                )}
+                            </AnimatePresence>
+                        </div>
+                    );
+                })}
+            </div>
+        </div>
+    );
+}
+
+// ── SubTask Heatmap / Distribution ────────────────────────────────────────────
+// Horizontal bar chart แสดงหมวดย่อยของ mainTask ที่เลือก
+function SubTaskChart({ filtered, selectedMain }: { filtered: WorkRow[]; selectedMain: string }) {
+    const data = useMemo(() => {
+        const map: Record<string, number> = {};
+        filtered
+            .filter((r) => r.mainTask === selectedMain && r.subTask)
+            .forEach((r) => { map[r.subTask] = (map[r.subTask] || 0) + 1; });
+        return Object.entries(map)
+            .map(([name, value]) => ({ name, value }))
+            .sort((a, b) => b.value - a.value);
+    }, [filtered, selectedMain]);
+
+    if (data.length === 0) return (
+        <div className="flex items-center justify-center h-32 text-xs text-gray-400">
+            ไม่มีหมวดย่อยสำหรับหมวดนี้
+        </div>
+    );
+
+    const color = taskColor(selectedMain);
+    const max = data[0]?.value ?? 1;
+
+    return (
+        <div className="space-y-2">
+            {data.map((d, i) => (
+                <div key={d.name}>
+                    <div className="flex items-center justify-between text-xs mb-1">
+                        <span className="text-gray-700 truncate max-w-[78%]">{d.name}</span>
+                        <span className="font-bold tabular-nums" style={{ color }}>{d.value}</span>
+                    </div>
+                    <div className="h-2 rounded-full overflow-hidden" style={{ background: "#e5e7eb" }}>
+                        <motion.div
+                            className="h-full rounded-full"
+                            style={{ background: color }}
+                            initial={{ width: 0 }}
+                            animate={{ width: `${(d.value / max) * 100}%` }}
+                            transition={{ delay: i * 0.04, duration: 0.5, ease: "easeOut" }}
+                        />
+                    </div>
+                </div>
+            ))}
+        </div>
+    );
+}
+
 // ── Main Page ─────────────────────────────────────────────────────────────────
 export default function ItWorklogPage() {
     const [allData, setAllData] = useState<WorkRow[]>([]);
@@ -154,6 +334,7 @@ export default function ItWorklogPage() {
     const [selectedStaff, setSelectedStaff] = useState("ทั้งหมด");
     const [dateRange, setDateRange] = useState(30);
     const [viewMode, setViewMode] = useState<"day" | "month">("day");
+    const [selectedMainForSub, setSelectedMainForSub] = useState<string>("");
 
     const fetchData = async () => {
         setLoading(true);
@@ -250,6 +431,27 @@ export default function ItWorklogPage() {
             name, count, color: STAFF_COLORS[name] ?? MINT[300],
         })).sort((a, b) => b.count - a.count);
     }, [filtered]);
+
+    // ── Sub-task breakdown data ───────────────────────────────────────────────
+    const subTaskData = useMemo(() => {
+        return filtered
+            .filter((r) => r.subTask)
+            .map((r) => ({ mainTask: r.mainTask, subTask: r.subTask, count: 1 }));
+    }, [filtered]);
+
+    // List of mainTasks that have subTasks (for dropdown)
+    const mainTasksWithSub = useMemo(() => {
+        const s = new Set<string>();
+        filtered.forEach((r) => { if (r.subTask) s.add(r.mainTask); });
+        return Array.from(s).sort();
+    }, [filtered]);
+
+    // Set default selected main task
+    useEffect(() => {
+        if (mainTasksWithSub.length > 0 && !selectedMainForSub) {
+            setSelectedMainForSub(mainTasksWithSub[0]);
+        }
+    }, [mainTasksWithSub]);
 
     const hasData = !loading && allData.length > 0;
 
@@ -462,6 +664,46 @@ export default function ItWorklogPage() {
                 </div>
             )}
 
+            {/* ── SubTask Breakdown (NEW) ───────────────────────────────────── */}
+            {hasData && subTaskData.length > 0 && (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {/* Left: Accordion list ทุกหมวดหลัก */}
+                    <SubTaskBreakdown data={subTaskData} />
+
+                    {/* Right: Bar chart ของหมวดที่เลือก */}
+                    <div className="bg-white border border-gray-200 rounded-lg p-4">
+                        <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
+                            <h4 className="text-base font-bold text-[#717171]">หมวดย่อยของ</h4>
+                            <select
+                                value={selectedMainForSub}
+                                onChange={(e) => setSelectedMainForSub(e.target.value)}
+                                className="border border-gray-200 rounded-lg px-3 py-1.5 text-sm text-gray-700 bg-white focus:outline-none focus:border-green-400"
+                                style={{ maxWidth: "220px" }}
+                            >
+                                {mainTasksWithSub.map((m) => (
+                                    <option key={m} value={m}>{TASK_CFG[m]?.short ?? m}</option>
+                                ))}
+                            </select>
+                        </div>
+
+                        {/* Color indicator */}
+                        {selectedMainForSub && (
+                            <div className="flex items-center gap-2 mb-4 text-xs">
+                                <div className="w-3 h-3 rounded-full" style={{ background: taskColor(selectedMainForSub) }} />
+                                <span className="text-gray-600 font-medium">{selectedMainForSub}</span>
+                                <span className="text-gray-400 ml-auto">
+                                    {filtered.filter((r) => r.mainTask === selectedMainForSub && r.subTask).length} งาน
+                                </span>
+                            </div>
+                        )}
+
+                        <div className="overflow-y-auto max-h-[340px] pr-1">
+                            <SubTaskChart filtered={filtered} selectedMain={selectedMainForSub} />
+                        </div>
+                    </div>
+                </div>
+            )}
+
             {/* ── Staff + Urgency ───────────────────────────────────────────── */}
             {hasData && (
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -567,7 +809,7 @@ export default function ItWorklogPage() {
                         <table className="min-w-full text-xs border-collapse">
                             <thead>
                                 <tr>
-                                    {["วันที่", "เจ้าหน้าที่", "ประเภทงาน", "รายละเอียด", "เวลา (นาที)", "ความเร่งด่วน"].map((h) => (
+                                    {["วันที่", "เจ้าหน้าที่", "ประเภทงาน", "หมวดย่อย", "เวลา (นาที)", "ความเร่งด่วน"].map((h) => (
                                         <th key={h} className="sticky top-0 text-white px-3 py-2.5 text-left font-semibold whitespace-nowrap border-r"
                                             style={{ backgroundColor: MINT[700], borderColor: MINT[600] }}>
                                             {h}
@@ -577,8 +819,6 @@ export default function ItWorklogPage() {
                             </thead>
                             <tbody>
                                 {filtered.slice().reverse().slice(0, 100).map((row, i) => {
-                                    const detail = row.subHosXP || row.subIntranet || row.subComputer ||
-                                        row.subNetwork || row.subReport || row.subOther || "—";
                                     return (
                                         <tr key={i}
                                             className={`border-b border-gray-100 transition-colors duration-100 ${i % 2 === 0 ? "bg-white" : "bg-gray-50"}`}
@@ -598,7 +838,24 @@ export default function ItWorklogPage() {
                                                     {taskShort(row.mainTask) || row.mainTask}
                                                 </span>
                                             </td>
-                                            <td className="px-3 py-2 text-gray-600 max-w-[180px] truncate">{detail}</td>
+                                            {/* ← หมวดย่อย column ใหม่ */}
+                                            <td className="px-3 py-2 text-gray-600 max-w-[200px]">
+                                                {row.subTask ? (
+                                                    <span
+                                                        className="inline-block px-2 py-0.5 rounded text-[10px] font-medium truncate max-w-full"
+                                                        style={{
+                                                            background: taskColor(row.mainTask) + "14",
+                                                            color: taskColor(row.mainTask),
+                                                            border: `1px solid ${taskColor(row.mainTask)}33`,
+                                                        }}
+                                                        title={row.subTask}
+                                                    >
+                                                        {row.subTask}
+                                                    </span>
+                                                ) : (
+                                                    <span className="text-gray-300">—</span>
+                                                )}
+                                            </td>
                                             <td className="px-3 py-2 text-center font-medium text-gray-700">{row.duration || "—"}</td>
                                             <td className="px-3 py-2 whitespace-nowrap">
                                                 <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${row.urgency === "เร่งด่วน" ? "bg-red-100 text-red-700" : "text-white"}`}
