@@ -3,6 +3,7 @@
 import { useEffect, useState, useMemo } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { FiChevronDown, FiChevronUp, FiCopy } from "react-icons/fi";
+import { FolderClosed } from 'lucide-react';
 import toast, { Toaster } from "react-hot-toast";
 import { ShimmerRow, LoadingBar, AnimatedCount } from "./TableHelpers";
 import { copyToClipboard } from "@/lib/clipboard";
@@ -50,12 +51,11 @@ export default function PpaTable({
     }, [apiPath]);
 
     const searched = useMemo(
-        () =>
-            data.filter((row) =>
-                Object.values(row).some((val) =>
-                    String(val).toLowerCase().includes(search.toLowerCase()),
-                ),
+        () => data.filter((row) =>
+            Object.values(row).some((val) =>
+                String(val).toLowerCase().includes(search.toLowerCase()),
             ),
+        ),
         [data, search],
     );
 
@@ -93,19 +93,21 @@ export default function PpaTable({
                 position="top-center"
                 toastOptions={{
                     style: { borderRadius: "10px", fontWeight: 600, fontSize: "14px" },
-                    success: { iconTheme: { primary: "#166534", secondary: "#fff" } },
+                    success: { iconTheme: { primary: "#3aa36a", secondary: "#fff" } },
                 }}
             />
 
             {/* ── Header bar ── */}
             <motion.div
                 variants={cardVariants}
-                className="bg-white border border-gray-200 rounded-2xl shadow-md px-6 py-4 flex flex-wrap items-center justify-between gap-4"
-                style={{ boxShadow: "0 4px 24px 0 rgba(22,101,52,0.07)" }}
+                className="bg-white border border-gray-200 rounded-2xl shadow-sm px-6 py-4 flex flex-wrap items-center justify-between gap-4"
             >
                 <div className="flex items-center gap-2">
                     <span className="text-xs font-bold uppercase tracking-widest text-gray-400">ช่วงข้อมูล</span>
-                    <span className="bg-green-50 border border-green-200 text-green-800 text-sm font-semibold px-4 py-1.5 rounded-full">
+                    <span
+                        className="text-sm font-semibold px-4 py-1.5 rounded-full border"
+                        style={{ backgroundColor: "#f0faf4", borderColor: "#a8d5ba", color: "#1a5233" }}
+                    >
                         {dateRangeLabel}
                     </span>
                 </div>
@@ -116,17 +118,18 @@ export default function PpaTable({
                         placeholder="Search..."
                         value={search}
                         onChange={(e) => { setSearch(e.target.value); setPage(1); }}
-                        className="border-2 border-gray-200 px-5 py-2 rounded-full w-56 text-sm text-gray-800 bg-white focus:outline-none focus:border-green-700 shadow-sm transition-colors duration-200"
+                        className="border-2 border-gray-200 px-5 py-2 rounded-full w-56 text-sm text-gray-800 bg-white focus:outline-none focus:border-[#7ec8a0] shadow-sm transition-colors duration-200"
                     />
                     <AnimatePresence>
                         {data.length > 0 && (
                             <motion.button
                                 onClick={handleExport}
-                                className="relative overflow-hidden bg-emerald-600 text-white text-sm font-bold px-7 py-2.5 rounded-xl shadow-lg"
+                                className="relative overflow-hidden text-white text-sm font-bold px-7 py-2.5 rounded-xl shadow-md"
+                                style={{ backgroundColor: "#7ec8a0" }}
                                 initial={{ opacity: 0, scale: 0.8 }}
                                 animate={{ opacity: 1, scale: 1 }}
                                 exit={{ opacity: 0, scale: 0.8 }}
-                                whileHover={{ scale: 1.04 }}
+                                whileHover={{ scale: 1.04, backgroundColor: "#55b882" }}
                                 whileTap={{ scale: 0.95 }}
                             >
                                 Export Excel
@@ -139,8 +142,7 @@ export default function PpaTable({
             {/* ── Table card ── */}
             <motion.div
                 variants={cardVariants}
-                className="bg-white border border-gray-200 rounded-2xl shadow-md px-6 py-6"
-                style={{ boxShadow: "0 4px 24px 0 rgba(22,101,52,0.07)" }}
+                className="bg-white border border-gray-200 rounded-2xl shadow-sm px-6 py-6"
             >
                 <AnimatePresence mode="wait">
 
@@ -154,7 +156,8 @@ export default function PpaTable({
                                 animate={{ opacity: 1 }}
                             >
                                 <motion.span
-                                    className="inline-block w-4 h-4 border-2 border-green-300 border-t-green-700 rounded-full"
+                                    className="inline-block w-4 h-4 border-2 rounded-full"
+                                    style={{ borderColor: "#a8d5ba", borderTopColor: "#3aa36a" }}
                                     animate={{ rotate: 360 }}
                                     transition={{ duration: 0.8, repeat: Infinity, ease: "linear" }}
                                 />
@@ -165,8 +168,9 @@ export default function PpaTable({
                                     <thead>
                                         <tr>
                                             {Array.from({ length: colCount }).map((_, i) => (
-                                                <th key={i} className="bg-green-800 px-4 py-3 border-r border-green-700">
-                                                    <div className="h-3 rounded bg-green-700/60 w-16" />
+                                                <th key={i} className="px-4 py-3 border-r border-[#a8d5ba]"
+                                                    style={{ backgroundColor: "#7ec8a0" }}>
+                                                    <div className="h-3 rounded w-16" style={{ backgroundColor: "#a8d5ba" }} />
                                                 </th>
                                             ))}
                                         </tr>
@@ -189,11 +193,12 @@ export default function PpaTable({
                             className="flex flex-col items-center justify-center py-24 gap-3"
                         >
                             <motion.div
-                                className="w-16 h-16 rounded-2xl bg-green-50 flex items-center justify-center text-3xl"
+                                className="w-16 h-16 rounded-2xl flex items-center justify-center text-3xl"
+                                style={{ backgroundColor: "#f0faf4" }}
                                 animate={{ y: [0, -6, 0] }}
                                 transition={{ duration: 2.4, repeat: Infinity, ease: "easeInOut" }}
                             >
-                                🗂️
+                                <FolderClosed />
                             </motion.div>
                             <p className="text-gray-500 font-medium text-sm">ไม่พบข้อมูลในช่วงเวลานี้</p>
                         </motion.div>
@@ -209,7 +214,10 @@ export default function PpaTable({
                                 transition={{ delay: 0.1, type: "spring", stiffness: 300 }}
                             >
                                 พบทั้งหมด{" "}
-                                <span className="inline-flex items-center justify-center bg-green-50 border border-green-200 text-green-800 font-bold rounded-full px-3 py-0.5 text-sm min-w-[2.5rem]">
+                                <span
+                                    className="inline-flex items-center justify-center font-bold rounded-full px-3 py-0.5 text-sm min-w-[2.5rem] border"
+                                    style={{ backgroundColor: "#f0faf4", borderColor: "#a8d5ba", color: "#1a5233" }}
+                                >
                                     <AnimatedCount value={sorted.length} />
                                 </span>{" "}
                                 รายการ
@@ -233,11 +241,12 @@ export default function PpaTable({
                                                 <motion.th
                                                     key={key}
                                                     onClick={() => handleSort(key)}
-                                                    className="sticky top-0 bg-green-800 text-white px-4 py-3 text-left cursor-pointer whitespace-nowrap border-r border-green-700 select-none"
+                                                    className="sticky top-0 text-white px-4 py-3 text-left cursor-pointer whitespace-nowrap border-r select-none"
+                                                    style={{ backgroundColor: "#7ec8a0", borderColor: "#a8d5ba" }}
                                                     initial={{ opacity: 0 }}
                                                     animate={{ opacity: 1 }}
                                                     transition={{ delay: 0.05 + i * 0.025 }}
-                                                    whileHover={{ backgroundColor: "#14532d" }}
+                                                    whileHover={{ backgroundColor: "#55b882" }}
                                                 >
                                                     <div className="flex items-center gap-1">
                                                         {key}
@@ -261,7 +270,9 @@ export default function PpaTable({
                                         {paginated.map((row, i) => (
                                             <tr
                                                 key={i}
-                                                className={`border-b border-gray-200 transition-colors duration-100 hover:bg-green-50/70 ${i % 2 === 0 ? "bg-white" : "bg-gray-50"}`}
+                                                className={`border-b border-gray-100 transition-colors duration-100 ${i % 2 === 0 ? "bg-white" : "bg-gray-50"}`}
+                                                onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = "#f0faf4")}
+                                                onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = i % 2 === 0 ? "#ffffff" : "#f9fafb")}
                                             >
                                                 {Object.entries(row).map(([key, val], idx) => (
                                                     <td key={idx} className="px-4 py-2.5 text-sm whitespace-nowrap border-r border-gray-100 text-gray-800">
@@ -305,8 +316,9 @@ export default function PpaTable({
                                     <motion.button
                                         onClick={() => setPage((p) => Math.max(p - 1, 1))}
                                         disabled={page === 1}
-                                        className="px-5 py-2 border-2 border-gray-200 rounded-lg text-sm font-semibold text-gray-600 hover:border-green-700 hover:text-green-800 disabled:opacity-30 transition-colors"
-                                        whileHover={{ scale: 1.04 }} whileTap={{ scale: 0.94 }}
+                                        className="px-5 py-2 border-2 border-gray-200 rounded-lg text-sm font-semibold text-gray-600 disabled:opacity-30 transition-colors"
+                                        whileHover={{ scale: 1.04, borderColor: "#7ec8a0", color: "#1a5233" }}
+                                        whileTap={{ scale: 0.94 }}
                                     >
                                         ← ก่อนหน้า
                                     </motion.button>
@@ -314,15 +326,17 @@ export default function PpaTable({
                                         key={page}
                                         initial={{ scale: 0.7, opacity: 0 }}
                                         animate={{ scale: 1, opacity: 1 }}
-                                        className="border-2 border-green-700 rounded-lg px-4 py-2 text-sm font-bold text-green-800 min-w-[3rem] text-center bg-green-50"
+                                        className="rounded-lg px-4 py-2 text-sm font-bold min-w-[3rem] text-center border-2"
+                                        style={{ borderColor: "#7ec8a0", color: "#1a5233", backgroundColor: "#f0faf4" }}
                                     >
                                         {page}
                                     </motion.span>
                                     <motion.button
                                         onClick={() => setPage((p) => Math.min(p + 1, totalPages))}
                                         disabled={page === totalPages}
-                                        className="px-5 py-2 border-2 border-gray-200 rounded-lg text-sm font-semibold text-gray-600 hover:border-green-700 hover:text-green-800 disabled:opacity-30 transition-colors"
-                                        whileHover={{ scale: 1.04 }} whileTap={{ scale: 0.94 }}
+                                        className="px-5 py-2 border-2 border-gray-200 rounded-lg text-sm font-semibold text-gray-600 disabled:opacity-30 transition-colors"
+                                        whileHover={{ scale: 1.04, borderColor: "#7ec8a0", color: "#1a5233" }}
+                                        whileTap={{ scale: 0.94 }}
                                     >
                                         ถัดไป →
                                     </motion.button>

@@ -32,7 +32,6 @@ export default function Navbar() {
       });
   }, []);
 
-  // ปิด dropdown เมื่อคลิกข้างนอก
   useEffect(() => {
     const handleClick = (e: MouseEvent) => {
       if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
@@ -43,7 +42,6 @@ export default function Navbar() {
     return () => document.removeEventListener("mousedown", handleClick);
   }, [open]);
 
-  // ปิดด้วย ESC
   useEffect(() => {
     const handleEsc = (e: KeyboardEvent) => {
       if (e.key === "Escape") setOpen(false);
@@ -54,10 +52,7 @@ export default function Navbar() {
 
   const handleLogout = async () => {
     setLoggingOut(true);
-    await fetch("/api/logout", {
-      method: "POST",
-      credentials: "include",
-    });
+    await fetch("/api/logout", { method: "POST", credentials: "include" });
     router.replace("/auth/login");
   };
 
@@ -66,7 +61,7 @@ export default function Navbar() {
   };
 
   return (
-    <header className="h-16 bg-white shadow-md flex items-center px-8">
+    <header className="h-16 bg-white flex items-center px-8 shadow-sm border-b border-gray-100">
       {/* Left: Logo */}
       <div className="flex-1 flex items-center gap-3">
         <Image
@@ -81,10 +76,13 @@ export default function Navbar() {
 
       {/* Center: Title */}
       <div className="flex-1 text-center">
-        <h1 className="text-lg font-semibold text-green-700 tracking-wide">
+        <h1 className="text-lg font-semibold tracking-wide" style={{ color: "#1a5233" }}>
           PLABPLACHAI HOSPITAL
         </h1>
-        <div className="h-[2px] w-24 bg-green-600 mx-auto mt-1 rounded-full opacity-70"></div>
+        <div
+          className="h-[2px] w-24 mx-auto mt-1 rounded-full opacity-70"
+          style={{ backgroundColor: "#7ec8a0" }}
+        />
       </div>
 
       {/* Right: User dropdown */}
@@ -98,22 +96,24 @@ export default function Navbar() {
         <div className="relative" ref={menuRef}>
           <button
             onClick={() => setOpen((p) => !p)}
-            className="flex items-center gap-2 bg-gray-100 hover:bg-gray-200 active:scale-[0.98] pl-2 pr-3 py-1.5 rounded-full shadow-sm transition-all"
+            className="flex items-center gap-2 active:scale-[0.98] pl-2 pr-3 py-1.5 rounded-full shadow-sm transition-all"
+            style={{ backgroundColor: "#d6f0e0" }}
+            onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = "#c2e8d4")}
+            onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "#d6f0e0")}
           >
             <div
-              className={`w-7 h-7 rounded-full flex items-center justify-center shrink-0 ${
-                isGuest ? "bg-gray-400" : "bg-green-700"
-              }`}
+              className="w-7 h-7 rounded-full flex items-center justify-center shrink-0"
+              style={{ backgroundColor: isGuest ? "#9ca3af" : "#7ec8a0" }}
             >
               <User size={14} className="text-white" strokeWidth={2.2} />
             </div>
-            <span className="text-sm font-semibold text-gray-700 max-w-[120px] truncate">
+            <span className="text-sm font-semibold max-w-[120px] truncate" style={{ color: "#1a5233" }}>
               {username ?? "Guest"}
             </span>
             <motion.span
               animate={{ rotate: open ? 180 : 0 }}
               transition={{ duration: 0.2 }}
-              className="text-gray-500"
+              style={{ color: "#3aa36a" }}
             >
               <ChevronDown size={14} />
             </motion.span>
@@ -126,20 +126,26 @@ export default function Navbar() {
                 animate={{ opacity: 1, y: 0, scale: 1 }}
                 exit={{ opacity: 0, y: -8, scale: 0.96 }}
                 transition={{ duration: 0.15, ease: "easeOut" }}
-                className="absolute right-0 top-full mt-2 w-60 bg-white rounded-xl shadow-xl border border-gray-200 overflow-hidden z-50"
+                className="absolute right-0 top-full mt-2 w-60 bg-white rounded-xl shadow-xl border overflow-hidden z-50"
+                style={{ borderColor: "#c2e8d4" }}
               >
                 {/* Header */}
                 <div
-                  className={`px-4 py-3 border-b border-gray-100 ${
-                    isGuest
-                      ? "bg-gradient-to-br from-amber-50 to-amber-100/60"
-                      : "bg-gradient-to-br from-green-50 to-green-100/60"
+                  className={`px-4 py-3 border-b ${
+                    isGuest ? "bg-gradient-to-br from-amber-50 to-amber-100/60" : ""
                   }`}
+                  style={
+                    !isGuest
+                      ? {
+                          background: "linear-gradient(135deg, #f0faf4, #d6f0e0)",
+                          borderBottomColor: "#c2e8d4",
+                        }
+                      : { borderBottomColor: "#fde68a" }
+                  }
                 >
                   <p
-                    className={`text-[10px] font-bold uppercase tracking-widest mb-0.5 ${
-                      isGuest ? "text-amber-700/70" : "text-green-700/70"
-                    }`}
+                    className="text-[10px] font-bold uppercase tracking-widest mb-0.5"
+                    style={{ color: isGuest ? "#92400e99" : "#1a523399" }}
                   >
                     {isGuest ? "โหมดผู้เยี่ยมชม" : "เข้าสู่ระบบในชื่อ"}
                   </p>
@@ -158,7 +164,10 @@ export default function Navbar() {
                   {isGuest ? (
                     <button
                       onClick={handleLogin}
-                      className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-sm font-semibold text-green-700 hover:bg-green-50 active:scale-[0.98] transition-all"
+                      className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-sm font-semibold active:scale-[0.98] transition-all"
+                      style={{ color: "#1a5233" }}
+                      onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = "#f0faf4")}
+                      onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "transparent")}
                     >
                       <LogIn size={15} strokeWidth={2.2} />
                       เข้าสู่ระบบ
@@ -173,11 +182,7 @@ export default function Navbar() {
                         <motion.span
                           className="w-4 h-4 border-2 border-red-200 border-t-red-600 rounded-full inline-block"
                           animate={{ rotate: 360 }}
-                          transition={{
-                            duration: 0.7,
-                            repeat: Infinity,
-                            ease: "linear",
-                          }}
+                          transition={{ duration: 0.7, repeat: Infinity, ease: "linear" }}
                         />
                       ) : (
                         <LogOut size={15} strokeWidth={2.2} />

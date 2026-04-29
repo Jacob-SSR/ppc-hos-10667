@@ -25,9 +25,9 @@ export default function NoEndpointLayout({
                 </aside>
 
                 {/* Content */}
-                <main className="flex-1 overflow-auto p-6 bg-zinc-100">
-                    {children}
-                </main>
+            <main className="flex-1 overflow-auto p-6 bg-white"> {/* เปลี่ยนจาก bg-zinc-100 */}
+                {children}
+            </main>
             </div>
         </div>
     );

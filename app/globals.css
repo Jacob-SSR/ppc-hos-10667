@@ -3,6 +3,16 @@
 :root {
   --background: #ffffff;
   --foreground: #171717;
+  --mint-50:  #f0faf4;
+  --mint-100: #d6f0e0;
+  --mint-200: #a8d5ba;
+  --mint-300: #7ec8a0;
+  --mint-400: #55b882;
+  --mint-500: #3aa36a;
+  --mint-600: #2d8a56;
+  --mint-700: #236b43;
+  --mint-800: #1a5233;
+  --mint-text: #1a5233;
 }
 
 @theme inline {
@@ -11,27 +21,19 @@
   --font-sans: var(--font-prompt);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
-}
-
 body {
   background: var(--background);
   color: var(--foreground);
   font-family: var(--font-sans), sans-serif;
-  background-color: #f3f4f6;
+  background-color: #ffffff; 
 }
-
 table {
-  border: 1px solid #d1d5db;
+  border: 1px solid #d6f0e0;
 }
 
 th,
 td {
-  border-right: 1px solid #e5e7eb;
+  border-right: 1px solid #e8f5ee;
 }
 
 th:last-child,
@@ -39,15 +41,9 @@ td:last-child {
   border-right: none;
 }
 
-/* ── Shimmer animation ── */
 @keyframes shimmer {
-  0% {
-    background-position: 200% 0;
-  }
-
-  100% {
-    background-position: -200% 0;
-  }
+  0%   { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
 }
 
 .animate-shimmer {

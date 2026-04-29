@@ -32,17 +32,23 @@ export default function NavGroup({
     <div className="pt-1">
       <button
         onClick={onToggle}
-        className={`w-full flex items-center gap-3 px-3 py-2 rounded-md transition-all text-left
-        ${
+        className="w-full flex items-center gap-3 px-3 py-2 rounded-md transition-all text-left"
+        style={
           isActive || isOpen
-            ? "bg-green-50 text-green-800 font-semibold"
-            : "text-gray-600 hover:bg-gray-100 hover:text-black"
-        }`}
+            ? { backgroundColor: "#d6f0e0", color: "#1a5233", fontWeight: 600 }
+            : { color: "#4b5563" }
+        }
+        onMouseEnter={(e) => {
+          if (!isActive && !isOpen)
+            e.currentTarget.style.backgroundColor = "#e8f5ee";
+        }}
+        onMouseLeave={(e) => {
+          if (!isActive && !isOpen)
+            e.currentTarget.style.backgroundColor = "transparent";
+        }}
       >
         <Icon size={18} />
-
         <span className="flex-1 text-sm">{label}</span>
-
         <motion.span animate={{ rotate: isOpen ? 180 : 0 }}>
           <ChevronDown size={16} />
         </motion.span>
@@ -56,27 +62,36 @@ export default function NavGroup({
             exit={{ height: 0 }}
             className="overflow-hidden"
           >
-            <div className="mt-1 ml-3 pl-3 border-l-2 border-green-200 space-y-1">
+            <div
+              className="mt-1 ml-3 pl-3 border-l-2 space-y-1"
+              style={{ borderColor: "#a8d5ba" }}
+            >
               {items.map((item) => {
                 const active = isItemActive(item.href);
-                const Icon = item.icon;
+                const ItemIcon = item.icon;
 
                 return (
                   <Link
                     key={item.href}
                     href={item.href}
-                    className={`flex items-start gap-2 px-2 py-2 rounded-md
-                    ${
+                    className="flex items-start gap-2 px-2 py-2 rounded-md transition-all"
+                    style={
                       active
-                        ? "bg-green-100 text-green-800 font-semibold"
-                        : "text-gray-600 hover:bg-gray-100"
-                    }`}
+                        ? { backgroundColor: "#c2e8d4", color: "#1a5233", fontWeight: 600 }
+                        : { color: "#4b5563" }
+                    }
+                    onMouseEnter={(e) => {
+                      if (!active)
+                        e.currentTarget.style.backgroundColor = "#e8f5ee";
+                    }}
+                    onMouseLeave={(e) => {
+                      if (!active)
+                        e.currentTarget.style.backgroundColor = "transparent";
+                    }}
                   >
-                    <Icon size={16} />
-
+                    <ItemIcon size={16} />
                     <div>
                       <div className="text-xs">{item.label}</div>
-
                       {item.desc && (
                         <div className="text-[10px] text-gray-400">
                           {item.desc}
