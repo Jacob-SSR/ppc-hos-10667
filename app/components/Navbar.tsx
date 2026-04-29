@@ -61,7 +61,17 @@ export default function Navbar() {
   };
 
   return (
-    <header className="h-16 bg-white flex items-center px-8 shadow-sm border-b border-gray-100">
+    <header
+      className="
+    h-16
+    flex items-center px-8
+    sticky top-0 z-50
+    bg-[rgba(255,255,255,0.55)]
+    backdrop-blur-lg
+    border-b border-white/70
+    shadow-sm
+  "
+    >
       {/* Left: Logo */}
       <div className="flex-1 flex items-center gap-3">
         <Image
@@ -131,15 +141,14 @@ export default function Navbar() {
               >
                 {/* Header */}
                 <div
-                  className={`px-4 py-3 border-b ${
-                    isGuest ? "bg-gradient-to-br from-amber-50 to-amber-100/60" : ""
-                  }`}
+                  className={`px-4 py-3 border-b ${isGuest ? "bg-gradient-to-br from-amber-50 to-amber-100/60" : ""
+                    }`}
                   style={
                     !isGuest
                       ? {
-                          background: "linear-gradient(135deg, #f0faf4, #d6f0e0)",
-                          borderBottomColor: "#c2e8d4",
-                        }
+                        background: "linear-gradient(135deg, #f0faf4, #d6f0e0)",
+                        borderBottomColor: "#c2e8d4",
+                      }
                       : { borderBottomColor: "#fde68a" }
                   }
                 >
