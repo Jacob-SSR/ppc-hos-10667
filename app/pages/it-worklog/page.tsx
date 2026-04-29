@@ -164,7 +164,7 @@ export default function ItWorklogPage() {
             const json = await res.json();
             setAllData(Array.isArray(json) ? json : []);
         } catch (e: unknown) {
-            setError((e as Error).message ?? "โหลดข้อมูลไม่สำเร็จ");
+            setError(e instanceof Error ? e.message : "โหลดข้อมูลไม่สำเร็จ");
         } finally {
             setLoading(false);
         }
@@ -276,7 +276,7 @@ export default function ItWorklogPage() {
                     <div className="flex items-center gap-2 ml-auto flex-wrap">
                         {/* Date range */}
                         <div className="flex rounded-md overflow-hidden border border-gray-200">
-                            {[7, 30, 90, 180].map((d) => (
+                            {[7, 30, 90, 180, 365].map((d) => (
                                 <button key={d} onClick={() => setDateRange(d)}
                                     className="px-3 py-1.5 text-sm transition-colors"
                                     style={{
@@ -287,6 +287,15 @@ export default function ItWorklogPage() {
                                     {d}ว.
                                 </button>
                             ))}
+                            <button onClick={() => setDateRange(99999)}
+                                className="px-3 py-1.5 text-sm transition-colors"
+                                style={{
+                                    backgroundColor: dateRange === 99999 ? MINT[500] : "white",
+                                    color: dateRange === 99999 ? "white" : "#4b5563",
+                                    fontWeight: dateRange === 99999 ? 600 : 400,
+                                }}>
+                                ทั้งหมด
+                            </button>
                         </div>
 
                         {/* View toggle */}
