@@ -12,6 +12,7 @@ import {
     Clock, AlertTriangle, TrendingUp, Calendar, Users,
     Activity, Info, RefreshCw, ChevronDown, ChevronRight,
 } from "lucide-react";
+import CsvDropzone from "@/app/components/CsvDropzone";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 interface WorkRow {
@@ -871,6 +872,7 @@ export default function ItWorklogPage() {
                     </div>
                 </div>
             )}
+            <CsvDropzone onUploadSuccess={fetchData} />
         </div>
     );
 }
