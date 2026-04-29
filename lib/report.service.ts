@@ -216,8 +216,9 @@ export async function getServiceUnitReport(start: string, end: string) {
 }
 
 export async function getDeathNotDischarged() {
-  const [rows] = await db.query(
-    `
+  try {
+    const [rows] = await db.query(
+      `
         SELECT 
             p.cid,
             p.pname,
@@ -237,6 +238,12 @@ export async function getDeathNotDischarged() {
           AND v.village_moo BETWEEN '01' AND '13'
         ORDER BY v.village_moo
         `,
-  );
-  return rows;
+    );
+    return rows;
+  } catch (error: any) {
+    if (error?.code === "ER_NO_SUCH_TABLE") {
+      return [];
+    }
+    throw error;
+  }
 }
