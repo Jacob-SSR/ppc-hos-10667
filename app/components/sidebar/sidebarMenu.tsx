@@ -28,10 +28,10 @@ export const DASHBOARD_ITEMS: SidebarItem[] = [
     icon: BarChart3,
   },
   {
-    label: "IPD — การจำหน่ายผู้ป่วยใน",
-    href: "/pages/ipd",
-    icon: BedDouble,
-  },
+    label: "บันทึกงาน IT",
+    href: "/pages/it-worklog",
+    icon: Activity,
+  }
 ];
 
 export const REPORT_ITEMS: SidebarItem[] = [
