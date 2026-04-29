@@ -15,8 +15,6 @@ import { useIpdData } from "@/app/components/dashboard/hooks/useIpdData";
 import type { WardDisplayItem } from "@/app/components/dashboard/types/dashboard.types";
 import { Shimmer } from "./ui/DashboardUI";
 
-const PRESETS = ["วันนี้", "สัปดาห์นี้", "เดือนนี้"];
-
 function WardCard({ ward }: { ward: WardDisplayItem }) {
   return (
     <div className="bg-white border border-gray-200 rounded-lg p-4 flex flex-col items-center gap-2 shadow-sm">
@@ -39,12 +37,8 @@ export default function IpdSection() {
   const {
     displayWards,
     loading,
-    start,
-    end,
-    preset,
-    setStart,
-    setEnd,
-    handlePreset,
+    date,
+    setDate,
     handleSearch,
     infoLabel,
   } = useIpdData();
@@ -59,41 +53,16 @@ export default function IpdSection() {
         <div className="flex items-center gap-2 text-[#717171]">
           <CalendarDays size={16} />
           <div>
-            <p className="text-sm">ข้อมูลตามช่วงเวลา (สำหรับ การ์ด)</p>
-            <p className="text-xs text-gray-400">เลือกช่วงเวลาที่ต้องการ</p>
+            <p className="text-sm">ข้อมูลตามวันที่ (สำหรับ การ์ด)</p>
+            <p className="text-xs text-gray-400">เลือกวันที่ต้องการ</p>
           </div>
         </div>
 
         <div className="flex items-center gap-2 ml-auto flex-wrap">
-          <select
-            value={preset}
-            onChange={(e) => handlePreset(e.target.value)}
-            className="border border-gray-300 rounded px-2 py-1.5 text-sm text-gray-600 bg-white"
-          >
-            {PRESETS.map((p) => (
-              <option key={p}>{p}</option>
-            ))}
-          </select>
           <DatePicker
-            selected={start}
+            selected={date}
             onChange={(d: Date | null) => {
-              if (d) {
-                setStart(d);
-              }
-            }}
-            dateFormat="dd/MM/yyyy"
-            locale={th}
-            showMonthDropdown
-            showYearDropdown
-            dropdownMode="select"
-            customInput={<ThaiDateInput />}
-          />
-          <DatePicker
-            selected={end}
-            onChange={(d: Date | null) => {
-              if (d) {
-                setEnd(d);
-              }
+              if (d) setDate(d);
             }}
             dateFormat="dd/MM/yyyy"
             locale={th}
@@ -128,11 +97,11 @@ export default function IpdSection() {
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
         {loading
           ? Array.from({ length: 8 }).map((_, i) => (
-              <Shimmer key={i} className="h-[190px]" />
-            ))
+            <Shimmer key={i} className="h-[190px]" />
+          ))
           : displayWards.map((ward) => (
-              <WardCard key={ward.ward_code} ward={ward} />
-            ))}
+            <WardCard key={ward.ward_code} ward={ward} />
+          ))}
       </div>
     </div>
   );

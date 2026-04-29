@@ -14,12 +14,8 @@ interface BedOccupancyApiRow {
 interface UseIpdDataReturn {
   displayWards: WardDisplayItem[];
   loading: boolean;
-  start: Date;
-  end: Date;
-  preset: string;
-  setStart: (d: Date) => void;
-  setEnd: (d: Date) => void;
-  handlePreset: (p: string) => void;
+  date: Date;
+  setDate: (d: Date) => void;
   handleSearch: () => void;
   infoLabel: string;
 }
@@ -53,50 +49,29 @@ function toThaiDate(dateStr: string): string {
   return `${d}/${m}/${Number(y) + 543}`;
 }
 
-function getPresetRange(preset: string): { start: Date; end: Date } {
+function getToday(): Date {
   const now = new Date(
     new Date().toLocaleString("en-US", { timeZone: "Asia/Bangkok" }),
   );
-  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-
-  if (preset === "สัปดาห์นี้") {
-    const day = today.getDay();
-    const mon = new Date(today);
-    mon.setDate(today.getDate() - (day === 0 ? 6 : day - 1));
-    return { start: mon, end: today };
-  }
-  if (preset === "เดือนนี้") {
-    return {
-      start: new Date(today.getFullYear(), today.getMonth(), 1),
-      end: today,
-    };
-  }
-  return { start: today, end: today };
+  return new Date(now.getFullYear(), now.getMonth(), now.getDate());
 }
 
-const PRESETS = ["วันนี้", "สัปดาห์นี้", "เดือนนี้"];
-
 export function useIpdData(): UseIpdDataReturn {
-  const [preset, setPreset] = useState("วันนี้");
-  const [start, setStart] = useState<Date>(
-    () => getPresetRange("วันนี้").start,
-  );
-  const [end, setEnd] = useState<Date>(() => getPresetRange("วันนี้").end);
+  const [date, setDate] = useState<Date>(() => getToday());
   const [rows, setRows] = useState<BedOccupancyApiRow[]>([]);
   const [loading, setLoading] = useState(false);
   const [infoLabel, setInfoLabel] = useState("");
 
-  const fetchData = useCallback(async (s: Date, e: Date) => {
+  const fetchData = useCallback(async (d: Date) => {
     setLoading(true);
     try {
+      const dateStr = fmt(d);
       const res = await fetch(
-        `/api/ipd/bed-occupancy?start=${fmt(s)}&end=${fmt(e)}`,
+        `/api/ipd/bed-occupancy?start=${dateStr}&end=${dateStr}`,
         { credentials: "include" },
       );
       if (res.ok) setRows(await res.json());
-      const sLabel = toThaiDate(fmt(s));
-      const eLabel = toThaiDate(fmt(e));
-      setInfoLabel(sLabel === eLabel ? sLabel : `${sLabel} – ${eLabel}`);
+      setInfoLabel(toThaiDate(dateStr));
     } catch {
       // ignore
     } finally {
@@ -105,39 +80,18 @@ export function useIpdData(): UseIpdDataReturn {
   }, []);
 
   useEffect(() => {
-    const { start: s, end: e } = getPresetRange("วันนี้");
-    fetchData(s, e);
+    fetchData(getToday());
   }, [fetchData]);
-
-  useEffect(() => {
-    const { start: s, end: e } = getPresetRange("วันนี้");
-    fetchData(s, e);
-  }, [fetchData]);
-
-  const handlePreset = useCallback(
-    (p: string) => {
-      setPreset(p);
-      const { start: s, end: e } = getPresetRange(p);
-      setStart(s);
-      setEnd(e);
-      fetchData(s, e);
-    },
-    [fetchData],
-  );
 
   const handleSearch = useCallback(() => {
-    fetchData(start, end);
-  }, [fetchData, start, end]);
+    fetchData(date);
+  }, [fetchData, date]);
 
   return {
     displayWards: buildDisplayWards(rows),
     loading,
-    start,
-    end,
-    preset,
-    setStart,
-    setEnd,
-    handlePreset,
+    date,
+    setDate,
     handleSearch,
     infoLabel,
   };
