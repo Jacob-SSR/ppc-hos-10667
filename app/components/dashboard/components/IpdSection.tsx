@@ -10,6 +10,10 @@ import { WardCard } from "./WardCard";
 import { Shimmer } from "@/app/components/ui/Shimmer";
 import { useIpdData } from "@/app/components/dashboard/hooks/useIpdData";
 
+function fmtDate(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
 export default function IpdSection() {
   const { displayWards, loading, date, setDate, handleSearch, infoLabel } =
     useIpdData();
@@ -69,10 +73,14 @@ export default function IpdSection() {
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
         {loading
           ? Array.from({ length: 8 }).map((_, i) => (
-            <Shimmer key={i} h="h-[190px]" />
+            <Shimmer key={i} h="h-[210px]" />
           ))
           : displayWards.map((ward) => (
-            <WardCard key={ward.ward_code} ward={ward} />
+            <WardCard
+              key={ward.ward_code}
+              ward={ward}
+              date={fmtDate(date)}
+            />
           ))}
       </div>
     </div>

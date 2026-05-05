@@ -30,7 +30,7 @@ const WARD_CONFIG: Record<string, WardConfigItem> = {
   "04": { label: "ห้องพิเศษ", totalBeds: 11 },
   "01": { label: "Ward", totalBeds: 26 },
   "17": { label: "ห้องINC", totalBeds: 2 },
-  "15": { label: "ห้องพลับพลารักษ์", totalBeds: 10 },
+  "15": { label: "พลับพลารักษ์", totalBeds: 10 },
   "11": { label: "เตียงเสริม", totalBeds: 16 },
   "05": { label: "ห้องแยกโรค", totalBeds: 2 },
   "13": { label: "ห้องNegative", totalBeds: 2 },
@@ -40,6 +40,13 @@ const WARD_CONFIG: Record<string, WardConfigItem> = {
 
 const ACTIVE_WARD_CODES = Object.keys(WARD_CONFIG);
 
+// ── "ยังไม่จำหน่าย" ใน HosXP อาจเป็น NULL, '0000-00-00', หรือ '' ────────────
+const NOT_DISCHARGED_SQL = `(
+  a.dchdate IS NULL
+  OR a.dchdate = '0000-00-00'
+  OR a.dchdate = ''
+)`;
+
 interface CachedWards {
   data: WardInfoRow[];
   expiresAt: number;
@@ -48,9 +55,7 @@ let wardCache: CachedWards | null = null;
 
 async function getActiveWards(): Promise<WardInfoRow[]> {
   const now = Date.now();
-  if (wardCache && wardCache.expiresAt > now) {
-    return wardCache.data;
-  }
+  if (wardCache && wardCache.expiresAt > now) return wardCache.data;
 
   const wardCodes = Object.keys(WARD_CONFIG);
   if (wardCodes.length === 0) {
@@ -59,16 +64,11 @@ async function getActiveWards(): Promise<WardInfoRow[]> {
   }
 
   const placeholders = wardCodes.map(() => "?").join(",");
-
   const [rows] = await db.query<WardInfoRow[]>(
-    `
-    SELECT
-      w.ward AS ward_code,
-      w.name
-    FROM ward w
-    WHERE w.ward IN (${placeholders})
-    ORDER BY FIELD(w.ward, ${placeholders})
-    `,
+    `SELECT w.ward AS ward_code, w.name
+     FROM ward w
+     WHERE w.ward IN (${placeholders})
+     ORDER BY FIELD(w.ward, ${placeholders})`,
     [...wardCodes, ...wardCodes],
   );
 
@@ -81,10 +81,7 @@ async function getActiveWards(): Promise<WardInfoRow[]> {
     };
   });
 
-  wardCache = {
-    data: merged,
-    expiresAt: now + 5 * 60 * 1000,
-  };
+  wardCache = { data: merged, expiresAt: now + 5 * 60 * 1000 };
   return merged;
 }
 
@@ -99,8 +96,7 @@ export async function getIpdDischarge(
   const placeholders = wardCodes.map(() => "?").join(",");
 
   const [rows] = await db.query<IpdDischargeRow[]>(
-    `
-    SELECT
+    `SELECT
       dd.name          AS dchtype_name,
       ipt.hn,
       pa.cid,
@@ -128,8 +124,7 @@ export async function getIpdDischarge(
     LEFT  JOIN dchtype dd  ON dd.dchtype = ipt.dchtype
     WHERE ipt.dchdate BETWEEN ? AND ?
       AND ipt.ward IN (${placeholders})
-    ORDER BY ipt.dchdate DESC, ipt.dchtime DESC
-    `,
+    ORDER BY ipt.dchdate DESC, ipt.dchtime DESC`,
     [start, end, ...wardCodes],
   );
   return rows;
@@ -151,14 +146,12 @@ export async function getIpdSummary(
 
   const wardCodes = wards.map((w) => w.ward_code);
   const placeholders = wardCodes.map(() => "?").join(",");
-
   const wardUnion = wardCodes
     .map(() => `SELECT ? AS ward_code`)
     .join(" UNION ALL ");
 
   const [rawWardRows] = await db.query<IpdWardStat[]>(
-    `
-    SELECT
+    `SELECT
       w.ward_code,
       COALESCE(d.total,            0) AS total,
       COALESCE(d.unique_patients,  0) AS unique_patients,
@@ -169,12 +162,12 @@ export async function getIpdSummary(
     FROM (${wardUnion}) w
     LEFT JOIN (
       SELECT
-        ipt.ward                                              AS ward_code,
-        COUNT(*)                                              AS total,
-        COUNT(DISTINCT ipt.hn)                                AS unique_patients,
-        ROUND(AVG(DATEDIFF(ipt.dchdate, ipt.regdate)), 1)    AS avg_los,
-        SUM(ipt.dchtype = '1')                                AS discharge_normal,
-        SUM(ipt.dchtype != '1')                               AS discharge_other
+        ipt.ward AS ward_code,
+        COUNT(*) AS total,
+        COUNT(DISTINCT ipt.hn) AS unique_patients,
+        ROUND(AVG(DATEDIFF(ipt.dchdate, ipt.regdate)), 1) AS avg_los,
+        SUM(ipt.dchtype = '1') AS discharge_normal,
+        SUM(ipt.dchtype != '1') AS discharge_other
       FROM ipt
       WHERE ipt.dchdate BETWEEN ? AND ?
         AND ipt.ward IN (${placeholders})
@@ -186,27 +179,23 @@ export async function getIpdSummary(
       WHERE regdate BETWEEN ? AND ?
         AND ward IN (${placeholders})
       GROUP BY ward
-    ) a ON a.ward_code = w.ward_code
-    `,
+    ) a ON a.ward_code = w.ward_code`,
     [...wardCodes, start, end, ...wardCodes, start, end, ...wardCodes],
   );
 
   const [totalRows] = await db.query<IpdSummaryRow[]>(
-    `
-    SELECT
-      COUNT(*)                                           AS total,
-      COUNT(DISTINCT ipt.hn)                             AS unique_patients,
+    `SELECT
+      COUNT(*) AS total,
+      COUNT(DISTINCT ipt.hn) AS unique_patients,
       ROUND(AVG(DATEDIFF(ipt.dchdate, ipt.regdate)), 1) AS avg_los
     FROM ipt
     WHERE ipt.dchdate BETWEEN ? AND ?
-      AND ipt.ward IN (${placeholders})
-    `,
+      AND ipt.ward IN (${placeholders})`,
     [start, end, ...wardCodes],
   );
 
   const [pttypeRows] = await db.query<IpdPttypeRow[]>(
-    `
-    SELECT p1.name AS pttype_name, COUNT(*) AS total
+    `SELECT p1.name AS pttype_name, COUNT(*) AS total
     FROM ipt
     INNER JOIN an_stat a ON a.an = ipt.an
     INNER JOIN pttype p1 ON a.pttype = p1.pttype
@@ -214,23 +203,18 @@ export async function getIpdSummary(
       AND ipt.ward IN (${placeholders})
     GROUP BY p1.name
     ORDER BY total DESC
-    LIMIT 8
-    `,
+    LIMIT 8`,
     [start, end, ...wardCodes],
   );
 
   const [dchtypeRows] = await db.query<IpdDchtypeRow[]>(
-    `
-    SELECT
-      COALESCE(dd.name, 'ไม่ระบุ') AS dchtype_name,
-      COUNT(*) AS total
+    `SELECT COALESCE(dd.name, 'ไม่ระบุ') AS dchtype_name, COUNT(*) AS total
     FROM ipt
     LEFT JOIN dchtype dd ON dd.dchtype = ipt.dchtype
     WHERE ipt.dchdate BETWEEN ? AND ?
       AND ipt.ward IN (${placeholders})
     GROUP BY dd.name
-    ORDER BY total DESC
-    `,
+    ORDER BY total DESC`,
     [start, end, ...wardCodes],
   );
 
@@ -260,12 +244,11 @@ export async function getBedOccupancy(
   const wardCodes = wards.map((w) => w.ward_code);
   const placeholders = wardCodes.map(() => "?").join(",");
 
-  // ถ้ามี date range → นับ admit ในช่วงนั้น (regdate BETWEEN)
-  // ถ้าไม่มี → นับผู้ป่วยที่ยังอยู่ปัจจุบัน (dchdate IS NULL)
   let admitQuery: string;
   let admitParams: (string | string[])[];
 
   if (start && end) {
+    // ดึงตาม regdate ในช่วงที่เลือก
     admitQuery = `
       SELECT a.ward AS ward_code, COUNT(*) AS current_admit
       FROM an_stat a
@@ -275,10 +258,12 @@ export async function getBedOccupancy(
     `;
     admitParams = [start, end, ...wardCodes];
   } else {
+    // ── ดึงผู้ป่วยที่ยัง admit อยู่ปัจจุบัน ──────────────────────────────────
+    // HosXP เก็บ "ยังไม่จำหน่าย" เป็น dchdate = NULL | '0000-00-00' | ''
     admitQuery = `
       SELECT a.ward AS ward_code, COUNT(*) AS current_admit
       FROM an_stat a
-      WHERE a.dchdate IS NULL
+      WHERE ${NOT_DISCHARGED_SQL}
         AND a.ward IN (${placeholders})
       GROUP BY a.ward
     `;
