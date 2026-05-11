@@ -12,6 +12,7 @@ import {
   Baby,
   BedDouble,
   UserMinus,
+  AlertTriangle,
 } from "lucide-react";
 
 import { SidebarItem } from "./types";
@@ -59,6 +60,11 @@ export const REPORT_ITEMS: SidebarItem[] = [
     label: "ผู้รับบริการแต่ขึ้นทะเบียนบัตรทองที่อื่น",
     href: "/pages/service-unit",
     icon: UserCheck,
+  },
+  {
+    label: "รายชื่อผู้ป่วยที่ไม่มี (CC/Diag/ICD10)",
+    href: "/pages/incomplete-visit",
+    icon: AlertTriangle,
   },
 ];
 
