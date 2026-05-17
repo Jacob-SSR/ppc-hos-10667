@@ -240,8 +240,8 @@ export async function getDeathNotDischarged() {
         `,
     );
     return rows;
-  } catch (error: any) {
-    if (error?.code === "ER_NO_SUCH_TABLE") {
+  } catch (error: unknown) {
+    if (error instanceof Error && error.message === "ER_NO_SUCH_TABLE") {
       return [];
     }
     throw error;
