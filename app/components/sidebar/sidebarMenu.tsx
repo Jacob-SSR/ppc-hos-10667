@@ -13,6 +13,7 @@ import {
   BedDouble,
   UserMinus,
   AlertTriangle,
+  Banknote,
 } from "lucide-react";
 
 import { SidebarItem } from "./types";
@@ -32,6 +33,12 @@ export const DASHBOARD_ITEMS: SidebarItem[] = [
     label: "บันทึกงาน IT",
     href: "/pages/it-worklog",
     icon: Activity,
+  },
+  {
+    label: "Dashboard การเบิกจ่าย",
+    href: "/pages/billing-dashboard",
+    icon: Banknote,
+    desc: "เรียกเก็บ / ชดเชย แยก รพ.สต. และ รพ."
   }
 ];
 

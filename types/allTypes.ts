@@ -1,6 +1,6 @@
 import { RowDataPacket } from "mysql2/promise";
 
-export interface DbRow extends RowDataPacket { }
+export type DbRow = RowDataPacket;
 
 export type ToastType = "success" | "error";
 
@@ -170,4 +170,42 @@ export interface UseReportTableReturn<T = Record<string, unknown>> {
   totalPages: number;
   fetchData: () => Promise<void>;
   handleSort: (key: string) => void;
+}
+
+export interface BillingItemSummary {
+  รายการขอเบิก: string;
+  รายการสั้น: string;
+  สถานะ: string;
+  จำนวน: number;
+  เรียกเก็บ: number;
+  ชดเชย: number;
+  ไม่ชดเชย: number;
+  หมายเหตุ: Record<string, number>;
+}
+
+export interface BillingUnitSummary {
+  หน่วยบริการ: string;
+  hcodeKey: string;
+  isHospital: boolean;
+  รายการทั้งหมด: number;
+  เรียกเก็บ: number;
+  ชดเชย: number;
+  ไม่ชดเชย: number;
+  อัตราชดเชย: number;
+  items: BillingItemSummary[];
+}
+
+export interface BillingDashboardData {
+  updatedAt: string;
+  totalRows: number;
+  totalClaim: number;
+  totalComp: number;
+  totalNoComp: number;
+  units: BillingUnitSummary[];
+  remarkSummary: {
+    รหัส: string;
+    หน่วยบริการ: string;
+    จำนวน: number;
+    เรียกเก็บ: number;
+  }[];
 }

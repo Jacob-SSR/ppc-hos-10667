@@ -77,5 +77,7 @@ export const config = {
     "/api/ipd/:path*",
     "/api/death-not-discharged/:path*",
     "/api/me",
+    "/api/billing-dashboard/:path*",
+    "/api/billing-upload/:path*",
   ],
 };
