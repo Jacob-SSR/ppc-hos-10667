@@ -79,5 +79,7 @@ export const config = {
     "/api/me",
     "/api/billing-dashboard/:path*",
     "/api/billing-upload/:path*",
+    "/api/ktb-dashboard/:path*",
+    "/api/ktb-upload/:path*",
   ],
 };

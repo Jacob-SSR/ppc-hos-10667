@@ -14,6 +14,7 @@ import {
   UserMinus,
   AlertTriangle,
   Banknote,
+  Wallet,
 } from "lucide-react";
 
 import { SidebarItem } from "./types";
@@ -38,7 +39,14 @@ export const DASHBOARD_ITEMS: SidebarItem[] = [
     label: "จัดสรรผลงานบริการ - MOPH CLAIM",
     href: "/pages/billing-dashboard",
     icon: Banknote,
-  }
+  },
+  {
+    label: "รายการยังไม่โอน KTB",
+    href: "/pages/ktb-dashboard",
+    icon: Wallet,
+    desc: "ชดเชยแล้วแต่ยังไม่ได้รับโอนเงิน",
+  },
+
 ];
 
 export const REPORT_ITEMS: SidebarItem[] = [
