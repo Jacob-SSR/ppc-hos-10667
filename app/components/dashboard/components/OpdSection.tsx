@@ -168,45 +168,25 @@ function getPresetRange(preset: string): { start: Date; end: Date } {
     return { start: mon, end: today };
   }
   if (preset === "เดือนนี้") {
-    return {
-      start: new Date(today.getFullYear(), today.getMonth(), 1),
-      end: today,
-    };
+    return { start: new Date(today.getFullYear(), today.getMonth(), 1), end: today };
   }
   if (preset === "ปีนี้") {
-    return {
-      start: new Date(today.getFullYear(), 0, 1), // 1 ม.ค.
-      end: today,
-    };
+    return { start: new Date(today.getFullYear(), 0, 1), end: today };
   }
   return { start: today, end: today };
 }
 
-// ── สร้าง title ให้สอดคล้องกับ preset / ช่วงวันที่ ────────────────────────
 function buildTitle(preset: string, start: Date, end: Date): string {
   const base = "ภาพรวมผู้รับบริการ OPD";
-
-  const now = new Date(
-    new Date().toLocaleString("en-US", { timeZone: "Asia/Bangkok" }),
-  );
+  const now = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Bangkok" }));
   const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-
   const isSameDay = (a: Date, b: Date) =>
-    a.getFullYear() === b.getFullYear() &&
-    a.getMonth() === b.getMonth() &&
-    a.getDate() === b.getDate();
+    a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
 
-  if (
-    preset === "วันนี้" ||
-    (isSameDay(start, end) && isSameDay(start, today))
-  ) {
-    return `${base} วันนี้`;
-  }
+  if (preset === "วันนี้" || (isSameDay(start, end) && isSameDay(start, today))) return `${base} วันนี้`;
   if (preset === "สัปดาห์นี้") return `${base} สัปดาห์นี้`;
   if (preset === "เดือนนี้") return `${base} เดือนนี้`;
   if (preset === "ปีนี้") return `${base} ปีนี้`;
-
-  // กำหนดเอง — แสดงช่วงวันที่
   const s = toThaiDate(fmt(start));
   const e = toThaiDate(fmt(end));
   if (s === e) return `${base} วันที่ ${s}`;
@@ -214,7 +194,7 @@ function buildTitle(preset: string, start: Date, end: Date): string {
 }
 
 function Shimmer() {
-  return <div className="h-[168px] rounded-2xl bg-gray-200 animate-pulse" />;
+  return <div className="h-[190px] rounded-2xl bg-gray-200 animate-pulse" />;
 }
 
 interface ModalState {
@@ -225,28 +205,18 @@ interface ModalState {
 
 export default function OpdSection() {
   const [preset, setPreset] = useState("วันนี้");
-  const [start, setStart] = useState<Date>(
-    () => getPresetRange("วันนี้").start,
-  );
+  const [start, setStart] = useState<Date>(() => getPresetRange("วันนี้").start);
   const [end, setEnd] = useState<Date>(() => getPresetRange("วันนี้").end);
   const [summary, setSummary] = useState<Record<string, number> | null>(null);
   const [loading, setLoading] = useState(true);
   const [infoLabel, setInfoLabel] = useState("");
   const [titleLabel, setTitleLabel] = useState("ภาพรวมผู้รับบริการ OPD วันนี้");
+  const [modal, setModal] = useState<ModalState>({ open: false, cardLabel: "", cardType: "all" });
 
-  const [modal, setModal] = useState<ModalState>({
-    open: false,
-    cardLabel: "",
-    cardType: "all",
-  });
-
-  // รับ preset เข้ามาได้ เพราะ setPreset เป็น async state
   const fetchData = async (s: Date, e: Date, p: string = preset) => {
     setLoading(true);
     try {
-      const res = await fetch(`/api/dashboard?start=${fmt(s)}&end=${fmt(e)}`, {
-        credentials: "include",
-      });
+      const res = await fetch(`/api/dashboard?start=${fmt(s)}&end=${fmt(e)}`, { credentials: "include" });
       if (res.ok) {
         const json = await res.json();
         setSummary(json.summary ?? null);
@@ -255,28 +225,21 @@ export default function OpdSection() {
         setInfoLabel(sLabel === eLabel ? sLabel : `${sLabel} – ${eLabel}`);
         setTitleLabel(buildTitle(p, s, e));
       }
-    } catch {}
+    } catch { }
     setLoading(false);
   };
 
-  // โหลดครั้งแรก — ใช้ ref ดักค่า start/end ณ ตอน mount
   const initialStart = useRef(start);
   const initialEnd = useRef(end);
 
   useEffect(() => {
     let cancelled = false;
-
     const run = async () => {
       setLoading(true);
       try {
         const s = initialStart.current;
         const e = initialEnd.current;
-        const res = await fetch(
-          `/api/dashboard?start=${fmt(s)}&end=${fmt(e)}`,
-          {
-            credentials: "include",
-          },
-        );
+        const res = await fetch(`/api/dashboard?start=${fmt(s)}&end=${fmt(e)}`, { credentials: "include" });
         if (res.ok && !cancelled) {
           const json = await res.json();
           setSummary(json.summary ?? null);
@@ -285,15 +248,11 @@ export default function OpdSection() {
           setInfoLabel(sLabel === eLabel ? sLabel : `${sLabel} – ${eLabel}`);
           setTitleLabel(buildTitle("วันนี้", s, e));
         }
-      } catch {}
+      } catch { }
       if (!cancelled) setLoading(false);
     };
-
     run();
-
-    return () => {
-      cancelled = true;
-    };
+    return () => { cancelled = true; };
   }, []); // eslint-disable-line
 
   const handlePreset = (p: string) => {
@@ -340,18 +299,11 @@ export default function OpdSection() {
               onChange={(e) => handlePreset(e.target.value)}
               className="border border-gray-300 rounded px-2 py-1.5 text-sm text-gray-600 bg-white"
             >
-              {PRESETS.map((p) => (
-                <option key={p}>{p}</option>
-              ))}
+              {PRESETS.map((p) => <option key={p}>{p}</option>)}
             </select>
             <DatePicker
               selected={start}
-              onChange={(d: Date | null) => {
-                if (d) {
-                  setStart(d);
-                  setPreset("กำหนดเอง");
-                }
-              }}
+              onChange={(d: Date | null) => { if (d) { setStart(d); setPreset("กำหนดเอง"); } }}
               dateFormat="dd/MM/yyyy"
               locale={th}
               showMonthDropdown
@@ -361,12 +313,7 @@ export default function OpdSection() {
             />
             <DatePicker
               selected={end}
-              onChange={(d: Date | null) => {
-                if (d) {
-                  setEnd(d);
-                  setPreset("กำหนดเอง");
-                }
-              }}
+              onChange={(d: Date | null) => { if (d) { setEnd(d); setPreset("กำหนดเอง"); } }}
               dateFormat="dd/MM/yyyy"
               locale={th}
               showMonthDropdown
@@ -392,10 +339,7 @@ export default function OpdSection() {
         {/* Info bar */}
         <div className="flex items-center gap-2 text-sm text-[#717171] mb-4">
           <Info size={14} />
-          <span>
-            แสดงข้อมูล การ์ด:{" "}
-            <span className="font-bold">{infoLabel || "—"}</span>
-          </span>
+          <span>แสดงข้อมูล การ์ด: <span className="font-bold">{infoLabel || "—"}</span></span>
         </div>
 
         {/* Cards grid */}
@@ -403,55 +347,51 @@ export default function OpdSection() {
           {loading
             ? Array.from({ length: 13 }).map((_, i) => <Shimmer key={i} />)
             : OPD_CARDS.map((card, i) => {
-                const { Icon } = card;
-                const displayVal = getDisplay(card);
-                const hasData = summary && summary[card.visitKey] != null;
+              const { Icon } = card;
+              const displayVal = getDisplay(card);
+              const hasData = summary && summary[card.visitKey] != null;
 
-                return (
+              return (
+                <div
+                  key={i}
+                  className="rounded-2xl p-5 flex flex-col items-center gap-3 transition-all duration-200 hover:scale-[1.02] hover:shadow-lg"
+                  style={{ backgroundColor: card.bg }}
+                >
+                  {/* Icon */}
                   <div
-                    key={i}
-                    className="rounded-2xl p-5 flex flex-col items-center gap-3 relative transition-all duration-200 hover:scale-[1.02] hover:shadow-lg"
-                    style={{ backgroundColor: card.bg }}
+                    className="w-12 h-12 rounded-2xl flex items-center justify-center"
+                    style={{ backgroundColor: card.accent + "22" }}
                   >
-                    <div
-                      className="w-11 h-11 rounded-2xl flex items-center justify-center"
-                      style={{ backgroundColor: card.accent + "22" }}
-                    >
-                      <Icon
-                        size={22}
-                        style={{ color: card.accent }}
-                        strokeWidth={1.8}
-                      />
-                    </div>
-                    <p
-                      className="text-xs font-bold text-center leading-snug tracking-wide"
-                      style={{ color: card.accent }}
-                    >
-                      {card.label}
-                    </p>
-                    <p
-                      className="text-lg font-extrabold text-center tabular-nums"
-                      style={{ color: card.accent }}
-                    >
-                      {displayVal}
-                    </p>
-                    <button
-                      onClick={() => hasData && openModal(card)}
-                      disabled={!hasData}
-                      className="flex items-center gap-1 text-xs font-semibold px-4 py-1.5 rounded-full transition-all"
-                      style={{
-                        backgroundColor: card.accent + "18",
-                        color: card.accent,
-                        border: `1.5px solid ${card.accent}40`,
-                        cursor: hasData ? "pointer" : "not-allowed",
-                        opacity: hasData ? 1 : 0.4,
-                      }}
-                    >
-                      รายละเอียด <ArrowRight size={11} />
-                    </button>
+                    <Icon size={24} style={{ color: card.accent }} strokeWidth={1.8} />
                   </div>
-                );
-              })}
+
+                  {/* Label — สีดำ */}
+                  <p className="text-sm font-bold text-center leading-snug text-black">
+                    {card.label}
+                  </p>
+
+                  {/* Value — สีดำ ใหญ่ขึ้น */}
+                  <p className="text-xl font-extrabold text-center tabular-nums text-black">
+                    {displayVal}
+                  </p>
+
+                  {/* Detail button — สีดำ */}
+                  <button
+                    onClick={() => hasData && openModal(card)}
+                    disabled={!hasData}
+                    className="flex items-center gap-1 text-sm font-semibold px-4 py-1.5 rounded-full transition-all text-black"
+                    style={{
+                      backgroundColor: card.accent + "18",
+                      border: `1.5px solid ${card.accent}40`,
+                      cursor: hasData ? "pointer" : "not-allowed",
+                      opacity: hasData ? 1 : 0.4,
+                    }}
+                  >
+                    รายละเอียด <ArrowRight size={12} />
+                  </button>
+                </div>
+              );
+            })}
         </div>
       </div>
 
