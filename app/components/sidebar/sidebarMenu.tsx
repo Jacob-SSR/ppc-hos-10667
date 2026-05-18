@@ -35,10 +35,9 @@ export const DASHBOARD_ITEMS: SidebarItem[] = [
     icon: Activity,
   },
   {
-    label: "Dashboard การเบิกจ่าย",
+    label: "จัดสรรผลงานบริการ - MOPH CLAIM",
     href: "/pages/billing-dashboard",
     icon: Banknote,
-    desc: "เรียกเก็บ / ชดเชย แยก รพ.สต. และ รพ."
   }
 ];
 

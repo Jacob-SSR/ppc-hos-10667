@@ -33,10 +33,12 @@ export interface BillingRow {
 
 const HCODE_MAP: Record<string, { name: string; isHospital: boolean }> = {
   "10909": { name: "โรงพยาบาลพลับพลาชัย", isHospital: true },
-  "03044": { name: "รพ.สต.ตาพระ", isHospital: false },
-  "03047": { name: "รพ.สต.โคกเจริญ", isHospital: false },
-  "03048": { name: "รพ.สต.จันดุม", isHospital: false },
-  "03049": { name: "รพ.สต.สะเดา", isHospital: false },
+  "03044": { name: "รพ.สต.บ้านจันดุม ", isHospital: false },
+  "03045": { name: "รพ.สต.บ้านโคกเจริญ ", isHospital: false },
+  "03046": { name: "รพ.สต.บ้านโคกขมิ้น ", isHospital: false },
+  "03047": { name: "รพ.สต.ตาพระ", isHospital: false },
+  "03048": { name: "รพ.สต.บ้านป่าชัน", isHospital: false },
+  "03049": { name: "รพ.สต.สำโรง", isHospital: false },
 };
 
 const SHORT_LABELS: Record<string, string> = {
