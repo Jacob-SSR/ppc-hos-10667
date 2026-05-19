@@ -29,7 +29,7 @@ interface WardConfigItem {
 const WARD_CONFIG: Record<string, WardConfigItem> = {
   "04": { label: "ห้องพิเศษ",   totalBeds: 11 },
   "01": { label: "Ward",          totalBeds: 26 },
-  "17": { label: "เตียงIMC",     totalBeds: 2  },
+  "17": { label: "เตียงIMC",     totalBeds: 2  }, // ← เปลี่ยนจาก ห้องINC
   "15": { label: "พลับพลารักษ์", totalBeds: 10 },
   "11": { label: "เตียงเสริม",   totalBeds: 16 },
   "05": { label: "ห้องแยกโรค",  totalBeds: 2  },
@@ -254,7 +254,7 @@ export async function getBedOccupancy(
     // AND ทั้ง ipt และ an_stat ต้องยังไม่ discharge
     // ป้องกันข้อมูลเก่าค้างในตารางใดตารางหนึ่ง
     admitQuery = `
-      SELECT ip.ward AS ward_code, COUNT(*) AS current_admit
+      SELECT ip.ward AS ward_code, COUNT(DISTINCT ip.an) AS current_admit
       FROM ipt ip
       INNER JOIN an_stat a ON a.an = ip.an
       WHERE (
