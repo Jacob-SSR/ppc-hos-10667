@@ -82,5 +82,7 @@ export const config = {
     "/api/ktb-dashboard/:path*",
     "/api/ktb-upload/:path*",
     "/api/change-password/:path*",
+    "/api/tb-dashboard/:path*",
+    "/api/tb-upload/:path*",
   ],
 };

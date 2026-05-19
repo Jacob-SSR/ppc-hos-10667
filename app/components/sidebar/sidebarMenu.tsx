@@ -45,7 +45,11 @@ export const DASHBOARD_ITEMS: SidebarItem[] = [
     label: "รายการยังไม่โอน KTB",
     href: "/pages/ktb-dashboard",
     icon: Wallet,
-    desc: "ชดเชยแล้วแต่ยังไม่ได้รับโอนเงิน",
+  },
+  {
+    label: "TB",
+    href: "/pages/tb-dashboard",
+    icon: Activity,
   },
 
 ];
