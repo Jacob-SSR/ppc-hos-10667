@@ -15,6 +15,7 @@ import {
   AlertTriangle,
   Banknote,
   Wallet,
+  Settings,
 } from "lucide-react";
 
 import { SidebarItem } from "./types";
@@ -132,5 +133,14 @@ export const PPA_ITEMS: SidebarItem[] = [
     href: "/pages/ppa/mch04",
     icon: Baby,
     desc: "คัดกรองพัฒนาการเด็ก DSPM",
+  },
+];
+
+export const SETTINGS_ITEMS: SidebarItem[] = [
+  {
+    label: "ตั้งค่าระบบ",
+    href: "/pages/settings",
+    icon: Settings,
+    desc: "รหัสผ่าน · ฟอนต์ · ธีม",
   },
 ];

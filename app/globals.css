@@ -15,6 +15,143 @@
   --mint-text: #1a5233;
 }
 
+html.dark {
+  --background: #0f172a;
+  --foreground: #e2e8f0;
+  color-scheme: dark;
+}
+
+html.dark body {
+  background-color: #0f172a !important;
+  color: #e2e8f0 !important;
+}
+
+/* ── Backgrounds ── */
+html.dark .bg-white        { background-color: #1e293b !important; }
+html.dark .bg-gray-50      { background-color: #0f172a !important; }
+html.dark .bg-gray-100     { background-color: #1e293b !important; }
+html.dark .bg-gray-200     { background-color: #334155 !important; }
+
+/* ── Borders ── */
+html.dark .border-gray-100 { border-color: #1e293b !important; }
+html.dark .border-gray-200 { border-color: #334155 !important; }
+html.dark .border-gray-300 { border-color: #475569 !important; }
+
+/* ── Text ── */
+html.dark .text-gray-900   { color: #f1f5f9 !important; }
+html.dark .text-gray-800   { color: #e2e8f0 !important; }
+html.dark .text-gray-700   { color: #cbd5e1 !important; }
+html.dark .text-gray-600   { color: #94a3b8 !important; }
+html.dark .text-gray-500   { color: #64748b !important; }
+html.dark .text-gray-400   { color: #475569 !important; }
+
+/* ── Layout shells ── */
+html.dark header {
+  background: rgba(15, 23, 42, 0.9) !important;
+  border-bottom-color: #1e293b !important;
+}
+html.dark aside {
+  background-color: #1e293b !important;
+  border-right-color: #1e293b !important;
+}
+html.dark main {
+  background-color: #0f172a !important;
+}
+
+/* ── Cards / Panels ── */
+html.dark .rounded-2xl.bg-white,
+html.dark .rounded-xl.bg-white,
+html.dark .rounded-lg.bg-white {
+  background-color: #1e293b !important;
+  border-color: #334155 !important;
+}
+
+/* ── Table ── */
+html.dark table                { border-color: #334155 !important; }
+html.dark td                   { border-right-color: #334155 !important; color: #cbd5e1 !important; }
+html.dark tr:nth-child(even) td { background-color: #162032 !important; }
+html.dark tr:hover td          { background-color: #162d22 !important; }
+html.dark thead tr th {
+  background-color: #166534 !important;
+  border-right-color: #15803d !important;
+  color: #ffffff !important;
+}
+
+/* ── Inputs ── */
+html.dark input[type="text"],
+html.dark input[type="password"],
+html.dark input[type="email"],
+html.dark input[type="number"],
+html.dark input[type="date"],
+html.dark select,
+html.dark textarea {
+  background-color: #0f172a !important;
+  border-color: #334155 !important;
+  color: #e2e8f0 !important;
+}
+html.dark input:focus,
+html.dark select:focus         { border-color: #3aa36a !important; }
+html.dark input::placeholder   { color: #475569 !important; }
+
+/* ── Shimmer / skeleton ── */
+html.dark .animate-pulse       { background-color: #1e293b !important; }
+
+/* ── Progress bar track ── */
+html.dark .bg-gray-100.rounded-full { background-color: #334155 !important; }
+html.dark .bg-gray-200.rounded-full { background-color: #334155 !important; }
+
+/* ── Badges ── */
+html.dark .bg-green-100  { background-color: #14532d !important; color: #86efac !important; }
+html.dark .bg-red-100    { background-color: #7f1d1d !important; color: #fca5a5 !important; }
+html.dark .bg-amber-100  { background-color: #78350f !important; color: #fcd34d !important; }
+html.dark .bg-blue-100   { background-color: #1e3a5f !important; color: #93c5fd !important; }
+html.dark .bg-purple-100 { background-color: #3b0764 !important; color: #d8b4fe !important; }
+html.dark .bg-orange-100 { background-color: #7c2d12 !important; color: #fdba74 !important; }
+html.dark .bg-indigo-100 { background-color: #312e81 !important; color: #a5b4fc !important; }
+
+/* ── Amber guest notice ── */
+html.dark .bg-amber-50       { background-color: #451a03 !important; }
+html.dark .border-amber-200  { border-color: #92400e !important; }
+html.dark .text-amber-800    { color: #fcd34d !important; }
+html.dark .text-amber-700    { color: #fbbf24 !important; }
+
+/* ── Recharts ── */
+html.dark .recharts-cartesian-grid line { stroke: #334155 !important; }
+html.dark .recharts-text                { fill: #94a3b8 !important; }
+
+/* ── DatePicker ── */
+html.dark .react-datepicker {
+  background-color: #1e293b !important;
+  border-color: #334155 !important;
+  color: #e2e8f0 !important;
+}
+html.dark .react-datepicker__header {
+  background-color: #0f172a !important;
+  border-color: #334155 !important;
+}
+html.dark .react-datepicker__current-month,
+html.dark .react-datepicker__day-name,
+html.dark .react-datepicker__day { color: #e2e8f0 !important; }
+html.dark .react-datepicker__day:hover { background-color: #334155 !important; }
+html.dark .react-datepicker__day--selected { background-color: #166534 !important; }
+
+/* ── Scrollbar ── */
+html.dark ::-webkit-scrollbar       { width: 6px; height: 6px; }
+html.dark ::-webkit-scrollbar-track { background: #0f172a; }
+html.dark ::-webkit-scrollbar-thumb { background: #334155; border-radius: 3px; }
+html.dark ::-webkit-scrollbar-thumb:hover { background: #475569; }
+
+/* ── Mint accent — ใช้ CSS variable แทน escaped class ── */
+html.dark {
+  --mint-bg-light: #0d2318;
+  --mint-bg-mid:   #0f2920;
+  --mint-text-on-dark: #4ade80;
+  --mint-border-on-dark: #166534;
+}
+
+/* ─────────────────────────────────────────────────
+   BASE STYLES
+───────────────────────────────────────────────── */
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
@@ -25,33 +162,20 @@ body {
   background: var(--background);
   color: var(--foreground);
   font-family: var(--font-sans), sans-serif;
-  background-color: #ffffff; 
-}
-table {
-  border: 1px solid #d6f0e0;
+  background-color: #ffffff;
+  transition: background-color 0.2s ease, color 0.2s ease;
 }
 
-th,
-td {
-  border-right: 1px solid #e8f5ee;
-}
-
-th:last-child,
-td:last-child {
-  border-right: none;
-}
+table { border: 1px solid #d6f0e0; }
+th, td { border-right: 1px solid #e8f5ee; }
+th:last-child, td:last-child { border-right: none; }
 
 @keyframes shimmer {
   0%   { background-position: 200% 0; }
   100% { background-position: -200% 0; }
 }
-
-.animate-shimmer {
-  animation: shimmer 1.6s infinite linear;
-}
+.animate-shimmer { animation: shimmer 1.6s infinite linear; }
 
 input[type="password"]::-ms-reveal,
 input[type="password"]::-ms-clear,
-input[type="password"]::-webkit-credentials-auto-fill-button {
-  display: none;
-}
+input[type="password"]::-webkit-credentials-auto-fill-button { display: none; }

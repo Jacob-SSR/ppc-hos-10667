@@ -19,12 +19,71 @@ function getBedColor(admit: number, totalBeds: number): string {
   return "#16a34a";
 }
 
-function getBadgeStyle(admit: number, totalBeds: number) {
-  if (totalBeds === 0) return { bg: "#f3f4f6", text: "#6b7280", border: "#e5e7eb" };
+function getTextColor(admit: number, totalBeds: number): string {
+  if (totalBeds === 0) return "#9ca3af";
   const rate = admit / totalBeds;
-  if (rate >= 0.9) return { bg: "#fef2f2", text: "#dc2626", border: "#fecaca" };
-  if (rate >= 0.5) return { bg: "#fffbeb", text: "#d97706", border: "#fde68a" };
-  return { bg: "#f0fdf4", text: "#16a34a", border: "#bbf7d0" };
+  if (rate >= 0.9) return "#dc2626";
+  if (rate >= 0.5) return "#d97706";
+  return "#15803d";
+}
+
+const SIZE   = 88;
+const R      = 36;
+const STROKE = 7;
+const FONT   = 18;
+
+function DonutCircle({ admit, totalBeds }: { admit: number; totalBeds: number }) {
+  const CX = SIZE / 2;
+  const CY = SIZE / 2;
+  const CIRCUM = 2 * Math.PI * R;
+  const pct = totalBeds > 0 ? Math.round((admit / totalBeds) * 100) : 0;
+  const dashArr = (pct / 100) * CIRCUM;
+  const strokeColor = getBedColor(admit, totalBeds);
+  const textColor = getTextColor(admit, totalBeds);
+  const rotateAttr = `rotate(-90 ${CX} ${CY})`;
+
+  return (
+    <div style={{ position: "relative", width: SIZE, height: SIZE, flexShrink: 0 }}>
+      <svg
+        width={SIZE}
+        height={SIZE}
+        viewBox={`0 0 ${SIZE} ${SIZE}`}
+        style={{ position: "absolute", inset: 0 }}
+      >
+        <circle cx={CX} cy={CY} r={R} fill="none" stroke="#e5e7eb" strokeWidth={STROKE} />
+        <circle
+          cx={CX} cy={CY} r={R}
+          fill="none"
+          stroke={strokeColor}
+          strokeWidth={STROKE}
+          strokeLinecap="round"
+          strokeDasharray={`${dashArr} ${CIRCUM}`}
+          strokeDashoffset={0}
+          transform={rotateAttr}
+        />
+      </svg>
+
+      {/* Label ตรงกลาง */}
+      <div
+        style={{
+          position: "absolute",
+          inset: 0,
+          display: "flex",
+          flexDirection: "column",
+          alignItems: "center",
+          justifyContent: "center",
+          pointerEvents: "none",
+        }}
+      >
+        <span style={{ fontSize: FONT, fontWeight: 700, color: textColor, lineHeight: 1 }}>
+          {pct}%
+        </span>
+        <span style={{ fontSize: 10, color: "#9ca3af", lineHeight: 1, marginTop: 3 }}>
+          ครองเตียง
+        </span>
+      </div>
+    </div>
+  );
 }
 
 export function WardCard({ ward, date }: WardCardProps) {
@@ -32,30 +91,25 @@ export function WardCard({ ward, date }: WardCardProps) {
 
   const vacant = ward.totalBeds - ward.admit;
   const bedColor = getBedColor(ward.admit, ward.totalBeds);
-  const rate = ward.totalBeds > 0
-    ? Math.round((ward.admit / ward.totalBeds) * 100)
-    : 0;
-  const badge = getBadgeStyle(ward.admit, ward.totalBeds);
 
   return (
     <>
-      <div className="relative bg-white border border-gray-200 rounded-xl p-5 flex flex-col items-center gap-3 hover:shadow-md transition-all duration-150 cursor-default">
-
-        {/* % ครองเตียง — มุมขวาบน */}
-        <div
-          className="absolute top-3 right-3 text-xs font-bold px-2 py-0.5 rounded-full border"
-          style={{ backgroundColor: badge.bg, color: badge.text, borderColor: badge.border }}
-        >
-          {rate}%
+      <div
+        style={{ position: "relative" }}
+        className="bg-white border border-gray-200 rounded-xl p-5 flex flex-col items-center gap-3 hover:shadow-md transition-all duration-150 cursor-default"
+      >
+        {/* Bed icon — top right */}
+        <div style={{ position: "absolute", top: 10, right: 12 }}>
+          <BedDouble size={28} strokeWidth={1.5} style={{ color: bedColor }} />
         </div>
 
         {/* Ward name */}
-        <p className="text-base font-bold text-black text-center leading-snug">
+        <p className="text-base font-bold text-black text-center leading-snug w-full">
           {ward.label}
         </p>
 
-        {/* Bed icon — สีตาม occupancy */}
-        <BedDouble size={52} strokeWidth={1.5} style={{ color: bedColor }} />
+        {/* Donut — กลางการ์ด */}
+        <DonutCircle admit={ward.admit} totalBeds={ward.totalBeds} />
 
         {/* Admit / total */}
         <p className="text-base font-bold text-black text-center">

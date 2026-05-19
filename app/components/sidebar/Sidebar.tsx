@@ -2,11 +2,15 @@
 
 import { useEffect, useState } from "react";
 import { usePathname } from "next/navigation";
+import Link from "next/link";
 import {
   LayoutDashboard,
   FileText,
   Stethoscope,
   HeartHandshake,
+  Settings,
+  Sun,
+  Moon,
 } from "lucide-react";
 
 import NavGroup from "./NavGroup";
@@ -17,20 +21,20 @@ import {
   PRIMARY_CARE_ITEMS,
 } from "./sidebarMenu";
 import { SidebarItem } from "./types";
+import { useSettings } from "@/app/contexts/SettingsContext";
 
-// Guest เห็นแค่ Overview
 const GUEST_DASHBOARD_ITEMS = DASHBOARD_ITEMS.filter(
   (item) => item.href === "/pages/dashboard",
 );
 
-// ─── helpers ──────────────────────────────────────────────────────────────────
 const isInGroup = (pathname: string | null, items: SidebarItem[]) =>
   items.some((i) => pathname === i.href || pathname?.startsWith(i.href + "/"));
 
 export default function Sidebar() {
   const pathname = usePathname();
+  const { darkMode, setDarkMode } = useSettings();
+  const isSettings = pathname === "/pages/settings";
 
-  // ── Guest check ──
   const [isGuest, setIsGuest] = useState<boolean | null>(null);
 
   useEffect(() => {
@@ -43,31 +47,22 @@ export default function Sidebar() {
       .catch(() => {
         if (!cancelled) setIsGuest(true);
       });
-    return () => {
-      cancelled = true;
-    };
+    return () => { cancelled = true; };
   }, []);
 
-  // ── Override state (user กดแล้ว override pathname) ──
-  const [dashboardOverride, setDashboardOverride] = useState<boolean | null>(
-    null,
-  );
+  const [dashboardOverride, setDashboardOverride] = useState<boolean | null>(null);
   const [reportOverride, setReportOverride] = useState<boolean | null>(null);
   const [ppaOverride, setPpaOverride] = useState<boolean | null>(null);
-  const [primaryCareOverride, setPrimaryCareOverride] = useState<
-    boolean | null
-  >(null);
-  const dashboardOpen =
-    dashboardOverride ?? isInGroup(pathname, DASHBOARD_ITEMS);
+  const [primaryCareOverride, setPrimaryCareOverride] = useState<boolean | null>(null);
+
+  const dashboardOpen = dashboardOverride ?? isInGroup(pathname, DASHBOARD_ITEMS);
   const reportOpen = reportOverride ?? isInGroup(pathname, REPORT_ITEMS);
   const ppaOpen = ppaOverride ?? (pathname?.startsWith("/pages/ppa") || false);
-  const primaryCareOpen =
-    primaryCareOverride ?? isInGroup(pathname, PRIMARY_CARE_ITEMS);
+  const primaryCareOpen = primaryCareOverride ?? isInGroup(pathname, PRIMARY_CARE_ITEMS);
 
   const toggle = (current: boolean, setter: (v: boolean | null) => void) =>
     setter(!current);
 
-  // Loading role
   if (isGuest === null) {
     return (
       <aside className="flex flex-col w-60 h-full bg-white border-r border-gray-300 overflow-hidden">
@@ -80,6 +75,7 @@ export default function Sidebar() {
 
   return (
     <aside className="flex flex-col w-60 h-full bg-white border-r border-gray-300 overflow-hidden">
+      {/* Nav items */}
       <nav className="flex-1 px-4 py-6 space-y-1 text-sm overflow-y-auto min-h-0">
         <NavGroup
           label="Dashboard"
@@ -90,7 +86,6 @@ export default function Sidebar() {
           isActive={isInGroup(pathname, DASHBOARD_ITEMS)}
         />
 
-        {/* เมนูเหล่านี้ซ่อนสำหรับ Guest */}
         {!isGuest && (
           <>
             <NavGroup
@@ -122,12 +117,9 @@ export default function Sidebar() {
           </>
         )}
 
-        {/* Guest Notice */}
         {isGuest && (
           <div className="mt-4 mx-1 p-3 bg-amber-50 border border-amber-200 rounded-lg">
-            <p className="text-xs font-semibold text-amber-800 mb-1">
-              โหมด Guest
-            </p>
+            <p className="text-xs font-semibold text-amber-800 mb-1">โหมด Guest</p>
             <p className="text-[11px] text-amber-700 leading-snug">
               เข้าดูได้เฉพาะ Dashboard Overview
               <br />
@@ -136,6 +128,42 @@ export default function Sidebar() {
           </div>
         )}
       </nav>
+
+      {/* Bottom bar */}
+      <div className="px-4 pb-5 pt-2 space-y-1 border-t border-gray-100">
+        {/* Dark mode toggle */}
+        <button
+          onClick={() => setDarkMode(!darkMode)}
+          className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors text-gray-500 hover:bg-gray-50 hover:text-gray-700"
+        >
+          {darkMode
+            ? <Sun size={16} className="text-amber-500" />
+            : <Moon size={16} className="text-indigo-500" />}
+          <span>{darkMode ? "โหมดกลางวัน" : "โหมดกลางคืน"}</span>
+        </button>
+
+        {/* Settings link — ซ่อนสำหรับ Guest */}
+        {!isGuest && (
+          <Link
+            href="/pages/settings"
+            className="flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors"
+            style={
+              isSettings
+                ? { backgroundColor: "#d6f0e0", color: "#1a5233", fontWeight: 600 }
+                : { color: "#4b5563" }
+            }
+            onMouseEnter={(e) => {
+              if (!isSettings) e.currentTarget.style.backgroundColor = "#e8f5ee";
+            }}
+            onMouseLeave={(e) => {
+              if (!isSettings) e.currentTarget.style.backgroundColor = "transparent";
+            }}
+          >
+            <Settings size={16} />
+            <span>ตั้งค่า</span>
+          </Link>
+        )}
+      </div>
     </aside>
   );
 }
