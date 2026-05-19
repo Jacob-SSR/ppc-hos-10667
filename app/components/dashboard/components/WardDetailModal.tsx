@@ -1,6 +1,4 @@
 // app/components/dashboard/components/WardDetailModal.tsx
-// ดึงข้อมูลจาก /api/ipd/bed-occupancy เหมือน WardCard
-// ทำให้ตัวเลขตรงกันแน่นอน
 "use client";
 
 import { useEffect, useState, useMemo, useRef } from "react";
@@ -89,7 +87,6 @@ function StatBar({ label, count, max, color, index }: {
 export default function WardDetailModal({
     isOpen, onClose, wardCode, wardLabel, totalBeds, admit, date,
 }: WardDetailModalProps) {
-    // ── ดึงจาก bed-occupancy (ไม่มี date = ปัจจุบัน) ────────────────────────
     const [currentAdmit, setCurrentAdmit] = useState<number>(admit);
     const [pttypeSummary, setPttypeSummary] = useState<PttypeSummaryRow[]>([]);
     const [loading, setLoading] = useState(false);
@@ -104,7 +101,7 @@ export default function WardDetailModal({
         const run = async () => {
             setLoading(true);
             try {
-                // ── 1. ตัวเลข admit ปัจจุบัน จาก bed-occupancy (ไม่ส่ง date = live) ──
+                // ── 1. ตัวเลข admit จาก bed-occupancy (live) ──────────────────
                 const res1 = await fetch("/api/ipd/bed-occupancy", { credentials: "include" });
                 if (res1.ok && !cancelled) {
                     const rows: OccupancyRow[] = await res1.json();
@@ -112,14 +109,23 @@ export default function WardDetailModal({
                     if (found) setCurrentAdmit(found.current_admit);
                 }
 
-                // ── 2. สรุปตามสิทธิ์ จาก ward-census ──────────────────────────────
+                // ── 2. สิทธิ์ จาก ward-census ─────────────────────────────────
                 const res2 = await fetch(
                     `/api/ipd/ward-census?ward=${encodeURIComponent(wardCode)}`,
                     { credentials: "include" }
                 );
                 if (res2.ok && !cancelled) {
                     const json = await res2.json();
-                    setPttypeSummary(json.summary ?? []);
+
+                    // รองรับทั้ง format เก่า (json.summary) และใหม่
+                    const summaryRaw: PttypeSummaryRow[] = json.summary ?? [];
+
+                    // กรองแถวที่ total = 0 ออก และแปลง total เป็น number
+                    const cleaned = summaryRaw
+                        .map((r) => ({ ...r, total: Number(r.total) }))
+                        .filter((r) => r.total > 0);
+
+                    setPttypeSummary(cleaned);
                 }
             } catch { /* silent */ }
             finally { if (!cancelled) setLoading(false); }
@@ -159,12 +165,17 @@ export default function WardDetailModal({
     const rate = totalBeds > 0 ? Math.round((currentAdmit / totalBeds) * 100) : 0;
     const colors = occupancyColor(rate);
     const maxPttype = useMemo(
-        () => Math.max(...pttypeSummary.map((r) => Number(r.total)), 1),
+        () => Math.max(...pttypeSummary.map((r) => r.total), 1),
         [pttypeSummary]
     );
 
     const [y, m, d] = date.split("-");
     const thaiDate = `${d}/${m}/${Number(y) + 543}`;
+
+    // แสดงส่วนสิทธิ์ถ้า currentAdmit > 0 แม้ pttypeSummary ว่าง
+    // (แสดง "ไม่สามารถโหลดข้อมูลสิทธิ์" แทน "ไม่มีผู้ป่วย")
+    const hasAdmit = currentAdmit > 0;
+    const hasPttype = pttypeSummary.length > 0;
 
     return (
         <AnimatePresence>
@@ -220,7 +231,7 @@ export default function WardDetailModal({
                                             <OccupancyDonut rate={rate} color={colors.bar} />
                                             <div className="flex-1 grid grid-cols-2 gap-3">
                                                 {[
-                                                    { label: "Admit ปัจจุบัน", value: currentAdmit, color: "#15803d", bg: "#f0faf4", border: "#a8d5ba" },
+                                                    { label: "ADMIT ปัจจุบัน", value: currentAdmit, color: "#15803d", bg: "#f0faf4", border: "#a8d5ba" },
                                                     { label: "เตียงว่าง", value: vacant, color: "#6b7280", bg: "#f9fafb", border: "#e5e7eb" },
                                                 ].map((s) => (
                                                     <div key={s.label} className="rounded-xl px-3 py-3 border text-center"
@@ -236,7 +247,7 @@ export default function WardDetailModal({
                                         </div>
 
                                         {/* สิทธิ์ */}
-                                        {pttypeSummary.length > 0 ? (
+                                        {hasPttype ? (
                                             <div className="bg-white border border-gray-200 rounded-2xl px-5 py-4">
                                                 <div className="flex items-center gap-2 mb-3">
                                                     <Shield size={14} className="text-green-700" />
@@ -251,7 +262,7 @@ export default function WardDetailModal({
                                                         <StatBar
                                                             key={`${row.ward_code}-${row.pttype_name}-${i}`}
                                                             label={row.pttype_name}
-                                                            count={Number(row.total)}
+                                                            count={row.total}
                                                             max={maxPttype}
                                                             color="#3aa36a"
                                                             index={i}
@@ -259,7 +270,23 @@ export default function WardDetailModal({
                                                     ))}
                                                 </div>
                                             </div>
+                                        ) : hasAdmit ? (
+                                            // มีคนอยู่แต่ดึงสิทธิ์ไม่ได้
+                                            <div className="bg-white border border-gray-200 rounded-2xl px-5 py-4">
+                                                <div className="flex items-center gap-2 mb-3">
+                                                    <Shield size={14} className="text-green-700" />
+                                                    <h3 className="text-sm font-bold text-gray-700">แยกตามสิทธิ์การรักษา</h3>
+                                                    <span className="ml-auto text-xs font-bold px-2.5 py-0.5 rounded-full border"
+                                                        style={{ backgroundColor: "#f0faf4", borderColor: "#a8d5ba", color: "#15803d" }}>
+                                                        {currentAdmit} ราย
+                                                    </span>
+                                                </div>
+                                                <p className="text-xs text-gray-400 text-center py-4">
+                                                    ไม่สามารถโหลดข้อมูลสิทธิ์ได้
+                                                </p>
+                                            </div>
                                         ) : (
+                                            // ไม่มีคนจริงๆ
                                             <div className="flex flex-col items-center justify-center py-12 gap-3 text-gray-400">
                                                 <BedDouble size={36} strokeWidth={1.2} />
                                                 <p className="text-sm font-medium">ไม่มีผู้ป่วย Admit ในขณะนี้</p>
