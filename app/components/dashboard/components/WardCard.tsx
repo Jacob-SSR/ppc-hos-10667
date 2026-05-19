@@ -11,10 +11,19 @@ interface WardCardProps {
   date: string;
 }
 
+function getBedColor(admit: number, totalBeds: number): string {
+  if (totalBeds === 0) return "#9ca3af";
+  const rate = admit / totalBeds;
+  if (rate >= 0.9) return "#ef4444"; // เต็ม → แดง
+  if (rate >= 0.5) return "#f59e0b"; // กลาง → เหลือง
+  return "#16a34a";                  // ว่าง  → เขียว
+}
+
 export function WardCard({ ward, date }: WardCardProps) {
   const [modalOpen, setModalOpen] = useState(false);
 
   const vacant = ward.totalBeds - ward.admit;
+  const bedColor = getBedColor(ward.admit, ward.totalBeds);
 
   return (
     <>
@@ -24,8 +33,12 @@ export function WardCard({ ward, date }: WardCardProps) {
           {ward.label}
         </p>
 
-        {/* Bed icon */}
-        <BedDouble size={52} strokeWidth={1.5} className="text-gray-800" />
+        {/* Bed icon — สีตาม occupancy */}
+        <BedDouble
+          size={52}
+          strokeWidth={1.5}
+          style={{ color: bedColor }}
+        />
 
         {/* Admit / total */}
         <p className="text-base font-bold text-black text-center">

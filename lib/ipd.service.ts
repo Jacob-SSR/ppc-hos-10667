@@ -27,25 +27,18 @@ interface WardConfigItem {
 }
 
 const WARD_CONFIG: Record<string, WardConfigItem> = {
-  "04": { label: "ห้องพิเศษ", totalBeds: 11 },
-  "01": { label: "Ward", totalBeds: 26 },
-  "17": { label: "ห้องINC", totalBeds: 2 },
+  "04": { label: "ห้องพิเศษ",   totalBeds: 11 },
+  "01": { label: "Ward",          totalBeds: 26 },
+  "17": { label: "เตียงIMC",     totalBeds: 2  },
   "15": { label: "พลับพลารักษ์", totalBeds: 10 },
-  "11": { label: "เตียงเสริม", totalBeds: 16 },
-  "05": { label: "ห้องแยกโรค", totalBeds: 2 },
-  "13": { label: "ห้องNegative", totalBeds: 2 },
+  "11": { label: "เตียงเสริม",   totalBeds: 16 },
+  "05": { label: "ห้องแยกโรค",  totalBeds: 2  },
+  "13": { label: "ห้องNegative", totalBeds: 2  },
   "14": { label: "HW ยาเสพติด", totalBeds: 5, isHomeWard: true },
-  "16": { label: "HW Palliative", totalBeds: 5, isHomeWard: true },
+  "16": { label: "HW Palliative",totalBeds: 5, isHomeWard: true },
 };
 
 const ACTIVE_WARD_CODES = Object.keys(WARD_CONFIG);
-
-// ── "ยังไม่จำหน่าย" ใน HosXP อาจเป็น NULL, '0000-00-00', หรือ '' ────────────
-const NOT_DISCHARGED_SQL = `(
-  a.dchdate IS NULL
-  OR a.dchdate = '0000-00-00'
-  OR a.dchdate = ''
-)`;
 
 interface CachedWards {
   data: WardInfoRow[];
@@ -258,14 +251,24 @@ export async function getBedOccupancy(
     `;
     admitParams = [start, end, ...wardCodes];
   } else {
-    // ── ดึงผู้ป่วยที่ยัง admit อยู่ปัจจุบัน ──────────────────────────────────
-    // HosXP เก็บ "ยังไม่จำหน่าย" เป็น dchdate = NULL | '0000-00-00' | ''
+    // AND ทั้ง ipt และ an_stat ต้องยังไม่ discharge
+    // ป้องกันข้อมูลเก่าค้างในตารางใดตารางหนึ่ง
     admitQuery = `
-      SELECT a.ward AS ward_code, COUNT(*) AS current_admit
-      FROM an_stat a
-      WHERE ${NOT_DISCHARGED_SQL}
-        AND a.ward IN (${placeholders})
-      GROUP BY a.ward
+      SELECT ip.ward AS ward_code, COUNT(*) AS current_admit
+      FROM ipt ip
+      INNER JOIN an_stat a ON a.an = ip.an
+      WHERE (
+        ip.dchdate IS NULL
+        OR ip.dchdate = '0000-00-00'
+        OR ip.dchdate = ''
+      )
+      AND (
+        a.dchdate IS NULL
+        OR a.dchdate = '0000-00-00'
+        OR a.dchdate = ''
+      )
+      AND ip.ward IN (${placeholders})
+      GROUP BY ip.ward
     `;
     admitParams = wardCodes;
   }

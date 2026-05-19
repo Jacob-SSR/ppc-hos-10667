@@ -33,7 +33,7 @@ function buildDisplayWards(rows: BedOccupancyApiRow[]): WardDisplayItem[] {
       ward_code: r.ward_code,
       label: r.label,
       totalBeds: r.total_beds,
-      admit: r.current_admit,
+      admit: r.current_admit,       // ← ตัวเลข live จาก DB โดยตรง
       vacantLabel,
     };
   });
@@ -62,7 +62,27 @@ export function useIpdData(): UseIpdDataReturn {
   const [loading, setLoading] = useState(false);
   const [infoLabel, setInfoLabel] = useState("");
 
-  const fetchData = useCallback(async (d: Date) => {
+  // ── fetch โดยไม่ส่ง date = ดึง live (dchdate IS NULL) เหมือน WardDetailModal ──
+  const fetchLive = useCallback(async () => {
+    setLoading(true);
+    try {
+      const res = await fetch("/api/ipd/bed-occupancy", { credentials: "include" });
+      if (res.ok) {
+        const data: BedOccupancyApiRow[] = await res.json();
+        setRows(data);
+      }
+      const today = getToday();
+      setDate(today);
+      setInfoLabel(toThaiDate(fmt(today)));
+    } catch {
+      // ignore
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  // ── fetch ตาม date ที่ user เลือก (ส่ง start/end) ──────────────────────────
+  const fetchByDate = useCallback(async (d: Date) => {
     setLoading(true);
     try {
       const dateStr = fmt(d);
@@ -79,13 +99,22 @@ export function useIpdData(): UseIpdDataReturn {
     }
   }, []);
 
+  // โหลดครั้งแรก → ใช้ live (ไม่มี date param)
   useEffect(() => {
-    fetchData(getToday());
-  }, [fetchData]);
+    fetchLive();
+  }, [fetchLive]);
 
+  // เมื่อ user กด Search
   const handleSearch = useCallback(() => {
-    fetchData(date);
-  }, [fetchData, date]);
+    const today = getToday();
+    const isToday = fmt(date) === fmt(today);
+    // ถ้าเลือกวันนี้ → live, ถ้าเลือกวันอื่น → ตาม date
+    if (isToday) {
+      fetchLive();
+    } else {
+      fetchByDate(date);
+    }
+  }, [date, fetchLive, fetchByDate]);
 
   return {
     displayWards: buildDisplayWards(rows),
