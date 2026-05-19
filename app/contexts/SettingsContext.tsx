@@ -32,35 +32,36 @@ function readLS(key: string, fallback: string): string {
 }
 
 export function SettingsProvider({ children }: { children: React.ReactNode }) {
-    const [fontSize, setFontSizeState] = useState<FontSize>("md");
-    const [darkMode, setDarkModeState] = useState(false);
-    const [mounted, setMounted] = useState(false);
+    // ── lazy initializer — อ่าน localStorage ครั้งเดียวตอน mount ──
+    const [fontSize, setFontSizeState] = useState<FontSize>(
+        () => readLS("ppchos-font-size", "md") as FontSize
+    );
+    const [darkMode, setDarkModeState] = useState<boolean>(
+        () => readLS("ppchos-dark-mode", "false") === "true"
+    );
 
+    // ── sync font size → DOM ──
     useEffect(() => {
-        const savedFont = readLS("ppchos-font-size", "md") as FontSize;
-        const savedDark = readLS("ppchos-dark-mode", "false") === "true";
-        setFontSizeState(savedFont);
-        setDarkModeState(savedDark);
-        setMounted(true);
-    }, []);
-
-    useEffect(() => {
-        if (!mounted) return;
         document.documentElement.style.fontSize = FONT_SIZE_MAP[fontSize];
         localStorage.setItem("ppchos-font-size", fontSize);
-    }, [fontSize, mounted]);
+    }, [fontSize]);
 
+    // ── sync dark mode → DOM ──
     useEffect(() => {
-        if (!mounted) return;
-        if (darkMode) document.documentElement.classList.add("dark");
-        else document.documentElement.classList.remove("dark");
+        if (darkMode) {
+            document.documentElement.classList.add("dark");
+        } else {
+            document.documentElement.classList.remove("dark");
+        }
         localStorage.setItem("ppchos-dark-mode", String(darkMode));
-    }, [darkMode, mounted]);
+    }, [darkMode]);
 
     return (
         <SettingsContext.Provider value={{
-            fontSize, setFontSize: setFontSizeState,
-            darkMode, setDarkMode: setDarkModeState,
+            fontSize,
+            setFontSize: setFontSizeState,
+            darkMode,
+            setDarkMode: setDarkModeState,
         }}>
             {children}
         </SettingsContext.Provider>
