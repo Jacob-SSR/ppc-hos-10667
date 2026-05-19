@@ -103,17 +103,15 @@ export async function getDashboardData(start: string, end: string) {
          AND v.pcode = 'AL') AS opdForeign,
 
       /* Refer In */
-      (SELECT COUNT(*) FROM ovst o
-       WHERE o.vstdate BETWEEN ? AND ?
-         AND o.rfrics IS NOT NULL
-         AND o.rfrics != ''
-         AND o.an IS NULL) AS referIn,
+      (SELECT COUNT(DISTINCT o.vn)  FROM referin r
+       INNER JOIN ovst o ON o.vn = r.vn
+       WHERE o.vstdate BETWEEN ? AND ?) AS referIn,
 
       /* Refer Out */
-      (SELECT COUNT(*) FROM ovst o
+      (SELECT COUNT(DISTINCT o.vn)
+       FROM referout r
+       INNER JOIN ovst o ON o.vn = r.vn
        WHERE o.vstdate BETWEEN ? AND ?
-         AND o.rfrocs IS NOT NULL
-         AND o.rfrocs != ''
          AND o.an IS NULL) AS referOut,
 
       /* ER ฉุกเฉิน (er_pt_type = 1) */

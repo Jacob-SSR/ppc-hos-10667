@@ -76,12 +76,14 @@ function buildFilter(
       params: baseParams,
     },
     referIn: {
-      where: `${baseWhere} AND o.rfrics IS NOT NULL AND o.rfrics != ''`,
-      params: baseParams,
+      where: `v.vstdate BETWEEN ? AND ? 
+      AND EXISTS (SELECT 1 FROM referin r WHERE r.vn = o.vn)`,
+      params: [start, end],
     },
     referOut: {
-      where: `${baseWhere} AND o.rfrocs IS NOT NULL AND o.rfrocs != ''`,
-      params: baseParams,
+      where: `v.vstdate BETWEEN ? AND ? AND o.an IS NULL
+      AND EXISTS (SELECT 1 FROM referout r WHERE r.vn = o.vn)`,
+      params: [start, end],
     },
     erEmergency: {
       where: `v.vstdate BETWEEN ? AND ? AND er.er_pt_type = 1`,
