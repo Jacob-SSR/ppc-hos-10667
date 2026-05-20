@@ -1,23 +1,16 @@
 import {
-  User,
-  UserCheck,
-  BedDouble,
-  Shield,
-  UserCog,
-  Globe,
-  PhoneIncoming,
-  PhoneOutgoing,
-  Siren,
-  AlertTriangle,
+  User, UserCheck, BedDouble, Shield, UserCog, Globe,
+  PhoneIncoming, PhoneOutgoing, Siren, AlertTriangle, Car,
 } from "lucide-react";
 import type { OpdCardKey, DatePreset } from "../types/dashboard.types";
 
-// ─── OPD Cards ────────────────────────────────────────────────────────────────
 export interface OpdCardConfig {
   label: string;
   bg: string;
   visitKey: OpdCardKey;
   patKey: OpdCardKey | null;
+  maleKey: OpdCardKey | null;
+  femaleKey: OpdCardKey | null;
   Icon: React.ElementType;
   cardType: string;
 }
@@ -28,6 +21,8 @@ export const OPD_CARDS: OpdCardConfig[] = [
     bg: "#80E9FF",
     visitKey: "totalVisit",
     patKey: "totalPatient",
+    maleKey: "totalMale",
+    femaleKey: "totalFemale",
     Icon: User,
     cardType: "all",
   },
@@ -36,6 +31,8 @@ export const OPD_CARDS: OpdCardConfig[] = [
     bg: "#FF8080",
     visitKey: "opdOnTime",
     patKey: null,
+    maleKey: "opdOnTimeMale",
+    femaleKey: "opdOnTimeFemale",
     Icon: UserCheck,
     cardType: "opdOnTime",
   },
@@ -44,6 +41,8 @@ export const OPD_CARDS: OpdCardConfig[] = [
     bg: "#7DE8B0",
     visitKey: "opdOffTime",
     patKey: null,
+    maleKey: "opdOffTimeMale",
+    femaleKey: "opdOffTimeFemale",
     Icon: UserCheck,
     cardType: "opdOffTime",
   },
@@ -52,6 +51,8 @@ export const OPD_CARDS: OpdCardConfig[] = [
     bg: "#9B9CF4",
     visitKey: "admitToday",
     patKey: null,
+    maleKey: "admitMale",
+    femaleKey: "admitFemale",
     Icon: BedDouble,
     cardType: "admitToday",
   },
@@ -60,6 +61,8 @@ export const OPD_CARDS: OpdCardConfig[] = [
     bg: "#FF8080",
     visitKey: "opdUc",
     patKey: null,
+    maleKey: "opdUcMale",
+    femaleKey: "opdUcFemale",
     Icon: UserCheck,
     cardType: "opdUc",
   },
@@ -68,6 +71,8 @@ export const OPD_CARDS: OpdCardConfig[] = [
     bg: "#FF8080",
     visitKey: "opdGov",
     patKey: null,
+    maleKey: "opdGovMale",
+    femaleKey: "opdGovFemale",
     Icon: Shield,
     cardType: "opdGov",
   },
@@ -76,6 +81,8 @@ export const OPD_CARDS: OpdCardConfig[] = [
     bg: "#FF8080",
     visitKey: "opdSso",
     patKey: null,
+    maleKey: "opdSsoMale",
+    femaleKey: "opdSsoFemale",
     Icon: UserCog,
     cardType: "opdSso",
   },
@@ -84,6 +91,8 @@ export const OPD_CARDS: OpdCardConfig[] = [
     bg: "#FF8080",
     visitKey: "opdCash",
     patKey: null,
+    maleKey: "opdCashMale",
+    femaleKey: "opdCashFemale",
     Icon: UserCheck,
     cardType: "opdCash",
   },
@@ -92,6 +101,8 @@ export const OPD_CARDS: OpdCardConfig[] = [
     bg: "#FF8080",
     visitKey: "opdForeign",
     patKey: null,
+    maleKey: "opdForeignMale",
+    femaleKey: "opdForeignFemale",
     Icon: Globe,
     cardType: "opdForeign",
   },
@@ -100,6 +111,8 @@ export const OPD_CARDS: OpdCardConfig[] = [
     bg: "#FF8080",
     visitKey: "referIn",
     patKey: null,
+    maleKey: "referInMale",
+    femaleKey: "referInFemale",
     Icon: PhoneIncoming,
     cardType: "referIn",
   },
@@ -108,6 +121,8 @@ export const OPD_CARDS: OpdCardConfig[] = [
     bg: "#FF8080",
     visitKey: "referOut",
     patKey: null,
+    maleKey: "referOutMale",
+    femaleKey: "referOutFemale",
     Icon: PhoneOutgoing,
     cardType: "referOut",
   },
@@ -116,22 +131,35 @@ export const OPD_CARDS: OpdCardConfig[] = [
     bg: "#FF6B6B",
     visitKey: "erEmergency",
     patKey: null,
+    maleKey: "erEmergencyMale",
+    femaleKey: "erEmergencyFemale",
     Icon: Siren,
     cardType: "erEmergency",
   },
   {
-    label: "อุบัติเหตุ",
-    bg: "#FF8C42",
-    visitKey: "erAccident",
+    label: "อุบัติเหตุขนส่ง",
+    bg: "#FEF9C3",
+    visitKey: "erTransport",
     patKey: null,
+    maleKey: "erTransportMale",
+    femaleKey: "erTransportFemale",
+    Icon: Car,
+    cardType: "erTransport",
+  },
+  {
+    label: "อุบัติเหตุอื่นๆ",
+    bg: "#FF8C42",
+    visitKey: "erOtherAccident",
+    patKey: null,
+    maleKey: "erOtherAccidentMale",
+    femaleKey: "erOtherAccidentFemale",
     Icon: AlertTriangle,
-    cardType: "erAccident",
+    cardType: "erOtherAccident",
   },
 ];
 
 export const DATE_PRESETS: DatePreset[] = ["วันนี้", "สัปดาห์นี้", "เดือนนี้"];
 
-// ─── Bed Occupancy Colors ─────────────────────────────────────────────────────
 export function getBedOccupancyColor(rate: number): string {
   if (rate >= 90) return "#f87171";
   if (rate >= 70) return "#fbbf24";

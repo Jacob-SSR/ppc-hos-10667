@@ -33,7 +33,7 @@ interface KtbDashboardData {
 }
 
 // ─── Constants ────────────────────────────────────────────────────────────────
-const fmt  = (n: number) => n.toLocaleString("th-TH");
+const fmt = (n: number) => n.toLocaleString("th-TH");
 const fmtB = (n: number) => n.toLocaleString("th-TH", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 const SVC_MAP: Record<string, string> = {
@@ -45,18 +45,18 @@ const SVC_MAP: Record<string, string> = {
 };
 
 const SVC_COLS = [
-  { key: "เก็บตัวอย่าง HPV",  label: "เก็บตัวอย่าง HPV DNA Test" },
-  { key: "ตรวจตับอักเสบ C",  label: "ตรวจคัดกรองตับอักเสบ ซี" },
-  { key: "ตรวจตับอักเสบ B",  label: "ตรวจคัดกรองตับอักเสบ บี" },
+  { key: "เก็บตัวอย่าง HPV", label: "เก็บตัวอย่าง HPV DNA Test" },
+  { key: "ตรวจตับอักเสบ C", label: "ตรวจคัดกรองตับอักเสบ ซี" },
+  { key: "ตรวจตับอักเสบ B", label: "ตรวจคัดกรองตับอักเสบ บี" },
   { key: "วัคซีนไข้หวัดใหญ่", label: "วัคซีนไข้หวัดใหญ่ (7 กลุ่มเสี่ยง)" },
 ];
 
 const SVC_COLORS: Record<string, { claim: string; comp: string }> = {
-  "ตรวจตับอักเสบ C":  { claim: "#60a5fa", comp: "#34d399" },
-  "ตรวจตับอักเสบ B":  { claim: "#818cf8", comp: "#6ee7b7" },
+  "ตรวจตับอักเสบ C": { claim: "#60a5fa", comp: "#34d399" },
+  "ตรวจตับอักเสบ B": { claim: "#818cf8", comp: "#6ee7b7" },
   "วัคซีนไข้หวัดใหญ่": { claim: "#fbbf24", comp: "#4ade80" },
   "เก็บตัวอย่าง HPV": { claim: "#f472b6", comp: "#86efac" },
-  "รวมทั้งหมด":       { claim: "#85B7EB", comp: "#97C459" },
+  "รวมทั้งหมด": { claim: "#85B7EB", comp: "#97C459" },
 };
 
 const ALL_SVCS = ["รวมทั้งหมด", "ตรวจตับอักเสบ C", "ตรวจตับอักเสบ B", "วัคซีนไข้หวัดใหญ่", "เก็บตัวอย่าง HPV"] as const;
@@ -94,13 +94,13 @@ function KtbBarChart({ units }: { units: KtbUnitSummary[] }) {
         return { name: svcKey, claim: m.reduce((s, i) => s + i.เรียกเก็บ, 0), comp: m.reduce((s, i) => s + i.ชดเชย, 0) };
       }).filter(s => s.claim > 0);
       const pending = Math.max(0, unit.ชดเชย - unit.ไม่ชดเชย);
-      return { name: shortName, เรียกเก็บ: unit.เรียกเก็บ, ชดเชย: unit.ชดเชย, รอโอน: pending, breakdown };
+      return { name: shortName, เรียกเก็บ: unit.เรียกเก็บ, ชดเชย: unit.ชดเชย, ไม่ชดเชย: pending, breakdown };
     }
     const m = unit.รายการ.filter(i => (SVC_MAP[i.รายการขอเบิก] ?? i.รายการสั้น) === selectedSvc);
     const claim = m.reduce((s, i) => s + i.เรียกเก็บ, 0);
-    const comp  = m.reduce((s, i) => s + i.ชดเชย, 0);
+    const comp = m.reduce((s, i) => s + i.ชดเชย, 0);
     const nocomp = m.reduce((s, i) => s + i.ไม่ชดเชย, 0);
-    return { name: shortName, เรียกเก็บ: claim, ชดเชย: comp, รอโอน: Math.max(0, comp - nocomp) };
+    return { name: shortName, เรียกเก็บ: claim, ชดเชย: comp, ไม่ชดเชย: Math.max(0, comp - nocomp) };
   }), [units, selectedSvc]);
 
   const colors = SVC_COLORS[selectedSvc] ?? SVC_COLORS["รวมทั้งหมด"];
@@ -122,13 +122,13 @@ function KtbBarChart({ units }: { units: KtbUnitSummary[] }) {
               </div>
             ))}
             <div className="pt-1.5 border-t border-gray-100 flex justify-between font-bold">
-              <span className="text-orange-600">รอโอน KTB</span>
-              <span className="text-orange-600 tabular-nums">{fmtB(d.รอโอน ?? 0)} ฿</span>
+              <span className="text-orange-600">ไม่ชดเชย</span>
+              <span className="text-orange-600 tabular-nums">{fmtB(d.ไม่ชดเชย ?? 0)} ฿</span>
             </div>
           </div>
         ) : (
           <div className="space-y-1.5">
-            {[{ k: "เรียกเก็บ", c: "text-blue-700" }, { k: "ชดเชย", c: "text-green-700" }, { k: "รอโอน", c: "text-orange-600" }].map(({ k, c }) => (
+            {[{ k: "เรียกเก็บ", c: "text-blue-700" }, { k: "ชดเชย", c: "text-green-700" }, { k: "ไม่ชดเชย", c: "text-orange-600" }].map(({ k, c }) => (
               <div key={k} className="flex justify-between">
                 <span className="text-gray-500">{k}</span>
                 <span className={`font-bold tabular-nums ${c}`}>{fmtB(d?.[k] ?? 0)} ฿</span>
@@ -159,7 +159,7 @@ function KtbBarChart({ units }: { units: KtbUnitSummary[] }) {
         </div>
       </div>
       <div className="flex gap-4 mb-3 flex-wrap items-center">
-        {[{ color: colors.claim, label: "เรียกเก็บ" }, { color: colors.comp, label: "ชดเชย" }, { color: "#fb923c", label: "รอโอน KTB" }].map(l => (
+        {[{ color: colors.claim, label: "เรียกเก็บ" }, { color: colors.comp, label: "ชดเชย" }, { color: "#fb923c", label: "ไม่ชดเชย KTB" }].map(l => (
           <span key={l.label} className="flex items-center gap-1.5 text-xs text-gray-600">
             <span className="w-3 h-3 rounded-sm" style={{ background: l.color }} />{l.label}
           </span>
@@ -174,8 +174,8 @@ function KtbBarChart({ units }: { units: KtbUnitSummary[] }) {
             tickFormatter={(v: number) => v >= 1000 ? `${(v / 1000).toFixed(0)}k` : String(v)} />
           <Tooltip content={<CustomTooltip />} cursor={{ fill: "rgba(0,0,0,0.04)" }} />
           <Bar dataKey="เรียกเก็บ" fill={colors.claim} radius={[3, 3, 0, 0]} />
-          <Bar dataKey="ชดเชย"    fill={colors.comp}  radius={[3, 3, 0, 0]} />
-          <Bar dataKey="รอโอน"   fill="#fb923c"       radius={[3, 3, 0, 0]} />
+          <Bar dataKey="ชดเชย" fill={colors.comp} radius={[3, 3, 0, 0]} />
+          <Bar dataKey="ไม่ชดเชย" fill="#fb923c" radius={[3, 3, 0, 0]} />
         </BarChart>
       </ResponsiveContainer>
     </div>
@@ -191,7 +191,7 @@ function CrossTab({ units }: { units: KtbUnitSummary[] }) {
       const key = SVC_MAP[item.รายการขอเบิก] ?? item.รายการสั้น;
       if (!svcs[key]) continue;
       svcs[key].claimCount += item.จำนวน;
-      svcs[key].claimBaht  += item.เรียกเก็บ;
+      svcs[key].claimBaht += item.เรียกเก็บ;
       if (item.สถานะ === "ชดเชย") svcs[key].compBaht += item.ชดเชย;
     }
     return { hcode: unit.hcodeKey, name: unit.หน่วยบริการ, isHospital: unit.isHospital, total: unit.เรียกเก็บ, svcs };
@@ -205,8 +205,8 @@ function CrossTab({ units }: { units: KtbUnitSummary[] }) {
       total += row.total;
       for (const col of SVC_COLS) {
         t[col.key].claimCount += row.svcs[col.key].claimCount;
-        t[col.key].claimBaht  += row.svcs[col.key].claimBaht;
-        t[col.key].compBaht   += row.svcs[col.key].compBaht;
+        t[col.key].claimBaht += row.svcs[col.key].claimBaht;
+        t[col.key].compBaht += row.svcs[col.key].compBaht;
       }
     }
     return { total, svcs: t };
@@ -239,7 +239,7 @@ function CrossTab({ units }: { units: KtbUnitSummary[] }) {
     </tr>
   );
 
-  const hospRows  = rows.filter(r => r.isHospital);
+  const hospRows = rows.filter(r => r.isHospital);
   const rphstRows = rows.filter(r => !r.isHospital);
 
   return (
@@ -311,8 +311,8 @@ function CrossTab({ units }: { units: KtbUnitSummary[] }) {
 // ─── Unit Card ────────────────────────────────────────────────────────────────
 function UnitCard({ unit }: { unit: KtbUnitSummary }) {
   const [open, setOpen] = useState(unit.isHospital);
-  const pending  = Math.max(0, unit.ชดเชย - unit.ไม่ชดเชย);
-  const rate     = unit.เรียกเก็บ > 0 ? Math.round((unit.ชดเชย / unit.เรียกเก็บ) * 1000) / 10 : 0;
+  const pending = Math.max(0, unit.ชดเชย - unit.ไม่ชดเชย);
+  const rate = unit.เรียกเก็บ > 0 ? Math.round((unit.ชดเชย / unit.เรียกเก็บ) * 1000) / 10 : 0;
   const rateColor = rate >= 90 ? "#15803d" : rate >= 60 ? "#b45309" : "#b91c1c";
 
   return (
@@ -333,7 +333,7 @@ function UnitCard({ unit }: { unit: KtbUnitSummary }) {
         <div className="flex items-center gap-5 shrink-0 text-right">
           <div><p className="text-[10px] text-gray-400">เรียกเก็บ</p><p className="text-sm font-bold text-gray-800 tabular-nums">{fmtB(unit.เรียกเก็บ)}</p></div>
           <div><p className="text-[10px] text-gray-400">ชดเชย</p><p className="text-sm font-bold text-green-700 tabular-nums">{fmtB(unit.ชดเชย)}</p></div>
-          <div><p className="text-[10px] text-gray-400">รอโอน KTB</p><p className="text-sm font-extrabold text-orange-600 tabular-nums">{fmtB(pending)}</p></div>
+          <div><p className="text-[10px] text-gray-400">ไม่ชดเชย KTB</p><p className="text-sm font-extrabold text-orange-600 tabular-nums">{fmtB(pending)}</p></div>
           <div><p className="text-[10px] text-gray-400">อัตรา</p><p className="text-sm font-extrabold tabular-nums" style={{ color: rateColor }}>{rate}%</p></div>
           <motion.div animate={{ rotate: open ? 180 : 0 }} transition={{ duration: 0.2 }}>
             <ChevronDown size={14} className="text-gray-400" />
@@ -358,7 +358,7 @@ function UnitCard({ unit }: { unit: KtbUnitSummary }) {
                 <table className="min-w-full text-xs border-collapse">
                   <thead>
                     <tr className="bg-green-700">
-                      {["รายการบริการ", "สถานะ", "จำนวน", "เรียกเก็บ (฿)", "ชดเชย (฿)", "รอโอน KTB (฿)"].map(h => (
+                      {["รายการบริการ", "สถานะ", "จำนวน", "เรียกเก็บ (฿)", "ชดเชย (฿)", "ไม่ชดเชย KTB (฿)"].map(h => (
                         <th key={h} className="px-3 py-2.5 text-left text-white font-semibold border-r border-green-600 whitespace-nowrap">{h}</th>
                       ))}
                     </tr>
@@ -418,7 +418,7 @@ function UploadDropzone({ onSuccess }: { onSuccess: () => void }) {
   return (
     <div className="bg-white border border-gray-200 rounded-2xl p-4">
       <div className="flex items-center justify-between mb-3">
-        <h4 className="text-sm font-bold text-[#717171]">อัปโหลดข้อมูลรายการยังไม่โอน KTB</h4>
+        <h4 className="text-sm font-bold text-[#717171]">อัปโหลดข้อมูลรายการไม่ชดเชย</h4>
         <span className="text-[11px] text-gray-400">ktb.xlsx</span>
       </div>
       <motion.div
@@ -452,7 +452,7 @@ function UploadDropzone({ onSuccess }: { onSuccess: () => void }) {
             <motion.div key="idle" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="flex flex-col items-center gap-1 pointer-events-none">
               <UploadCloud size={28} style={{ color: dragging ? "#3aa36a" : "#9ca3af" }} />
               <p className="text-sm font-semibold text-gray-600">{dragging ? "ปล่อยเพื่ออัปโหลด" : "ลากวางไฟล์ หรือคลิกเพื่อเลือก"}</p>
-              <p className="text-xs text-gray-400">ไฟล์ Excel รายการยังไม่โอน KTB</p>
+              <p className="text-xs text-gray-400">ไฟล์ Excel รายการไม่ชดเชย</p>
             </motion.div>
           )}
         </AnimatePresence>
@@ -463,11 +463,11 @@ function UploadDropzone({ onSuccess }: { onSuccess: () => void }) {
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
 export default function KtbDashboardPage() {
-  const [data, setData]       = useState<KtbDashboardData | null>(null);
+  const [data, setData] = useState<KtbDashboardData | null>(null);
   const [loading, setLoading] = useState(true);
-  const [error, setError]     = useState<string | null>(null);
-  const [noFile, setNoFile]   = useState(false);
-  const [filterUnit, setFilterUnit]   = useState("ทั้งหมด");
+  const [error, setError] = useState<string | null>(null);
+  const [noFile, setNoFile] = useState(false);
+  const [filterUnit, setFilterUnit] = useState("ทั้งหมด");
   const [filterBatch, setFilterBatch] = useState("ทั้งหมด");
 
   const fetchData = useCallback(async () => {
@@ -483,7 +483,7 @@ export default function KtbDashboardPage() {
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
-  const unitOptions  = useMemo(() => ["ทั้งหมด", ...(data?.units.map(u => u.หน่วยบริการ) ?? [])], [data]);
+  const unitOptions = useMemo(() => ["ทั้งหมด", ...(data?.units.map(u => u.หน่วยบริการ) ?? [])], [data]);
   const batchOptions = useMemo(() => ["ทั้งหมด", ...(data?.batches.map(b => b.งวดจ่าย) ?? [])], [data]);
 
   const filteredUnits = useMemo(() => {
@@ -504,9 +504,9 @@ export default function KtbDashboardPage() {
   }, [data, filterUnit, filterBatch]);
 
   const filteredTotals = useMemo(() => ({
-    count:   filteredUnits.reduce((s, u) => s + u.จำนวน, 0),
-    claim:   filteredUnits.reduce((s, u) => s + u.เรียกเก็บ, 0),
-    comp:    filteredUnits.reduce((s, u) => s + u.ชดเชย, 0),
+    count: filteredUnits.reduce((s, u) => s + u.จำนวน, 0),
+    claim: filteredUnits.reduce((s, u) => s + u.เรียกเก็บ, 0),
+    comp: filteredUnits.reduce((s, u) => s + u.ชดเชย, 0),
     pending: filteredUnits.reduce((s, u) => s + Math.max(0, u.ชดเชย - u.ไม่ชดเชย), 0),
   }), [filteredUnits]);
 
@@ -517,7 +517,7 @@ export default function KtbDashboardPage() {
       {/* Header */}
       <div className="bg-white border border-gray-200 rounded-2xl shadow-sm px-6 py-4 flex flex-wrap items-center justify-between gap-4">
         <div>
-          <h1 className="text-lg font-bold text-gray-800">Dashboard รายการยังไม่โอน KTB</h1>
+          <h1 className="text-lg font-bold text-gray-800">Dashboard รายการไม่ชดเชย</h1>
           <p className="text-xs text-gray-400 mt-0.5">
             รายการที่ชดเชยแล้วแต่ยังไม่ได้รับโอนเงินเข้าบัญชี KTB
             {data && <span className="ml-2">· อัปเดต {new Date(data.updatedAt).toLocaleString("th-TH")}</span>}
@@ -538,7 +538,7 @@ export default function KtbDashboardPage() {
           <Info size={18} className="text-amber-600 shrink-0 mt-0.5" />
           <div>
             <p className="text-sm font-bold text-amber-800">ยังไม่มีข้อมูล</p>
-            <p className="text-xs text-amber-700 mt-1">กรุณาอัปโหลดไฟล์ Excel รายการยังไม่โอน KTB ด้านล่าง</p>
+            <p className="text-xs text-amber-700 mt-1">กรุณาอัปโหลดไฟล์ Excel รายการไม่ชดเชย ด้านล่าง</p>
           </div>
         </div>
       )}
@@ -579,7 +579,7 @@ export default function KtbDashboardPage() {
               <span>แสดง <b className="text-gray-800">{filteredUnits.length}</b> หน่วยบริการ</span>
               <span>เรียกเก็บ <b className="text-gray-800">{fmtB(filteredTotals.claim)}</b> ฿</span>
               <span>ชดเชย <b className="text-green-700">{fmtB(filteredTotals.comp)}</b> ฿</span>
-              <span>รอโอน KTB <b className="text-orange-600">{fmtB(filteredTotals.pending)}</b> ฿</span>
+              <span>ไม่ชดเชย<b className="text-orange-600">{fmtB(filteredTotals.pending)}</b> ฿</span>
             </motion.div>
           )}
         </div>
@@ -591,11 +591,11 @@ export default function KtbDashboardPage() {
           {loading
             ? Array.from({ length: 4 }).map((_, i) => <div key={i} className="h-[130px] rounded-2xl bg-gray-100 animate-pulse" />)
             : data && <>
-                <KpiCard icon={TrendingUp} label="รายการทั้งหมด"  value={fmt(isFiltered ? filteredTotals.count : data.totalRows)}   sub={isFiltered ? "รายการที่กรองแล้ว" : "รายการในระบบ"} accent="#0369A1" bg="#E0F2FE" />
-                <KpiCard icon={Banknote}   label="เรียกเก็บรวม"    value={fmtB(isFiltered ? filteredTotals.claim : data.totalClaim)} sub="บาท"                         accent="#854D0E" bg="#FEF9C3" />
-                <KpiCard icon={BadgeCheck} label="ชดเชยแล้ว"       value={fmtB(isFiltered ? filteredTotals.comp  : data.totalComp)}  sub={`${data.batches.length} งวดจ่าย`} accent="#3B6D11" bg="#EAF3DE" />
-                <KpiCard icon={AlertTriangle} label="รอโอน KTB"   value={fmtB(isFiltered ? filteredTotals.pending : data.totalPending)} sub="ยังไม่ได้รับโอนเงิน"   accent="#C2410C" bg="#FFF7ED" />
-              </>}
+              <KpiCard icon={TrendingUp} label="รายการทั้งหมด" value={fmt(isFiltered ? filteredTotals.count : data.totalRows)} sub={isFiltered ? "รายการที่กรองแล้ว" : "รายการในระบบ"} accent="#0369A1" bg="#E0F2FE" />
+              <KpiCard icon={Banknote} label="เรียกเก็บรวม" value={fmtB(isFiltered ? filteredTotals.claim : data.totalClaim)} sub="บาท" accent="#854D0E" bg="#FEF9C3" />
+              <KpiCard icon={BadgeCheck} label="ชดเชย" value={fmtB(isFiltered ? filteredTotals.comp : data.totalComp)} sub={`${data.batches.length} งวดจ่าย`} accent="#3B6D11" bg="#EAF3DE" />
+              <KpiCard icon={AlertTriangle} label="ไม่ชดเชย" value={fmtB(isFiltered ? filteredTotals.pending : data.totalPending)} sub="ยังไม่ได้รับโอนเงิน" accent="#C2410C" bg="#FFF7ED" />
+            </>}
         </div>
       )}
 

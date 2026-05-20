@@ -3,18 +3,47 @@
 export interface OpdSummary {
   totalVisit: number;
   totalPatient: number;
+  totalMale: number;
+  totalFemale: number;
   opdOnTime: number;
+  opdOnTimeMale: number;
+  opdOnTimeFemale: number;
   opdOffTime: number;
+  opdOffTimeMale: number;
+  opdOffTimeFemale: number;
   admitToday: number;
+  admitMale: number;
+  admitFemale: number;
   opdUc: number;
+  opdUcMale: number;
+  opdUcFemale: number;
   opdGov: number;
+  opdGovMale: number;
+  opdGovFemale: number;
   opdSso: number;
+  opdSsoMale: number;
+  opdSsoFemale: number;
   opdCash: number;
+  opdCashMale: number;
+  opdCashFemale: number;
   opdForeign: number;
+  opdForeignMale: number;
+  opdForeignFemale: number;
   referIn: number;
+  referInMale: number;
+  referInFemale: number;
   referOut: number;
+  referOutMale: number;
+  referOutFemale: number;
   erEmergency: number;
-  erAccident: number;
+  erEmergencyMale: number;
+  erEmergencyFemale: number;
+  erTransport: number;
+  erTransportMale: number;
+  erTransportFemale: number;
+  erOtherAccident: number;
+  erOtherAccidentMale: number;
+  erOtherAccidentFemale: number;
 }
 
 export type OpdCardKey = keyof OpdSummary;
