@@ -84,5 +84,7 @@ export const config = {
     "/api/change-password/:path*",
     "/api/tb-dashboard/:path*",
     "/api/tb-upload/:path*",
+    "/api/accident-dashboard/:path*",
+    "/api/accident-upload/:path*",
   ],
 };

@@ -51,6 +51,11 @@ export const DASHBOARD_ITEMS: SidebarItem[] = [
     href: "/pages/tb-dashboard",
     icon: Activity,
   },
+  {
+    label: "Dashboard อุบัติเหตุ RTI",
+    href: "/pages/accident-dashboard",
+    icon: AlertTriangle,
+  },
 
 ];
 
