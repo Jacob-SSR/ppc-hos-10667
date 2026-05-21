@@ -22,7 +22,7 @@ export async function GET(req: NextRequest) {
         p1.cid                                        AS "CID (ผู้ป่วย)",
         CONCAT(p1.pname, p1.fname, ' ', p1.lname)    AS "ชื่อ-นามสกุล",
         p1.birthday                                   AS "วันเกิด",
-        p1.firstday                                   AS "วันที่ขึ้นทะเบียน",
+        p1.firstday                                   AS "วันที่มาครั้งแรก",
         p1.bloodgrp                                   AS "กรุ๊ปเลือด",
         e.name                                        AS "การศึกษา",
         m.name                                        AS "สถานภาพสมรส",

@@ -7,13 +7,11 @@ export default function PatientNoPersonPage() {
     <ReportTable
       apiPath="/api/patient-no-person"
       exportFilePrefix="patient-no-person"
-      dateKeys={["วันที่รับบริการ", "วันเกิด", "วันที่ขึ้นทะเบียน"]}
+      dateKeys={["วันที่รับบริการ", "วันเกิด", "วันที่มาครั้งแรก"]}
       sheetName="PatientNoPerson"
-      columnFilterKeys={["การศึกษา", "สถานภาพสมรส", "กรุ๊ปเลือด", "หมู่"]}
+      columnFilterKeys={["บ้านเลขที่", "หมู่"]}
       columnFilterLabels={{
-        "การศึกษา": "การศึกษา",
-        "สถานภาพสมรส": "สถานภาพสมรส",
-        "กรุ๊ปเลือด": "กรุ๊ปเลือด",
+        "บ้านเลขที่": "บ้านเลขที่",
         "หมู่": "หมู่บ้าน",
       }}
     />
