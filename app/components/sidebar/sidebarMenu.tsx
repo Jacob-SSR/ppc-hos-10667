@@ -16,6 +16,7 @@ import {
   Banknote,
   Wallet,
   Settings,
+  UserSearch,
 } from "lucide-react";
 
 import { SidebarItem } from "./types";
@@ -56,7 +57,6 @@ export const DASHBOARD_ITEMS: SidebarItem[] = [
     href: "/pages/accident-dashboard",
     icon: AlertTriangle,
   },
-
 ];
 
 export const REPORT_ITEMS: SidebarItem[] = [
@@ -97,6 +97,11 @@ export const PRIMARY_CARE_ITEMS: SidebarItem[] = [
     label: "รายชื่อผู้เสียชีวิต/จำหน่าย ที่ยังไม่ถูกจำหน่ายในบัญชี1",
     href: "/pages/death-not-discharged",
     icon: UserMinus,
+  },
+  {
+    label: "ผู้ป่วยที่ยังไม่นำเข้าบัญชี 1 ต.สะเดา",
+    href: "/pages/patient-no-person",
+    icon: UserSearch,
   },
 ];
 
