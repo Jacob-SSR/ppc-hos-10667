@@ -33,15 +33,17 @@ interface HistoryRow extends RowDataPacket {
   doctor_name: string;
 }
 
-// row type เพิ่มเติมสำหรับ ER
 interface ErPatientRow extends PatientRow {
   er_pt_type: number;
   er_pt_type_name: string;
   er_emergency_level_id: number | null;
   er_emergency_level_name: string;
+  er_dch_type_name: string;
+  er_accident_type_id: string | null;
+  er_accident_type_name: string;
+  accident_transport_type_name: string;
 }
 
-// row type สำหรับอุบัติเหตุทางจราจร
 interface AccidentPatientRow extends RowDataPacket {
   hn: string;
   ptname: string;
@@ -114,7 +116,7 @@ export async function GET(req: Request) {
   }
 
   try {
-    // ── History ─────────────────────────────────────────────────────────────
+    // ── History ──────────────────────────────────────────────────────────────
     if (hn) {
       const [histRows] = await db.query<HistoryRow[]>(
         `SELECT v.vn, v.vstdate, o.vsttime, v.pdx,
@@ -135,7 +137,7 @@ export async function GET(req: Request) {
       return NextResponse.json({ history: histRows });
     }
 
-    // ── Admit ────────────────────────────────────────────────────────────────
+    // ── Admit ─────────────────────────────────────────────────────────────────
     if (cardType === "admitToday") {
       const [rows] = await db.query<PatientRow[]>(
         `SELECT a.an AS vn, a.hn, COALESCE(pt.cid,'') AS cid,
@@ -159,7 +161,7 @@ export async function GET(req: Request) {
       return NextResponse.json({ patients: rows });
     }
 
-    // ── ER ทั้งหมด + level + pt_type ────────────────────────────────────────
+    // ── ER (extended with accident/dch data) ──────────────────────────────────
     if (cardType === "erEmergency") {
       const [rows] = await db.query<ErPatientRow[]>(
         `SELECT o.vn, o.hn, COALESCE(pt.cid,'') AS cid,
@@ -173,7 +175,11 @@ export async function GET(req: Request) {
           er.er_pt_type,
           COALESCE(ept.name,'') AS er_pt_type_name,
           er.er_emergency_level_id,
-          COALESCE(el.er_emergency_level_name,'') AS er_emergency_level_name
+          COALESCE(el.er_emergency_level_name,'') AS er_emergency_level_name,
+          COALESCE(edt.name,'') AS er_dch_type_name,
+          end_.er_accident_type_id,
+          COALESCE(eat.er_accident_type_name,'') AS er_accident_type_name,
+          COALESCE(att.accident_transport_type_name,'') AS accident_transport_type_name
         FROM er_regist er
         INNER JOIN ovst o ON o.vn = er.vn
         INNER JOIN patient pt ON pt.hn = o.hn
@@ -183,24 +189,77 @@ export async function GET(req: Request) {
         LEFT JOIN doctor d ON d.code = o.doctor
         LEFT JOIN er_emergency_level el ON el.er_emergency_level_id = er.er_emergency_level_id
         LEFT JOIN er_pt_type ept ON ept.er_pt_type = er.er_pt_type
+        LEFT JOIN er_dch_type edt ON edt.er_dch_type = er.er_dch_type
+        LEFT JOIN er_nursing_detail end_ ON end_.vn = er.vn
+        LEFT JOIN er_accident_type eat ON eat.er_accident_type_id = end_.er_accident_type_id
+        LEFT JOIN accident_transport_type att ON att.accident_transport_type_id = end_.accident_transport_type_id
         WHERE o.vstdate BETWEEN ? AND ?
         ORDER BY o.vstdate DESC, o.vsttime DESC`,
         [start, end],
       );
 
+      // ── Build summaries ────────────────────────────────────────────────────
       const levelSummary: Record<string, number> = {};
       const ptTypeSummary: Record<string, number> = {};
+      const dchByPtType: Record<string, Record<string, number>> = {};
+      const vehicleSummary: Record<string, number> = {};
+      const transportDchSummary: Record<string, number> = {};
+      const accidentTypeSummary: Record<string, number> = {};
+      const otherDchSummary: Record<string, number> = {};
+
       rows.forEach((r) => {
+        // level
         const lv = r.er_emergency_level_name || "ไม่ระบุ level";
         levelSummary[lv] = (levelSummary[lv] || 0) + 1;
+
+        // pt_type
         const pt = r.er_pt_type_name || "ไม่ระบุประเภท";
         ptTypeSummary[pt] = (ptTypeSummary[pt] || 0) + 1;
+
+        // dch per pt_type
+        if (!dchByPtType[pt]) dchByPtType[pt] = {};
+        const dch = r.er_dch_type_name || "ไม่ระบุ";
+        dchByPtType[pt][dch] = (dchByPtType[pt][dch] || 0) + 1;
+
+        // accident breakdown
+        const accId = r.er_accident_type_id
+          ? String(r.er_accident_type_id)
+          : null;
+        if (accId === "1") {
+          // transport accident
+          const v = r.accident_transport_type_name || "ไม่ระบุ";
+          vehicleSummary[v] = (vehicleSummary[v] || 0) + 1;
+          transportDchSummary[dch] = (transportDchSummary[dch] || 0) + 1;
+        } else if (accId) {
+          // other accident
+          const a = r.er_accident_type_name || "ไม่ระบุ";
+          accidentTypeSummary[a] = (accidentTypeSummary[a] || 0) + 1;
+          otherDchSummary[dch] = (otherDchSummary[dch] || 0) + 1;
+        }
       });
 
-      return NextResponse.json({ patients: rows, levelSummary, ptTypeSummary });
+      const transportCount = rows.filter(
+        (r) => r.er_accident_type_id && String(r.er_accident_type_id) === "1",
+      ).length;
+      const otherAccidentCount = rows.filter(
+        (r) => r.er_accident_type_id && String(r.er_accident_type_id) !== "1",
+      ).length;
+
+      return NextResponse.json({
+        patients: rows,
+        levelSummary,
+        ptTypeSummary,
+        dchByPtType,
+        vehicleSummary,
+        transportDchSummary,
+        accidentTypeSummary,
+        otherDchSummary,
+        transportCount,
+        otherAccidentCount,
+      });
     }
 
-    // ── อุบัติเหตุการขนส่ง (er_accident_type_id = 1) ─────────────────────────
+    // ── อุบัติเหตุการขนส่ง ───────────────────────────────────────────────────
     if (cardType === "erTransport") {
       const [rows] = await db.query<AccidentPatientRow[]>(
         `SELECT
@@ -226,7 +285,6 @@ export async function GET(req: Request) {
         [start, end],
       );
 
-      // สรุปพาหนะ
       const vehicleSummary: Record<string, number> = {};
       const dchSummary: Record<string, number> = {};
       const transporterSummary: Record<string, number> = {};
@@ -247,7 +305,7 @@ export async function GET(req: Request) {
       });
     }
 
-    // ── อุบัติเหตุอื่นๆ (er_accident_type_id != 1 และไม่ NULL) ──────────────
+    // ── อุบัติเหตุอื่นๆ ──────────────────────────────────────────────────────
     if (cardType === "erOtherAccident") {
       const [rows] = await db.query<AccidentPatientRow[]>(
         `SELECT
@@ -290,7 +348,7 @@ export async function GET(req: Request) {
       });
     }
 
-    // ── OPD Standard ─────────────────────────────────────────────────────────
+    // ── OPD Standard ──────────────────────────────────────────────────────────
     const { where, params } = buildFilter(cardType, start, end);
     const [rows] = await db.query<PatientRow[]>(
       `SELECT v.vn, v.hn, COALESCE(pt.cid,'') AS cid,

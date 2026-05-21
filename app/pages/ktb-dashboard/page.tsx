@@ -159,7 +159,7 @@ function KtbBarChart({ units }: { units: KtbUnitSummary[] }) {
         </div>
       </div>
       <div className="flex gap-4 mb-3 flex-wrap items-center">
-        {[{ color: colors.claim, label: "เรียกเก็บ" }, { color: colors.comp, label: "ชดเชย" }, { color: "#fb923c", label: "ไม่ชดเชย KTB" }].map(l => (
+        {[{ color: colors.claim, label: "เรียกเก็บ" }, { color: colors.comp, label: "ชดเชย" }, { color: "#fb923c", label: "ไม่ชดเชย" }].map(l => (
           <span key={l.label} className="flex items-center gap-1.5 text-xs text-gray-600">
             <span className="w-3 h-3 rounded-sm" style={{ background: l.color }} />{l.label}
           </span>
@@ -333,7 +333,7 @@ function UnitCard({ unit }: { unit: KtbUnitSummary }) {
         <div className="flex items-center gap-5 shrink-0 text-right">
           <div><p className="text-[10px] text-gray-400">เรียกเก็บ</p><p className="text-sm font-bold text-gray-800 tabular-nums">{fmtB(unit.เรียกเก็บ)}</p></div>
           <div><p className="text-[10px] text-gray-400">ชดเชย</p><p className="text-sm font-bold text-green-700 tabular-nums">{fmtB(unit.ชดเชย)}</p></div>
-          <div><p className="text-[10px] text-gray-400">ไม่ชดเชย KTB</p><p className="text-sm font-extrabold text-orange-600 tabular-nums">{fmtB(pending)}</p></div>
+          <div><p className="text-[10px] text-gray-400">ไม่ชดเชย</p><p className="text-sm font-extrabold text-orange-600 tabular-nums">{fmtB(pending)}</p></div>
           <div><p className="text-[10px] text-gray-400">อัตรา</p><p className="text-sm font-extrabold tabular-nums" style={{ color: rateColor }}>{rate}%</p></div>
           <motion.div animate={{ rotate: open ? 180 : 0 }} transition={{ duration: 0.2 }}>
             <ChevronDown size={14} className="text-gray-400" />
@@ -358,7 +358,7 @@ function UnitCard({ unit }: { unit: KtbUnitSummary }) {
                 <table className="min-w-full text-xs border-collapse">
                   <thead>
                     <tr className="bg-green-700">
-                      {["รายการบริการ", "สถานะ", "จำนวน", "เรียกเก็บ (฿)", "ชดเชย (฿)", "ไม่ชดเชย KTB (฿)"].map(h => (
+                      {["รายการบริการ", "สถานะ", "จำนวน", "เรียกเก็บ (฿)", "ชดเชย (฿)", "ไม่ชดเชย (฿)"].map(h => (
                         <th key={h} className="px-3 py-2.5 text-left text-white font-semibold border-r border-green-600 whitespace-nowrap">{h}</th>
                       ))}
                     </tr>
@@ -519,7 +519,7 @@ export default function KtbDashboardPage() {
         <div>
           <h1 className="text-lg font-bold text-gray-800">Dashboard รายการไม่ชดเชย</h1>
           <p className="text-xs text-gray-400 mt-0.5">
-            รายการที่ชดเชยแล้วแต่ยังไม่ได้รับโอนเงินเข้าบัญชี KTB
+            รายการที่ชดเชยแล้วแต่ยังไม่ได้รับการชดเชย
             {data && <span className="ml-2">· อัปเดต {new Date(data.updatedAt).toLocaleString("th-TH")}</span>}
           </p>
         </div>
@@ -594,7 +594,7 @@ export default function KtbDashboardPage() {
               <KpiCard icon={TrendingUp} label="รายการทั้งหมด" value={fmt(isFiltered ? filteredTotals.count : data.totalRows)} sub={isFiltered ? "รายการที่กรองแล้ว" : "รายการในระบบ"} accent="#0369A1" bg="#E0F2FE" />
               <KpiCard icon={Banknote} label="เรียกเก็บรวม" value={fmtB(isFiltered ? filteredTotals.claim : data.totalClaim)} sub="บาท" accent="#854D0E" bg="#FEF9C3" />
               <KpiCard icon={BadgeCheck} label="ชดเชย" value={fmtB(isFiltered ? filteredTotals.comp : data.totalComp)} sub={`${data.batches.length} งวดจ่าย`} accent="#3B6D11" bg="#EAF3DE" />
-              <KpiCard icon={AlertTriangle} label="ไม่ชดเชย" value={fmtB(isFiltered ? filteredTotals.pending : data.totalPending)} sub="ยังไม่ได้รับโอนเงิน" accent="#C2410C" bg="#FFF7ED" />
+              <KpiCard icon={AlertTriangle} label="ไม่ชดเชย" value={fmtB(isFiltered ? filteredTotals.pending : data.totalPending)} sub="ยังไม่ได้การชดเชย" accent="#C2410C" bg="#FFF7ED" />
             </>}
         </div>
       )}

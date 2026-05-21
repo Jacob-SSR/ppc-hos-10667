@@ -175,7 +175,7 @@ function TbBarChart({ units }: { units: TbUnitSummary[] }) {
                 name: shortName,
                 เรียกเก็บ: unit.เรียกเก็บ,
                 ชดเชย: unit.ชดเชย,
-                ยังไม่ได้รับ: Math.max(0, unit.เรียกเก็บ - unit.ชดเชย),
+                ไม่ชดเชย: Math.max(0, unit.เรียกเก็บ - unit.ชดเชย),
                 serviceBreakdown,
                 isHospital: unit.isHospital,
             };
@@ -191,7 +191,7 @@ function TbBarChart({ units }: { units: TbUnitSummary[] }) {
             name: shortName,
             เรียกเก็บ: claim,
             ชดเชย: comp,
-            ยังไม่ได้รับ: Math.max(0, claim - comp),
+            ไม่ชดเชย: Math.max(0, claim - comp),
             serviceCount: count,
             isHospital: unit.isHospital,
         };
@@ -219,7 +219,7 @@ function TbBarChart({ units }: { units: TbUnitSummary[] }) {
                         <div className="pt-1.5 border-t border-gray-100 grid grid-cols-3 gap-1 text-[10px]">
                             <span className="text-blue-700 font-bold tabular-nums">{fmtB(d.เรียกเก็บ ?? 0)}</span>
                             <span className="text-green-700 font-bold tabular-nums">{fmtB(d.ชดเชย ?? 0)}</span>
-                            <span className="text-red-500 font-bold tabular-nums">{fmtB(d.ยังไม่ได้รับ ?? 0)}</span>
+                            <span className="text-red-500 font-bold tabular-nums">{fmtB(d.ไม่ชดเชย ?? 0)}</span>
                         </div>
                     </div>
                 ) : (
@@ -227,7 +227,7 @@ function TbBarChart({ units }: { units: TbUnitSummary[] }) {
                         {[
                             { k: "เรียกเก็บ", c: "text-blue-700" },
                             { k: "ชดเชย", c: "text-green-700" },
-                            { k: "ยังไม่ได้รับ", c: "text-red-500" },
+                            { k: "ไม่ชดเชย", c: "text-red-500" },
                         ].map(({ k, c }) => (
                             <div key={k} className="flex justify-between">
                                 <span className="text-gray-500">{k}</span>
@@ -278,7 +278,7 @@ function TbBarChart({ units }: { units: TbUnitSummary[] }) {
                 {[
                     { color: colors.claim, label: `เรียกเก็บ${selectedService !== "รวมทั้งหมด" ? ` (${selectedService})` : ""}` },
                     { color: colors.comp, label: `ชดเชย${selectedService !== "รวมทั้งหมด" ? ` (${selectedService})` : ""}` },
-                    { color: colors.pending, label: "ยังไม่ได้รับ" },
+                    { color: colors.pending, label: "ไม่ชดเชย" },
                 ].map((l) => (
                     <span key={l.label} className="flex items-center gap-1.5 text-xs text-gray-600">
                         <span className="w-3 h-3 rounded-sm shrink-0" style={{ background: l.color }} />
@@ -301,7 +301,7 @@ function TbBarChart({ units }: { units: TbUnitSummary[] }) {
                     <Tooltip content={<CustomTooltip />} cursor={{ fill: "rgba(0,0,0,0.04)" }} />
                     <Bar dataKey="เรียกเก็บ" fill={colors.claim} radius={[3, 3, 0, 0]} />
                     <Bar dataKey="ชดเชย" fill={colors.comp} radius={[3, 3, 0, 0]} />
-                    <Bar dataKey="ยังไม่ได้รับ" fill={colors.pending} radius={[3, 3, 0, 0]} />
+                    <Bar dataKey="ไม่ชดเชย" fill={colors.pending} radius={[3, 3, 0, 0]} />
                 </BarChart>
             </ResponsiveContainer>
 
@@ -310,7 +310,7 @@ function TbBarChart({ units }: { units: TbUnitSummary[] }) {
                     (acc, row) => ({
                         claim: acc.claim + (row.เรียกเก็บ ?? 0),
                         comp: acc.comp + (row.ชดเชย ?? 0),
-                        pending: acc.pending + (row.ยังไม่ได้รับ ?? 0),
+                        pending: acc.pending + (row.ไม่ชดเชย ?? 0),
                         count: acc.count + ((row as any).serviceCount ?? 0),
                     }),
                     { claim: 0, comp: 0, pending: 0, count: 0 }
@@ -318,7 +318,7 @@ function TbBarChart({ units }: { units: TbUnitSummary[] }) {
                 const stats = [
                     { label: "รวมเรียกเก็บ", value: fmtB(totals.claim), color: "text-blue-700", bg: "bg-blue-50", border: "border-blue-100" },
                     { label: "รวมชดเชย", value: fmtB(totals.comp), color: "text-green-700", bg: "bg-green-50", border: "border-green-100" },
-                    { label: "ยังไม่ได้รับ", value: fmtB(totals.pending), color: "text-red-600", bg: "bg-red-50", border: "border-red-100" },
+                    { label: "ไม่ชดเชย", value: fmtB(totals.pending), color: "text-red-600", bg: "bg-red-50", border: "border-red-100" },
                 ];
                 return (
                     <div className="mt-4 pt-3 border-t border-gray-100">
@@ -822,7 +822,7 @@ export default function TbDashboardPage() {
                                 <KpiCard icon={TrendingUp} label="รายการทั้งหมด" value={fmt(data.totalRows)} sub="รายการขอเบิก" accent="#0369A1" bg="#E0F2FE" />
                                 <KpiCard icon={TrendingUp} label="เรียกเก็บรวม" value={fmt(data.totalClaim)} sub="บาท" accent="#854D0E" bg="#FEF9C3" />
                                 <KpiCard icon={BadgeCheck} label="ชดเชยแล้ว" value={fmt(data.totalComp)} sub={`${data.totalClaim > 0 ? Math.round((data.totalComp / data.totalClaim) * 1000) / 10 : 0}% ของที่เรียกเก็บ`} accent="#3B6D11" bg="#EAF3DE" />
-                                <KpiCard icon={AlertTriangle} label="ยังค้างชดเชย" value={fmt(data.totalNoComp)} sub={`${data.units.reduce((s, u) => s + u.items.filter((i) => i.สถานะ === "ไม่ชดเชย").reduce((n, i) => n + i.จำนวน, 0), 0)} รายการ`} accent="#991B1B" bg="#FEE2E2" />
+                                <KpiCard icon={AlertTriangle} label="ไม่ชดเชย" value={fmt(data.totalNoComp)} sub={`${data.units.reduce((s, u) => s + u.items.filter((i) => i.สถานะ === "ไม่ชดเชย").reduce((n, i) => n + i.จำนวน, 0), 0)} รายการ`} accent="#991B1B" bg="#FEE2E2" />
                             </>
                         )}
                 </div>

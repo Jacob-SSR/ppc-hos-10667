@@ -129,7 +129,7 @@ export default function BillingDashboardPage() {
                   />
                   <KpiCard
                     icon={AlertTriangle}
-                    label="ยังค้างชดเชย"
+                    label="ไม่ชดเชย"
                     value={fmt(totalPending)}
                     sub={`${data.units.reduce(
                       (s: number, u: BillingUnitSummary) =>

@@ -2,8 +2,10 @@
 
 import { useEffect, useRef, useState, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { X, Users, GripHorizontal, Shield, Activity, Car, AlertTriangle } from "lucide-react";
-
+import {
+  X, Users, GripHorizontal, Shield, Activity, Car, AlertTriangle,
+  ChevronRight, ChevronDown,
+} from "lucide-react";
 import type { PatientRow } from "@/app/components/dashboard/types/dashboard.types";
 import { PttypeRow, PttypeSummary, TotalsCard } from "./PatientSummaryCard";
 
@@ -39,7 +41,8 @@ const VEHICLE_COLOR: Record<string, string> = {
   "รถจักรยานยนต์":         "#EF9F27",
   "รถจักรยานและสามล้อถีบ": "#97C459",
   "รถปิคอัพ":               "#85B7EB",
-  "คนเดินเท้า":             "#D4537E",
+  "คนเดินทางเท้า":          "#D4537E",
+  "รถยนต์ 4 ล้อ":           "#60a5fa",
 };
 
 const DCH_COLOR: Record<string, { bar: string; text: string }> = {
@@ -49,7 +52,7 @@ const DCH_COLOR: Record<string, { bar: string; text: string }> = {
   "เสียชีวิต":              { bar: "#A32D2D", text: "#A32D2D" },
 };
 
-// ── Shared helpers ─────────────────────────────────────────────────────────────
+// ── Helpers ────────────────────────────────────────────────────────────────────
 function SectionDivider({ label }: { label: string }) {
   return (
     <div className="flex items-center gap-2 px-1">
@@ -81,10 +84,10 @@ function BarRow({ label, count, total, bar, text, prefix }: {
   return (
     <div>
       <div className="flex items-center justify-between mb-1">
-        <span className="text-xs font-medium" style={{ color: text }}>
+        <span className="text-xs font-medium truncate max-w-[70%]" style={{ color: text }}>
           {prefix && <span className="mr-1.5">{prefix}</span>}{label}
         </span>
-        <span className="text-xs font-extrabold tabular-nums" style={{ color: text }}>
+        <span className="text-xs font-extrabold tabular-nums shrink-0" style={{ color: text }}>
           {count} ราย <span className="font-normal text-[10px] opacity-60">({pct}%)</span>
         </span>
       </div>
@@ -97,15 +100,279 @@ function BarRow({ label, count, total, bar, text, prefix }: {
   );
 }
 
-// ── ER sections ────────────────────────────────────────────────────────────────
-function ErPtTypeSummary({ data, total }: { data: Record<string, number>; total: number }) {
+// ── ER pt_type with drill-down ──────────────────────────────────────────────────
+interface DrillDownData {
+  dchByPtType: Record<string, Record<string, number>>;
+  vehicleSummary: Record<string, number>;
+  transportDchSummary: Record<string, number>;
+  accidentTypeSummary: Record<string, number>;
+  otherDchSummary: Record<string, number>;
+  transportCount: number;
+  otherAccidentCount: number;
+}
+
+function AccidentSubRow({ label, count, total, bar, text, isExpanded, onToggle, children }: {
+  label: string; count: number; total: number; bar: string; text: string;
+  isExpanded: boolean; onToggle: () => void; children?: React.ReactNode;
+}) {
+  const pct = total > 0 ? Math.round((count / total) * 100) : 0;
   return (
-    <SummaryCard title="ประเภทผู้ป่วย ER" icon={Car} iconColor="#854F0B">
-      {Object.entries(data).sort(([, a], [, b]) => b - a).map(([name, count]) => {
-        const c = PT_TYPE_COLOR[name] ?? { bar: "#888780", text: "#5F5E5A", icon: "❓" };
-        return <BarRow key={name} label={name} count={count} total={total} bar={c.bar} text={c.text} prefix={c.icon} />;
-      })}
-    </SummaryCard>
+    <div className="border border-gray-100 rounded-xl overflow-hidden">
+      <button
+        onClick={onToggle}
+        className="w-full flex items-center gap-2 px-3 py-2.5 hover:bg-gray-50 transition-colors text-left"
+      >
+        <div className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: bar }} />
+        <span className="flex-1 text-xs font-semibold" style={{ color: text }}>{label}</span>
+        <span className="text-xs font-extrabold tabular-nums" style={{ color: text }}>
+          {count} ราย ({pct}%)
+        </span>
+        <motion.span animate={{ rotate: isExpanded ? 90 : 0 }} transition={{ duration: 0.15 }}>
+          <ChevronRight size={14} className="text-gray-400" />
+        </motion.span>
+      </button>
+
+      <AnimatePresence>
+        {isExpanded && children && (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: "auto", opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.2, ease: "easeOut" }}
+            className="overflow-hidden border-t border-gray-100 bg-gray-50/60"
+          >
+            <div className="px-3 py-3 space-y-2.5">
+              {children}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}
+
+function DchMiniRow({ label, count, total }: { label: string; count: number; total: number }) {
+  const pct = total > 0 ? Math.round((count / total) * 100) : 0;
+  const c = DCH_COLOR[label] ?? { bar: "#888780", text: "#5F5E5A" };
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-1">
+        <span className="text-[11px] text-gray-600">{label}</span>
+        <span className="text-[11px] font-bold tabular-nums" style={{ color: c.text }}>
+          {count} ราย ({pct}%)
+        </span>
+      </div>
+      <div className="h-1.5 rounded-full overflow-hidden bg-gray-200">
+        <motion.div className="h-full rounded-full" style={{ backgroundColor: c.bar }}
+          initial={{ width: 0 }} animate={{ width: `${pct}%` }}
+          transition={{ duration: 0.4, ease: "easeOut" }} />
+      </div>
+    </div>
+  );
+}
+
+function ErPtTypeDrillDown({ data, total, drillDown }: {
+  data: Record<string, number>;
+  total: number;
+  drillDown: DrillDownData;
+}) {
+  const [expanded, setExpanded] = useState<string | null>(null);
+  // accident sub-expanded
+  const [accExpanded, setAccExpanded] = useState<"transport" | "other" | null>(null);
+
+  const toggle = (name: string) => setExpanded(p => p === name ? null : name);
+
+  return (
+    <div className="bg-white border border-gray-100 rounded-2xl px-4 py-3">
+      <div className="flex items-center gap-2 mb-3">
+        <Car size={14} style={{ color: "#854F0B" }} />
+        <p className="text-xs font-bold text-gray-700 uppercase tracking-wide">ประเภทผู้ป่วย ER</p>
+        <span className="text-[10px] text-gray-400 ml-auto">คลิกเพื่อดูรายละเอียด</span>
+      </div>
+
+      <div className="space-y-2">
+        {Object.entries(data).sort(([, a], [, b]) => b - a).map(([name, count]) => {
+          const c = PT_TYPE_COLOR[name] ?? { bar: "#888780", text: "#5F5E5A", icon: "❓" };
+          const isAccident = name === "ผู้ป่วยอุบัติเหตุ";
+          const isExpanded = expanded === name;
+
+          // dch for this pt_type
+          const dchData = drillDown.dchByPtType[name] ?? {};
+
+          return (
+            <div key={name} className="border border-gray-100 rounded-xl overflow-hidden">
+              {/* Header row */}
+              <button
+                onClick={() => toggle(name)}
+                className="w-full flex items-center gap-2 px-3 py-2.5 hover:bg-gray-50 transition-colors text-left"
+              >
+                <span className="text-base shrink-0">{c.icon}</span>
+                <span className="flex-1 text-xs font-semibold" style={{ color: c.text }}>{name}</span>
+                <span className="text-xs font-extrabold tabular-nums" style={{ color: c.text }}>
+                  {count} ราย ({total > 0 ? Math.round((count / total) * 100) : 0}%)
+                </span>
+                <motion.span animate={{ rotate: isExpanded ? 90 : 0 }} transition={{ duration: 0.15 }}>
+                  <ChevronRight size={14} className="text-gray-400" />
+                </motion.span>
+              </button>
+
+              {/* Bar */}
+              <div className="h-1 w-full bg-gray-100">
+                <motion.div className="h-full" style={{ backgroundColor: c.bar }}
+                  initial={{ width: 0 }} animate={{ width: `${total > 0 ? (count / total) * 100 : 0}%` }}
+                  transition={{ duration: 0.5, ease: "easeOut" }} />
+              </div>
+
+              {/* Drill-down content */}
+              <AnimatePresence>
+                {isExpanded && (
+                  <motion.div
+                    initial={{ height: 0, opacity: 0 }}
+                    animate={{ height: "auto", opacity: 1 }}
+                    exit={{ height: 0, opacity: 0 }}
+                    transition={{ duration: 0.2, ease: "easeOut" }}
+                    className="overflow-hidden border-t border-gray-100"
+                  >
+                    <div className="px-3 py-3 bg-gray-50/50 space-y-3">
+
+                      {/* ── อุบัติเหตุ: แยก transport vs other ── */}
+                      {isAccident && (drillDown.transportCount > 0 || drillDown.otherAccidentCount > 0) && (
+                        <div className="space-y-2">
+                          <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400">
+                            แยกประเภทอุบัติเหตุ
+                          </p>
+
+                          {/* Transport */}
+                          {drillDown.transportCount > 0 && (
+                            <AccidentSubRow
+                              label="อุบัติเหตุจากการขนส่ง"
+                              count={drillDown.transportCount}
+                              total={count}
+                              bar="#EF9F27"
+                              text="#854F0B"
+                              isExpanded={accExpanded === "transport"}
+                              onToggle={() => setAccExpanded(p => p === "transport" ? null : "transport")}
+                            >
+                              {/* Vehicle breakdown */}
+                              {Object.keys(drillDown.vehicleSummary).length > 0 && (
+                                <div className="space-y-1.5">
+                                  <p className="text-[10px] font-semibold text-gray-500">ยานพาหนะ</p>
+                                  {Object.entries(drillDown.vehicleSummary)
+                                    .sort(([, a], [, b]) => b - a)
+                                    .map(([v, cnt]) => (
+                                      <div key={v}>
+                                        <div className="flex items-center justify-between mb-0.5">
+                                          <span className="text-[11px] text-gray-600">{v}</span>
+                                          <span className="text-[11px] font-bold tabular-nums"
+                                            style={{ color: VEHICLE_COLOR[v] ?? "#6b7280" }}>
+                                            {cnt} ราย ({drillDown.transportCount > 0 ? Math.round((cnt / drillDown.transportCount) * 100) : 0}%)
+                                          </span>
+                                        </div>
+                                        <div className="h-1.5 rounded-full overflow-hidden bg-gray-200">
+                                          <motion.div className="h-full rounded-full"
+                                            style={{ backgroundColor: VEHICLE_COLOR[v] ?? "#85B7EB" }}
+                                            initial={{ width: 0 }}
+                                            animate={{ width: `${drillDown.transportCount > 0 ? (cnt / drillDown.transportCount) * 100 : 0}%` }}
+                                            transition={{ duration: 0.4, ease: "easeOut" }} />
+                                        </div>
+                                      </div>
+                                    ))}
+                                </div>
+                              )}
+
+                              {/* Dch for transport */}
+                              {Object.keys(drillDown.transportDchSummary).length > 0 && (
+                                <div className="space-y-1.5 pt-1 border-t border-gray-200">
+                                  <p className="text-[10px] font-semibold text-gray-500">ผลการรักษา</p>
+                                  {Object.entries(drillDown.transportDchSummary)
+                                    .sort(([, a], [, b]) => b - a)
+                                    .map(([d, cnt]) => (
+                                      <DchMiniRow key={d} label={d} count={cnt} total={drillDown.transportCount} />
+                                    ))}
+                                </div>
+                              )}
+                            </AccidentSubRow>
+                          )}
+
+                          {/* Other accident */}
+                          {drillDown.otherAccidentCount > 0 && (
+                            <AccidentSubRow
+                              label="อุบัติเหตุอื่นๆ"
+                              count={drillDown.otherAccidentCount}
+                              total={count}
+                              bar="#f87171"
+                              text="#b91c1c"
+                              isExpanded={accExpanded === "other"}
+                              onToggle={() => setAccExpanded(p => p === "other" ? null : "other")}
+                            >
+                              {/* Accident type breakdown */}
+                              {Object.keys(drillDown.accidentTypeSummary).length > 0 && (
+                                <div className="space-y-1.5">
+                                  <p className="text-[10px] font-semibold text-gray-500">ประเภทอุบัติเหตุ</p>
+                                  {Object.entries(drillDown.accidentTypeSummary)
+                                    .sort(([, a], [, b]) => b - a)
+                                    .map(([a, cnt]) => (
+                                      <div key={a}>
+                                        <div className="flex items-center justify-between mb-0.5">
+                                          <span className="text-[11px] text-gray-600 truncate max-w-[75%]">{a}</span>
+                                          <span className="text-[11px] font-bold tabular-nums text-red-600">
+                                            {cnt} ราย ({drillDown.otherAccidentCount > 0 ? Math.round((cnt / drillDown.otherAccidentCount) * 100) : 0}%)
+                                          </span>
+                                        </div>
+                                        <div className="h-1.5 rounded-full overflow-hidden bg-gray-200">
+                                          <motion.div className="h-full rounded-full bg-red-400"
+                                            initial={{ width: 0 }}
+                                            animate={{ width: `${drillDown.otherAccidentCount > 0 ? (cnt / drillDown.otherAccidentCount) * 100 : 0}%` }}
+                                            transition={{ duration: 0.4, ease: "easeOut" }} />
+                                        </div>
+                                      </div>
+                                    ))}
+                                </div>
+                              )}
+
+                              {/* Dch for other */}
+                              {Object.keys(drillDown.otherDchSummary).length > 0 && (
+                                <div className="space-y-1.5 pt-1 border-t border-gray-200">
+                                  <p className="text-[10px] font-semibold text-gray-500">ผลการรักษา</p>
+                                  {Object.entries(drillDown.otherDchSummary)
+                                    .sort(([, a], [, b]) => b - a)
+                                    .map(([d, cnt]) => (
+                                      <DchMiniRow key={d} label={d} count={cnt} total={drillDown.otherAccidentCount} />
+                                    ))}
+                                </div>
+                              )}
+                            </AccidentSubRow>
+                          )}
+                        </div>
+                      )}
+
+                      {/* ── ผลการรักษา for non-accident pt_types ── */}
+                      {!isAccident && Object.keys(dchData).length > 0 && (
+                        <div className="space-y-1.5">
+                          <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400">
+                            ผลการรักษา
+                          </p>
+                          {Object.entries(dchData)
+                            .sort(([, a], [, b]) => b - a)
+                            .map(([d, cnt]) => (
+                              <DchMiniRow key={d} label={d} count={cnt} total={count} />
+                            ))}
+                        </div>
+                      )}
+
+                      {/* Fallback if no sub-data */}
+                      {!isAccident && Object.keys(dchData).length === 0 && (
+                        <p className="text-[11px] text-gray-400 text-center py-2">ไม่มีข้อมูลเพิ่มเติม</p>
+                      )}
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </div>
+          );
+        })}
+      </div>
+    </div>
   );
 }
 
@@ -120,7 +387,6 @@ function ErLevelSummary({ data, total }: { data: Record<string, number>; total: 
   );
 }
 
-// ── Accident transport sections ────────────────────────────────────────────────
 function VehicleSummary({ data, total }: { data: Record<string, number>; total: number }) {
   return (
     <SummaryCard title="ประเภทพาหนะ" icon={Car} iconColor="#854F0B">
@@ -165,9 +431,6 @@ function AccidentTypeSummary({ data, total }: { data: Record<string, number>; to
   );
 }
 
-// ── Accident patient table (ไม่มี pttype) ─────────────────────────────────────
-
-
 // ── Main Modal ─────────────────────────────────────────────────────────────────
 function isMale(sex: string) { return sex === "1"; }
 
@@ -175,12 +438,12 @@ export default function PatientDetailModal({
   isOpen, onClose, cardLabel, cardType, start, end, infoLabel,
 }: PatientDetailModalProps) {
   const [patients, setPatients] = useState<PatientRow[]>([]);
-  const [extras, setExtras] = useState<Record<string, Record<string, number>>>({});
+  const [extras, setExtras] = useState<Record<string, unknown>>({});
   const [loading, setLoading] = useState(false);
-  const [modalSize, setModalSize] = useState({ w: 500, h: 680 });
+  const [modalSize, setModalSize] = useState({ w: 520, h: 700 });
 
   const isResizing = useRef(false);
-  const resizeStart = useRef({ x: 0, y: 0, w: 500, h: 680 });
+  const resizeStart = useRef({ x: 0, y: 0, w: 520, h: 700 });
 
   const isErCard        = cardType === "erEmergency";
   const isTransportCard = cardType === "erTransport";
@@ -194,7 +457,7 @@ export default function PatientDetailModal({
     const onMove = (ev: MouseEvent) => {
       if (!isResizing.current) return;
       setModalSize({
-        w: Math.max(400, Math.min(900, resizeStart.current.w + ev.clientX - resizeStart.current.x)),
+        w: Math.max(420, Math.min(900, resizeStart.current.w + ev.clientX - resizeStart.current.x)),
         h: Math.max(400, Math.min(window.innerHeight * 0.95, resizeStart.current.h + ev.clientY - resizeStart.current.y)),
       });
     };
@@ -215,9 +478,8 @@ export default function PatientDetailModal({
         const data = await res.json();
         if (!cancelled) {
           setPatients(data.patients ?? []);
-          // เก็บ summary objects ทั้งหมดไว้ใน extras
           const { patients: _, ...rest } = data;
-          setExtras(rest as Record<string, Record<string, number>>);
+          setExtras(rest as Record<string, unknown>);
         }
       } catch { }
       if (!cancelled) setLoading(false);
@@ -231,8 +493,8 @@ export default function PatientDetailModal({
     return () => window.removeEventListener("keydown", h);
   }, [onClose]);
 
-  // สำหรับ OPD / ER — group by pttype
-  const pttypeSummary = useMemo(() => {
+  // Summaries
+  const pttypeSummary = useMemo<PttypeSummary[]>(() => {
     if (isAccidentCard) return [];
     const map = new Map<string, PttypeSummary>();
     for (const p of patients) {
@@ -251,14 +513,24 @@ export default function PatientDetailModal({
 
   const maxTotal = pttypeSummary[0]?.total ?? 0;
   const accTotal  = patients.length;
-  const accMale   = useMemo(() => patients.filter((p) => isMale(p.sex)).length,   [patients]);
-  const accFemale = useMemo(() => patients.filter((p) => !isMale(p.sex)).length,  [patients]);
+  const accMale   = useMemo(() => patients.filter(p => isMale(p.sex)).length, [patients]);
+  const accFemale = useMemo(() => patients.filter(p => !isMale(p.sex)).length, [patients]);
+
+  const erDrillDown: DrillDownData = {
+    dchByPtType: (extras.dchByPtType as Record<string, Record<string, number>>) ?? {},
+    vehicleSummary: (extras.vehicleSummary as Record<string, number>) ?? {},
+    transportDchSummary: (extras.transportDchSummary as Record<string, number>) ?? {},
+    accidentTypeSummary: (extras.accidentTypeSummary as Record<string, number>) ?? {},
+    otherDchSummary: (extras.otherDchSummary as Record<string, number>) ?? {},
+    transportCount: (extras.transportCount as number) ?? 0,
+    otherAccidentCount: (extras.otherAccidentCount as number) ?? 0,
+  };
 
   const headerIcon = isErCard ? Activity : isAccidentCard ? AlertTriangle : Users;
   const headerColor = isErCard ? "#A32D2D" : isAccidentCard ? "#854F0B" : "#1a5233";
   const headerBg = isErCard ? "#FCEBEB" : isAccidentCard ? "#FAEEDA" : "#f0faf4";
   const subtitleLabel = isErCard
-    ? "ประเภท · Level · สิทธิ์"
+    ? "ประเภท · Level · สิทธิ์ · คลิกดูรายละเอียด"
     : isAccidentCard
     ? "พาหนะ · ผู้นำส่ง · ผลการรักษา"
     : "สรุปตามสิทธิ์";
@@ -303,7 +575,7 @@ export default function PatientDetailModal({
                 {loading && (
                   <>
                     <div className="h-[80px] rounded-2xl bg-gray-200 animate-pulse" />
-                    <div className="h-[120px] rounded-2xl bg-gray-200 animate-pulse" />
+                    <div className="h-[160px] rounded-2xl bg-gray-200 animate-pulse" />
                     <div className="h-[100px] rounded-2xl bg-gray-200 animate-pulse" />
                   </>
                 )}
@@ -321,9 +593,9 @@ export default function PatientDetailModal({
                 {!loading && isTransportCard && patients.length > 0 && (
                   <>
                     <TotalsCard total={accTotal} male={accMale} female={accFemale} />
-                    <VehicleSummary data={extras.vehicleSummary ?? {}} total={accTotal} />
-                    <TransporterSummary data={extras.transporterSummary ?? {}} total={accTotal} />
-                    <DchSummary data={extras.dchSummary ?? {}} total={accTotal} />
+                    <VehicleSummary data={(extras.vehicleSummary as Record<string, number>) ?? {}} total={accTotal} />
+                    <TransporterSummary data={(extras.transporterSummary as Record<string, number>) ?? {}} total={accTotal} />
+                    <DchSummary data={(extras.dchSummary as Record<string, number>) ?? {}} total={accTotal} />
                   </>
                 )}
 
@@ -331,17 +603,33 @@ export default function PatientDetailModal({
                 {!loading && isOtherAcc && patients.length > 0 && (
                   <>
                     <TotalsCard total={accTotal} male={accMale} female={accFemale} />
-                    <AccidentTypeSummary data={extras.accidentTypeSummary ?? {}} total={accTotal} />
-                    <DchSummary data={extras.dchSummary ?? {}} total={accTotal} />
+                    <AccidentTypeSummary data={(extras.accidentTypeSummary as Record<string, number>) ?? {}} total={accTotal} />
+                    <DchSummary data={(extras.dchSummary as Record<string, number>) ?? {}} total={accTotal} />
                   </>
                 )}
 
-                {/* ── ER ── */}
+                {/* ── ER with drill-down ── */}
                 {!loading && isErCard && pttypeSummary.length > 0 && (
                   <>
                     <TotalsCard total={totals.total} male={totals.male} female={totals.female} />
-                    {extras.ptTypeSummary && <ErPtTypeSummary data={extras.ptTypeSummary} total={totals.total} />}
-                    {extras.levelSummary && <ErLevelSummary data={extras.levelSummary} total={totals.total} />}
+
+                    {/* Pt Type with drill-down (new component) */}
+                    {extras.ptTypeSummary && (
+                      <ErPtTypeDrillDown
+                        data={extras.ptTypeSummary as Record<string, number>}
+                        total={totals.total}
+                        drillDown={erDrillDown}
+                      />
+                    )}
+
+                    {/* Emergency Level */}
+                    {extras.levelSummary && (
+                      <ErLevelSummary
+                        data={extras.levelSummary as Record<string, number>}
+                        total={totals.total}
+                      />
+                    )}
+
                     <SectionDivider label={`แยกตามสิทธิ์ (${pttypeSummary.length})`} />
                     <div className="space-y-2">
                       {pttypeSummary.map((row, i) => (
@@ -376,7 +664,7 @@ export default function PatientDetailModal({
                 </div>
               )}
 
-              {/* RESIZE */}
+              {/* RESIZE handle */}
               <div onMouseDown={startResize}
                 className="absolute bottom-0 right-0 w-6 h-6 flex items-center justify-center cursor-se-resize text-gray-300 hover:text-gray-500 z-40">
                 <GripHorizontal size={14} className="rotate-45" />

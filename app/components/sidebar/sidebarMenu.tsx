@@ -42,7 +42,7 @@ export const DASHBOARD_ITEMS: SidebarItem[] = [
     icon: Banknote,
   },
   {
-    label: "รายการยังไม่โอน KTB",
+    label: "KTB",
     href: "/pages/ktb-dashboard",
     icon: Wallet,
   },
@@ -52,7 +52,7 @@ export const DASHBOARD_ITEMS: SidebarItem[] = [
     icon: Activity,
   },
   {
-    label: "Dashboard อุบัติเหตุ RTI",
+    label: "อุบัติเหตุ",
     href: "/pages/accident-dashboard",
     icon: AlertTriangle,
   },

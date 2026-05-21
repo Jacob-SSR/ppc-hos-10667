@@ -65,7 +65,7 @@ export default function BillingBarChart({ data }: Props) {
           name: shortName,
           เรียกเก็บ: unit.เรียกเก็บ,
           ชดเชย: unit.ชดเชย,
-          ยังไม่ได้รับ: Math.max(0, unit.เรียกเก็บ - unit.ชดเชย),
+          ไม่ชดเชย: Math.max(0, unit.เรียกเก็บ - unit.ชดเชย),
           serviceBreakdown,
           isHospital: unit.isHospital,
         };
@@ -77,8 +77,8 @@ export default function BillingBarChart({ data }: Props) {
       )?.[0];
       const matching = fullKey
         ? unit.items.filter(
-            (i: BillingItemSummary) => i.รายการขอเบิก === fullKey,
-          )
+          (i: BillingItemSummary) => i.รายการขอเบิก === fullKey,
+        )
         : [];
       const claim = matching.reduce(
         (s: number, i: BillingItemSummary) => s + i.เรียกเก็บ,
@@ -97,7 +97,7 @@ export default function BillingBarChart({ data }: Props) {
         name: shortName,
         เรียกเก็บ: claim,
         ชดเชย: comp,
-        ยังไม่ได้รับ: Math.max(0, claim - comp),
+        ไม่ชดเชย: Math.max(0, claim - comp),
         serviceCount: count,
         isHospital: unit.isHospital,
       };
@@ -130,7 +130,7 @@ export default function BillingBarChart({ data }: Props) {
             color: colors.comp,
             label: `ชดเชย${selectedService !== "รวมทั้งหมด" ? ` (${selectedService})` : ""}`,
           },
-          { color: colors.pending, label: "ยังไม่ได้รับ" },
+          { color: colors.pending, label: "ไม่ชดเชย" },
         ].map((l) => (
           <span key={l.label} className="flex items-center gap-1.5 text-xs text-gray-600">
             <span
@@ -177,7 +177,7 @@ export default function BillingBarChart({ data }: Props) {
           />
           <Bar dataKey="เรียกเก็บ" fill={colors.claim} radius={[3, 3, 0, 0]} />
           <Bar dataKey="ชดเชย" fill={colors.comp} radius={[3, 3, 0, 0]} />
-          <Bar dataKey="ยังไม่ได้รับ" fill={colors.pending} radius={[3, 3, 0, 0]} />
+          <Bar dataKey="ไม่ชดเชย" fill={colors.pending} radius={[3, 3, 0, 0]} />
         </BarChart>
       </ResponsiveContainer>
 

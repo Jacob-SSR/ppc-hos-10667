@@ -16,7 +16,7 @@ interface TooltipPayload {
   payload?: {
     เรียกเก็บ?: number;
     ชดเชย?: number;
-    ยังไม่ได้รับ?: number;
+    ไม่?: number;
     serviceCount?: number;
     serviceBreakdown?: ServiceBreakdown[];
   };
@@ -62,7 +62,7 @@ export function BillingChartTooltip({
                 </div>
                 <div className="flex items-center gap-1">
                   <div className="w-2 h-2 rounded-sm bg-red-300 shrink-0" />
-                  <span className="text-gray-500">ยังไม่รับ</span>
+                  <span className="text-gray-500">ไม่ชดเชย</span>
                 </div>
                 <span className="font-bold text-blue-600 tabular-nums">{fmtB(svc.claim)}</span>
                 <span className="font-bold text-green-600 tabular-nums">{fmtB(svc.comp)}</span>
@@ -82,7 +82,7 @@ export function BillingChartTooltip({
                 {fmtB(unitData.ชดเชย ?? 0)}
               </span>
               <span className="font-bold text-red-600 tabular-nums">
-                {fmtB(unitData.ยังไม่ได้รับ ?? 0)}
+                {fmtB(unitData.ไม่ ?? 0)}
               </span>
             </div>
           </div>
@@ -98,7 +98,7 @@ export function BillingChartTooltip({
               [
                 { key: "เรียกเก็บ", dotColor: "bg-blue-400", textColor: "text-blue-700" },
                 { key: "ชดเชย", dotColor: "bg-green-400", textColor: "text-green-700" },
-                { key: "ยังไม่ได้รับ", dotColor: "bg-red-300", textColor: "text-red-600" },
+                { key: "ไม่", dotColor: "bg-red-300", textColor: "text-red-600" },
               ] as const
             ).map(({ key, dotColor, textColor }) => (
               <div key={key} className="flex items-center justify-between">
