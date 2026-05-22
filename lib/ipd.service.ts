@@ -24,21 +24,37 @@ interface WardConfigItem {
   label?: string;
   totalBeds: number;
   isHomeWard?: boolean;
+  realWard?: string;
+  bednoPrefix?: string[];
+  bednoPrefixExclude?: string[];
+  // hardcode admit = 0 ไม่ query DB
+  forceZero?: boolean;
 }
 
 const WARD_CONFIG: Record<string, WardConfigItem> = {
-  "04": { label: "ห้องพิเศษ",   totalBeds: 11 },
-  "01": { label: "Ward",          totalBeds: 26 },
-  "17": { label: "เตียงIMC",     totalBeds: 2  }, // ← เปลี่ยนจาก ห้องINC
-  "15": { label: "พลับพลารักษ์", totalBeds: 10 },
-  "11": { label: "เตียงเสริม",   totalBeds: 16 },
-  "05": { label: "ห้องแยกโรค",  totalBeds: 2  },
-  "13": { label: "ห้องNegative", totalBeds: 2  },
-  "14": { label: "HW ยาเสพติด", totalBeds: 5, isHomeWard: true },
-  "16": { label: "HW Palliative",totalBeds: 5, isHomeWard: true },
+  "01": {
+    label: "Ward",
+    totalBeds: 26,
+    bednoPrefixExclude: ["นช", "นญ"],
+  },
+  "04": { label: "ห้องพิเศษ",    totalBeds: 11 },
+  "05": { label: "ห้องแยกโรค",   totalBeds: 2  },
+  "11": {
+    label: "เตียงเสริม",
+    totalBeds: 16,
+    realWard: "01",
+    bednoPrefix: ["นช", "นญ"],
+  },
+  "__neg__": {
+    label: "ห้องNegative",
+    totalBeds: 2,
+    forceZero: true, // ยังหา bedno ไม่ได้ ใช้ 0 ไปก่อน
+  },
+  "15": { label: "พลับพลารักษ์",  totalBeds: 10 },
+  "17": { label: "เตียงIMC",      totalBeds: 2  },
+  "14": { label: "HW ยาเสพติด",  totalBeds: 5, isHomeWard: true },
+  "16": { label: "HW Palliative", totalBeds: 5, isHomeWard: true },
 };
-
-const ACTIVE_WARD_CODES = Object.keys(WARD_CONFIG);
 
 interface CachedWards {
   data: WardInfoRow[];
@@ -50,42 +66,67 @@ async function getActiveWards(): Promise<WardInfoRow[]> {
   const now = Date.now();
   if (wardCache && wardCache.expiresAt > now) return wardCache.data;
 
-  const wardCodes = Object.keys(WARD_CONFIG);
-  if (wardCodes.length === 0) {
-    wardCache = { data: [], expiresAt: now + 5 * 60 * 1000 };
-    return [];
-  }
-
-  const placeholders = wardCodes.map(() => "?").join(",");
-  const [rows] = await db.query<WardInfoRow[]>(
-    `SELECT w.ward AS ward_code, w.name
-     FROM ward w
-     WHERE w.ward IN (${placeholders})
-     ORDER BY FIELD(w.ward, ${placeholders})`,
-    [...wardCodes, ...wardCodes],
-  );
-
-  const merged: WardInfoRow[] = rows.map((r) => {
-    const cfg = WARD_CONFIG[r.ward_code];
+  const merged: WardInfoRow[] = Object.keys(WARD_CONFIG).map((wardCode) => {
+    const cfg = WARD_CONFIG[wardCode];
     return {
-      ...r,
-      name: cfg?.label ?? r.name,
+      ward_code: wardCode,
+      name: cfg?.label ?? wardCode,
       total_beds: cfg?.totalBeds ?? 0,
-    };
+    } as WardInfoRow;
   });
 
   wardCache = { data: merged, expiresAt: now + 5 * 60 * 1000 };
   return merged;
 }
 
+async function countAdmitLive(wardCode: string, cfg: WardConfigItem): Promise<number> {
+  if (cfg.forceZero) return 0;
+
+  const realWard = cfg.realWard ?? wardCode;
+  const conditions: string[] = [];
+  const params: string[] = [realWard];
+
+  if (cfg.bednoPrefix?.length) {
+    const likes = cfg.bednoPrefix.map(() => "ia.bedno LIKE ?").join(" OR ");
+    conditions.push(`(${likes})`);
+    cfg.bednoPrefix.forEach((p) => params.push(`${p}%`));
+  }
+
+  if (cfg.bednoPrefixExclude?.length) {
+    const likes = cfg.bednoPrefixExclude.map(() => "ia.bedno NOT LIKE ?").join(" AND ");
+    conditions.push(`(${likes})`);
+    cfg.bednoPrefixExclude.forEach((p) => params.push(`${p}%`));
+  }
+
+  // กรอง bedno ว่างออกเสมอ
+  conditions.push("(ia.bedno IS NOT NULL AND ia.bedno != '')");
+
+  const bednoWhere = conditions.length > 0 ? `AND ${conditions.join(" AND ")}` : "";
+
+  const [rows] = await db.query<RowDataPacket[]>(
+    `SELECT COUNT(DISTINCT ia.an) AS cnt
+     FROM iptadm ia
+     INNER JOIN ipt ip ON ip.an = ia.an
+     INNER JOIN an_stat a ON a.an = ia.an
+     WHERE ia.move_in_ward_datetime = (
+       SELECT MAX(ia2.move_in_ward_datetime)
+       FROM iptadm ia2
+       WHERE ia2.an = ia.an
+     )
+     AND (ip.dchdate IS NULL OR ip.dchdate = '0000-00-00' OR ip.dchdate = '')
+     AND (a.dchdate IS NULL OR a.dchdate = '0000-00-00' OR a.dchdate = '')
+     AND ip.ward = ?
+     ${bednoWhere}`,
+    params,
+  );
+  return Number((rows[0] as any)?.cnt ?? 0);
+}
+
 export async function getIpdDischarge(
   start: string,
   end: string,
 ): Promise<IpdDischargeRow[]> {
-  const wards = await getActiveWards();
-  if (wards.length === 0) return [];
-
-  const wardCodes = wards.map((w) => w.ward_code);
+  const wardCodes = ["01", "04", "05", "15", "17", "14", "16"];
   const placeholders = wardCodes.map(() => "?").join(",");
 
   const [rows] = await db.query<IpdDischargeRow[]>(
@@ -127,21 +168,9 @@ export async function getIpdSummary(
   start: string,
   end: string,
 ): Promise<IpdSummaryData> {
-  const wards = await getActiveWards();
-  if (wards.length === 0) {
-    return {
-      summary: { total: 0, unique_patients: 0, avg_los: 0 },
-      byWard: [],
-      byPttype: [],
-      byDchtype: [],
-    };
-  }
-
-  const wardCodes = wards.map((w) => w.ward_code);
+  const wardCodes = ["01", "04", "05", "15", "17", "14", "16"];
   const placeholders = wardCodes.map(() => "?").join(",");
-  const wardUnion = wardCodes
-    .map(() => `SELECT ? AS ward_code`)
-    .join(" UNION ALL ");
+  const wardUnion = wardCodes.map(() => `SELECT ? AS ward_code`).join(" UNION ALL ");
 
   const [rawWardRows] = await db.query<IpdWardStat[]>(
     `SELECT
@@ -154,8 +183,7 @@ export async function getIpdSummary(
       COALESCE(a.admit_total,      0) AS admit_total
     FROM (${wardUnion}) w
     LEFT JOIN (
-      SELECT
-        ipt.ward AS ward_code,
+      SELECT ipt.ward AS ward_code,
         COUNT(*) AS total,
         COUNT(DISTINCT ipt.hn) AS unique_patients,
         ROUND(AVG(DATEDIFF(ipt.dchdate, ipt.regdate)), 1) AS avg_los,
@@ -177,8 +205,7 @@ export async function getIpdSummary(
   );
 
   const [totalRows] = await db.query<IpdSummaryRow[]>(
-    `SELECT
-      COUNT(*) AS total,
+    `SELECT COUNT(*) AS total,
       COUNT(DISTINCT ipt.hn) AS unique_patients,
       ROUND(AVG(DATEDIFF(ipt.dchdate, ipt.regdate)), 1) AS avg_los
     FROM ipt
@@ -234,59 +261,27 @@ export async function getBedOccupancy(
   const wards = await getActiveWards();
   if (wards.length === 0) return [];
 
-  const wardCodes = wards.map((w) => w.ward_code);
-  const placeholders = wardCodes.map(() => "?").join(",");
-
-  let admitQuery: string;
-  let admitParams: (string | string[])[];
-
-  if (start && end) {
-    // ดึงตาม regdate ในช่วงที่เลือก
-    admitQuery = `
-      SELECT a.ward AS ward_code, COUNT(*) AS current_admit
-      FROM an_stat a
-      WHERE a.regdate BETWEEN ? AND ?
-        AND a.ward IN (${placeholders})
-      GROUP BY a.ward
-    `;
-    admitParams = [start, end, ...wardCodes];
-  } else {
-    // AND ทั้ง ipt และ an_stat ต้องยังไม่ discharge
-    // ป้องกันข้อมูลเก่าค้างในตารางใดตารางหนึ่ง
-    admitQuery = `
-      SELECT ip.ward AS ward_code, COUNT(DISTINCT ip.an) AS current_admit
-      FROM ipt ip
-      INNER JOIN an_stat a ON a.an = ip.an
-      WHERE (
-        ip.dchdate IS NULL
-        OR ip.dchdate = '0000-00-00'
-        OR ip.dchdate = ''
-      )
-      AND (
-        a.dchdate IS NULL
-        OR a.dchdate = '0000-00-00'
-        OR a.dchdate = ''
-      )
-      AND ip.ward IN (${placeholders})
-      GROUP BY ip.ward
-    `;
-    admitParams = wardCodes;
-  }
-
-  const [admitRows] = await db.query<RowDataPacket[]>(admitQuery, admitParams);
-
-  const admitMap: Record<string, number> = {};
-  for (const r of admitRows) {
-    admitMap[String(r.ward_code)] = Number(r.current_admit);
-  }
-
   const rows: BedOccupancyRow[] = [];
   let homeWardTotal = 0;
   let homeWardAdmit = 0;
 
   for (const w of wards) {
-    const admit = admitMap[w.ward_code] ?? 0;
     const cfg = WARD_CONFIG[w.ward_code];
+    let admit = 0;
+
+    if (cfg.forceZero) {
+      admit = 0;
+    } else if (start && end) {
+      const realWard = cfg.realWard ?? w.ward_code;
+      const [rows2] = await db.query<RowDataPacket[]>(
+        `SELECT COUNT(*) AS cnt FROM an_stat
+         WHERE regdate BETWEEN ? AND ? AND ward = ?`,
+        [start, end, realWard],
+      );
+      admit = Number((rows2[0] as any)?.cnt ?? 0);
+    } else {
+      admit = await countAdmitLive(w.ward_code, cfg);
+    }
 
     if (cfg?.isHomeWard) {
       homeWardTotal += Number(w.total_beds);
