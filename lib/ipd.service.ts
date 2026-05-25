@@ -37,22 +37,22 @@ const WARD_CONFIG: Record<string, WardConfigItem> = {
     totalBeds: 26,
     bednoPrefixExclude: ["นช", "นญ"],
   },
-  "04": { label: "ห้องพิเศษ",    totalBeds: 11 },
-  "05": { label: "ห้องแยกโรค",   totalBeds: 2  },
+  "04": { label: "ห้องพิเศษ", totalBeds: 11 },
+  "05": { label: "ห้องแยกโรค", totalBeds: 2 },
   "11": {
     label: "เตียงเสริม",
     totalBeds: 16,
     realWard: "01",
     bednoPrefix: ["นช", "นญ"],
   },
-  "__neg__": {
+  __neg__: {
     label: "ห้องNegative",
     totalBeds: 2,
     forceZero: true, // ยังหา bedno ไม่ได้ ใช้ 0 ไปก่อน
   },
-  "15": { label: "พลับพลารักษ์",  totalBeds: 10 },
-  "17": { label: "เตียงIMC",      totalBeds: 2  },
-  "14": { label: "HW ยาเสพติด",  totalBeds: 5, isHomeWard: true },
+  "15": { label: "พลับพลารักษ์", totalBeds: 10 },
+  "17": { label: "เตียงIMC", totalBeds: 2 },
+  "14": { label: "HW ยาเสพติด", totalBeds: 5, isHomeWard: true },
   "16": { label: "HW Palliative", totalBeds: 5, isHomeWard: true },
 };
 
@@ -79,7 +79,10 @@ async function getActiveWards(): Promise<WardInfoRow[]> {
   return merged;
 }
 
-async function countAdmitLive(wardCode: string, cfg: WardConfigItem): Promise<number> {
+async function countAdmitLive(
+  wardCode: string,
+  cfg: WardConfigItem,
+): Promise<number> {
   if (cfg.forceZero) return 0;
 
   const realWard = cfg.realWard ?? wardCode;
@@ -93,7 +96,9 @@ async function countAdmitLive(wardCode: string, cfg: WardConfigItem): Promise<nu
   }
 
   if (cfg.bednoPrefixExclude?.length) {
-    const likes = cfg.bednoPrefixExclude.map(() => "ia.bedno NOT LIKE ?").join(" AND ");
+    const likes = cfg.bednoPrefixExclude
+      .map(() => "ia.bedno NOT LIKE ?")
+      .join(" AND ");
     conditions.push(`(${likes})`);
     cfg.bednoPrefixExclude.forEach((p) => params.push(`${p}%`));
   }
@@ -101,7 +106,8 @@ async function countAdmitLive(wardCode: string, cfg: WardConfigItem): Promise<nu
   // กรอง bedno ว่างออกเสมอ
   conditions.push("(ia.bedno IS NOT NULL AND ia.bedno != '')");
 
-  const bednoWhere = conditions.length > 0 ? `AND ${conditions.join(" AND ")}` : "";
+  const bednoWhere =
+    conditions.length > 0 ? `AND ${conditions.join(" AND ")}` : "";
 
   const [rows] = await db.query<RowDataPacket[]>(
     `SELECT COUNT(DISTINCT ia.an) AS cnt
@@ -119,7 +125,7 @@ async function countAdmitLive(wardCode: string, cfg: WardConfigItem): Promise<nu
      ${bednoWhere}`,
     params,
   );
-  return Number((rows[0] as any)?.cnt ?? 0);
+  return Number((rows[0] as { cnt: number })?.cnt ?? 0);
 }
 
 export async function getIpdDischarge(
@@ -170,7 +176,9 @@ export async function getIpdSummary(
 ): Promise<IpdSummaryData> {
   const wardCodes = ["01", "04", "05", "15", "17", "14", "16"];
   const placeholders = wardCodes.map(() => "?").join(",");
-  const wardUnion = wardCodes.map(() => `SELECT ? AS ward_code`).join(" UNION ALL ");
+  const wardUnion = wardCodes
+    .map(() => `SELECT ? AS ward_code`)
+    .join(" UNION ALL ");
 
   const [rawWardRows] = await db.query<IpdWardStat[]>(
     `SELECT
@@ -278,7 +286,7 @@ export async function getBedOccupancy(
          WHERE regdate BETWEEN ? AND ? AND ward = ?`,
         [start, end, realWard],
       );
-      admit = Number((rows2[0] as any)?.cnt ?? 0);
+      admit = Number((rows2[0] as { cnt: number })?.cnt ?? 0);
     } else {
       admit = await countAdmitLive(w.ward_code, cfg);
     }

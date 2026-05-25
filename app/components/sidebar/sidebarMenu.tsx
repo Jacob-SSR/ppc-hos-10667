@@ -17,6 +17,7 @@ import {
   Wallet,
   Settings,
   UserSearch,
+  Pill,
 } from "lucide-react";
 
 import { SidebarItem } from "./types";
@@ -57,6 +58,11 @@ export const DASHBOARD_ITEMS: SidebarItem[] = [
     href: "/pages/accident-dashboard",
     icon: AlertTriangle,
   },
+  {
+  label: "RDU Antibiotic Smart Use",
+  href: "/pages/rdu-dashboard",
+  icon: Pill,
+},
 ];
 
 export const REPORT_ITEMS: SidebarItem[] = [
