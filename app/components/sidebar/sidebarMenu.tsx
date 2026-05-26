@@ -114,6 +114,11 @@ export const PRIMARY_CARE_ITEMS: SidebarItem[] = [
     href: "/pages/patient-no-person",
     icon: UserSearch,
   },
+  {
+    label: "ผลัดตกหกล้ม (W00–W09)",
+    href: "/pages/fall-report",
+    icon: AlertTriangle,
+  },
 ];
 
 export const PPA_ITEMS: SidebarItem[] = [

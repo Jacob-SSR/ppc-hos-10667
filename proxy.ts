@@ -84,5 +84,6 @@ export const config = {
     "/api/tb-upload/:path*",
     "/api/accident-dashboard/:path*",
     "/api/accident-upload/:path*",
+    "/api/fall-report/:path*",
   ],
 };
