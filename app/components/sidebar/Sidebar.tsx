@@ -11,6 +11,7 @@ import {
   Settings,
   Sun,
   Moon,
+  FilePen,          // ✅ มีอยู่แล้ว ไม่ต้องเพิ่ม
 } from "lucide-react";
 
 import NavGroup from "./NavGroup";
@@ -36,13 +37,17 @@ export default function Sidebar() {
   const isSettings = pathname === "/pages/settings";
 
   const [isGuest, setIsGuest] = useState<boolean | null>(null);
+  const [isIT, setIsIT] = useState(false);   // ✅ จุด B — เพิ่มบรรทัดนี้
 
   useEffect(() => {
     let cancelled = false;
     fetch("/api/me", { credentials: "include" })
       .then((r) => r.json())
       .then((data) => {
-        if (!cancelled) setIsGuest(data.user?.role === "guest");
+        if (!cancelled) {
+          setIsGuest(data.user?.role === "guest");
+          setIsIT(data.user?.role === "IT");   // ✅ จุด C — เพิ่มบรรทัดนี้
+        }
       })
       .catch(() => {
         if (!cancelled) setIsGuest(true);
@@ -75,7 +80,6 @@ export default function Sidebar() {
 
   return (
     <aside className="flex flex-col w-60 h-full bg-white border-r border-gray-300 overflow-hidden">
-      {/* Nav items */}
       <nav className="flex-1 px-4 py-6 space-y-1 text-sm overflow-y-auto min-h-0">
         <NavGroup
           label="Dashboard"
@@ -114,6 +118,33 @@ export default function Sidebar() {
               onToggle={() => toggle(ppaOpen, setPpaOverride)}
               isActive={pathname?.startsWith("/pages/ppa") || false}
             />
+
+            {/* ✅ จุด D — เพิ่มทั้งก้อนนี้ */}
+            {isIT && (
+              <Link
+                href="/pages/it-worklog-form"
+                className="flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors"
+                style={
+                  pathname === "/pages/it-worklog-form"
+                    ? { backgroundColor: "#d6f0e0", color: "#1a5233", fontWeight: 600 }
+                    : { color: "#4b5563" }
+                }
+                onMouseEnter={(e) => {
+                  if (pathname !== "/pages/it-worklog-form")
+                    e.currentTarget.style.backgroundColor = "#e8f5ee";
+                }}
+                onMouseLeave={(e) => {
+                  if (pathname !== "/pages/it-worklog-form")
+                    e.currentTarget.style.backgroundColor = "transparent";
+                }}
+              >
+                <FilePen size={16} />
+                <div>
+                  <div className="text-xs">บันทึกงาน IT</div>
+                  <div className="text-[10px] text-gray-400">กรอกงานประจำวัน</div>
+                </div>
+              </Link>
+            )}
           </>
         )}
 
@@ -131,7 +162,6 @@ export default function Sidebar() {
 
       {/* Bottom bar */}
       <div className="px-4 pb-5 pt-2 space-y-1 border-t border-gray-100">
-        {/* Dark mode toggle */}
         <button
           onClick={() => setDarkMode(!darkMode)}
           className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors text-gray-500 hover:bg-gray-50 hover:text-gray-700"
@@ -142,7 +172,6 @@ export default function Sidebar() {
           <span>{darkMode ? "โหมดกลางวัน" : "โหมดกลางคืน"}</span>
         </button>
 
-        {/* Settings link — ซ่อนสำหรับ Guest */}
         {!isGuest && (
           <Link
             href="/pages/settings"
