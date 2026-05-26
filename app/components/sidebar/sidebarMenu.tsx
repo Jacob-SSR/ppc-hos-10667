@@ -59,10 +59,15 @@ export const DASHBOARD_ITEMS: SidebarItem[] = [
     icon: AlertTriangle,
   },
   {
-  label: "RDU Antibiotic Smart Use",
-  href: "/pages/rdu-dashboard",
-  icon: Pill,
-},
+    label: "RDU Antibiotic Smart Use",
+    href: "/pages/rdu-dashboard",
+    icon: Pill,
+  },
+  {
+    label: "STM OPD-UCS",
+    href: "/pages/stm-dashboard",
+    icon: Banknote,
+  }
 ];
 
 export const REPORT_ITEMS: SidebarItem[] = [
