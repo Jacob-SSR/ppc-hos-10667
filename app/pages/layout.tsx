@@ -1,34 +1,34 @@
+// app/pages/layout.tsx
 import Navbar from "@/app/components/Navbar";
-import Sidebar from "@/app/components/sidebar/Sidebar"
+import Sidebar from "@/app/components/sidebar/Sidebar";
 import TopProgressBar from "@/app/components/TopProgressBar";
+import MobileSidebarToggle from "@/app/components/MobileSidebarToggle";
 
-export default function NoEndpointLayout({
-    children,
-}: {
-    children: React.ReactNode;
-}) {
+export default function PagesLayout({ children }: { children: React.ReactNode }) {
     return (
         <div className="flex flex-col h-screen bg-gray-50">
-
-            {/* Top progress bar — วิ่งทุกครั้งที่เปลี่ยนหน้า */}
             <TopProgressBar />
 
-            {/* Navbar เต็มความกว้าง */}
+            {/* Navbar */}
             <div className="h-14 shrink-0 border-b border-gray-300 bg-white">
                 <Navbar />
             </div>
 
-            {/* ส่วนล่าง */}
+            {/* Body */}
             <div className="flex flex-1 overflow-hidden">
-                <aside className="flex flex-col w-56 h-full border-r border-gray-300 bg-white">
+                {/* Desktop sidebar — hidden on mobile */}
+                <aside className="hidden md:flex flex-col w-56 h-full border-r border-gray-300 bg-white">
                     <Sidebar />
                 </aside>
 
                 {/* Content */}
-            <main className="flex-1 overflow-auto p-6 bg-white"> {/* เปลี่ยนจาก bg-zinc-100 */}
-                {children}
-            </main>
+                <main className="flex-1 overflow-auto p-4 md:p-6 bg-white">
+                    {children}
+                </main>
             </div>
+
+            {/* Mobile bottom burger bar */}
+            <MobileSidebarToggle />
         </div>
     );
 }
