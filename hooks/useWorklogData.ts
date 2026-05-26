@@ -1,7 +1,4 @@
 // hooks/useWorklogData.ts
-// รวม fetch, filter, และ derived state ทั้งหมดของ IT Worklog
-// แยกออกจาก app/pages/it-worklog/page.tsx
-
 "use client";
 
 import { useState, useEffect, useMemo, useCallback } from "react";
@@ -13,8 +10,6 @@ import {
   taskShort,
 } from "@/lib/worklog.constants";
 import { fmtShort, fmtMonth, getCutoffDate } from "@/lib/worklog.utils";
-
-// ── Types ─────────────────────────────────────────────────────────────────────
 
 export interface WorkRow {
   date: string;
@@ -28,36 +23,30 @@ export interface WorkRow {
   timeliness: string;
   color?: string;
   short?: string;
-
-  [key: string]: unknown; // for any extra fields that might be added later
+  [key: string]: unknown;
 }
 
 export type ViewMode = "day" | "month";
 
-// ── Hook ──────────────────────────────────────────────────────────────────────
-
 export function useWorklogData() {
-  // ── raw data + fetch state ──────────────────────────────────────────────────
   const [allData, setAllData] = useState<WorkRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // ── filter controls ─────────────────────────────────────────────────────────
   const [selectedStaff, setSelectedStaff] = useState("ทั้งหมด");
   const [dateRange, setDateRange] = useState(30);
   const [viewMode, setViewMode] = useState<ViewMode>("day");
   const [selectedMainForSub, setSelectedMainForSub] = useState("");
 
-  // ── fetch ───────────────────────────────────────────────────────────────────
   const fetchData = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch("/api/it-worklog-csv", {
+      const res = await fetch("/api/it-worklog-sheets", {
         credentials: "include",
       });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const json = await res.json();
+      if (!res.ok) throw new Error(json?.error ?? `HTTP ${res.status}`);
       setAllData(Array.isArray(json) ? json : []);
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "โหลดข้อมูลไม่สำเร็จ");
@@ -70,7 +59,6 @@ export function useWorklogData() {
     fetchData();
   }, [fetchData]);
 
-  // ── staff list ──────────────────────────────────────────────────────────────
   const staffList = useMemo(
     () => [
       "ทั้งหมด",
@@ -81,7 +69,6 @@ export function useWorklogData() {
     [allData],
   );
 
-  // ── filtered rows ───────────────────────────────────────────────────────────
   const filtered = useMemo(() => {
     const cutStr = getCutoffDate(dateRange);
     return allData.filter((r) => {
@@ -91,7 +78,6 @@ export function useWorklogData() {
     });
   }, [allData, selectedStaff, dateRange]);
 
-  // ── KPIs ────────────────────────────────────────────────────────────────────
   const kpis = useMemo(() => {
     const totalJobs = filtered.length;
     const totalMin = filtered.reduce((s, r) => s + r.duration, 0);
@@ -103,7 +89,6 @@ export function useWorklogData() {
     const staffCount = new Set(filtered.map((r) => r.staff).filter(Boolean))
       .size;
     const avgMin = totalJobs > 0 ? Math.round(totalMin / totalJobs) : 0;
-
     return {
       totalJobs,
       totalMin,
@@ -115,14 +100,12 @@ export function useWorklogData() {
     };
   }, [filtered]);
 
-  // ── used shorts (for bar legend) ────────────────────────────────────────────
   const usedShorts = useMemo(() => {
     const s = new Set<string>();
     filtered.forEach((r) => s.add(taskShort(r.mainTask) || "อื่นๆ"));
     return Array.from(s);
   }, [filtered]);
 
-  // ── bar chart data ───────────────────────────────────────────────────────────
   const barData = useMemo(() => {
     const map = new Map<string, Record<string, number>>();
     filtered.forEach((r) => {
@@ -140,7 +123,6 @@ export function useWorklogData() {
       }));
   }, [filtered, viewMode]);
 
-  // ── area chart data ──────────────────────────────────────────────────────────
   const areaData = useMemo(() => {
     const map = new Map<string, { total: number; count: number }>();
     filtered.forEach((r) => {
@@ -159,7 +141,6 @@ export function useWorklogData() {
       }));
   }, [filtered, viewMode]);
 
-  // ── staff load ───────────────────────────────────────────────────────────────
   const staffLoad = useMemo(() => {
     const map: Record<string, number> = {};
     filtered.forEach((r) => {
@@ -174,7 +155,6 @@ export function useWorklogData() {
       .sort((a, b) => b.count - a.count);
   }, [filtered]);
 
-  // ── pie data ─────────────────────────────────────────────────────────────────
   const pieData = useMemo(() => {
     const map: Record<string, number> = {};
     filtered.forEach((r) => {
@@ -191,7 +171,6 @@ export function useWorklogData() {
       .sort((a, b) => b.value - a.value);
   }, [filtered]);
 
-  // ── mainTasks ที่มี sub ──────────────────────────────────────────────────────
   const mainTasksWithSub = useMemo(() => {
     const s = new Set<string>();
     filtered.forEach((r) => {
@@ -200,7 +179,6 @@ export function useWorklogData() {
     return Array.from(s).sort();
   }, [filtered]);
 
-  // auto-select mainTask แรกเมื่อ list เปลี่ยน
   useEffect(() => {
     if (mainTasksWithSub.length > 0 && !selectedMainForSub) {
       setSelectedMainForSub(mainTasksWithSub[0]);
@@ -208,12 +186,10 @@ export function useWorklogData() {
   }, [mainTasksWithSub, selectedMainForSub]);
 
   return {
-    // raw + fetch
     allData,
     loading,
     error,
     fetchData,
-    // filter controls
     staffList,
     selectedStaff,
     setSelectedStaff,
@@ -223,7 +199,6 @@ export function useWorklogData() {
     setViewMode,
     selectedMainForSub,
     setSelectedMainForSub,
-    // derived
     filtered,
     kpis,
     usedShorts,
@@ -232,7 +207,6 @@ export function useWorklogData() {
     staffLoad,
     pieData,
     mainTasksWithSub,
-    // re-export constants ที่ JSX ต้องใช้ต่อ
     shortColor: SHORT_COLOR,
   };
 }

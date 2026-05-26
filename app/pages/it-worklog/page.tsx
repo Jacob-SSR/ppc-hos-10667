@@ -1,8 +1,7 @@
 "use client";
 
-import { Shimmer } from "@/app/components/ui/Shimmer";
 import { StatCard } from "@/app/components/ui/StatCard";
-import CsvDropzone from "@/app/components/CsvDropzone";
+import { Shimmer } from "@/app/components/ui/Shimmer";
 import {
     DailyBarChart,
     AvgDurationChart,
@@ -51,14 +50,14 @@ export default function ItWorklogPage() {
                         <Calendar size={16} />
                         <div>
                             <p className="text-sm">ข้อมูลตามช่วงเวลา</p>
-                            <p className="text-xs text-gray-400">โหลดจาก data/it-worklog.csv</p>
+                            <p className="text-xs text-gray-400">โหลดจาก Google Sheets</p>
                         </div>
                     </div>
 
                     <div className="flex items-center gap-2 ml-auto flex-wrap">
                         {/* Date range buttons */}
                         <div className="flex rounded-md overflow-hidden border border-gray-200">
-                            {[7, 30, 90, 180, 365].map((d) => (
+                            {[7, 30, 90, 180, 365].map(d => (
                                 <button
                                     key={d}
                                     onClick={() => setDateRange(d)}
@@ -87,7 +86,7 @@ export default function ItWorklogPage() {
 
                         {/* View mode */}
                         <div className="flex rounded-md overflow-hidden border border-gray-200">
-                            {(["day", "month"] as const).map((m) => (
+                            {(["day", "month"] as const).map(m => (
                                 <button
                                     key={m}
                                     onClick={() => setViewMode(m)}
@@ -106,11 +105,11 @@ export default function ItWorklogPage() {
                         {/* Staff filter */}
                         <select
                             value={selectedStaff}
-                            onChange={(e) => setSelectedStaff(e.target.value)}
+                            onChange={e => setSelectedStaff(e.target.value)}
                             disabled={loading}
                             className="border border-gray-300 rounded px-2 py-1.5 text-sm text-gray-600 bg-white disabled:opacity-50"
                         >
-                            {staffList.map((s) => <option key={s}>{s}</option>)}
+                            {staffList.map(s => <option key={s}>{s}</option>)}
                         </select>
 
                         {/* Refresh */}
@@ -171,7 +170,6 @@ export default function ItWorklogPage() {
 
             {hasData && (
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    {/* Pie chart */}
                     <div className="bg-white border border-gray-200 rounded-lg p-4">
                         <h4 className="text-base font-bold text-[#717171] mb-4">สัดส่วนประเภทงาน</h4>
                         <div className="flex items-center gap-2 text-xs text-gray-500 mb-4">
@@ -201,7 +199,7 @@ export default function ItWorklogPage() {
                                 </PieChart>
                             </ResponsiveContainer>
                             <div className="w-full grid grid-cols-2 gap-x-4 gap-y-1.5">
-                                {pieData.map((t) => (
+                                {pieData.map(t => (
                                     <div key={t.name} className="flex items-center gap-2 min-w-0">
                                         <div className="w-2.5 h-2.5 rounded-sm shrink-0" style={{ background: t.color }} />
                                         <span className="text-xs text-gray-600 truncate flex-1">{t.short}</span>
@@ -250,7 +248,7 @@ export default function ItWorklogPage() {
                         <table className="min-w-full text-xs border-collapse">
                             <thead>
                                 <tr>
-                                    {["วันที่", "เจ้าหน้าที่", "ประเภทงาน", "หมวดย่อย", "เวลา (นาที)", "ความเร่งด่วน"].map((h) => (
+                                    {["วันที่", "เจ้าหน้าที่", "ประเภทงาน", "หมวดย่อย", "เวลา (นาที)", "ความเร่งด่วน"].map(h => (
                                         <th
                                             key={h}
                                             className="sticky top-0 text-white px-3 py-2.5 text-left font-semibold whitespace-nowrap border-r"
@@ -270,8 +268,8 @@ export default function ItWorklogPage() {
                                             key={i}
                                             className="border-b border-gray-100 transition-colors duration-100"
                                             style={{ backgroundColor: baseColor }}
-                                            onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = "#f0faf4")}
-                                            onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = baseColor)}
+                                            onMouseEnter={e => (e.currentTarget.style.backgroundColor = "#f0faf4")}
+                                            onMouseLeave={e => (e.currentTarget.style.backgroundColor = baseColor)}
                                         >
                                             <td className="px-3 py-2 whitespace-nowrap text-gray-500">
                                                 {(() => {
@@ -288,7 +286,7 @@ export default function ItWorklogPage() {
                                             <td className="px-3 py-2 whitespace-nowrap">
                                                 <span
                                                     className="inline-flex items-center px-2.5 py-0.5 rounded-full text-[10px] font-bold text-white"
-                                                    style={{ background: row.color }}
+                                                    style={{ background: row.color ?? "#94a3b8" }}
                                                 >
                                                     {row.short || row.mainTask}
                                                 </span>
@@ -297,7 +295,7 @@ export default function ItWorklogPage() {
                                                 {row.subTask
                                                     ? <span
                                                         className="inline-block px-2 py-0.5 rounded text-[10px] font-medium truncate max-w-full"
-                                                        style={{ background: row.color + "14", color: row.color, border: `1px solid ${row.color}33` }}
+                                                        style={{ background: (row.color ?? "#94a3b8") + "14", color: row.color ?? "#94a3b8", border: `1px solid ${(row.color ?? "#94a3b8")}33` }}
                                                         title={row.subTask}
                                                     >
                                                         {row.subTask}
@@ -322,8 +320,6 @@ export default function ItWorklogPage() {
                     </div>
                 </div>
             )}
-
-            <CsvDropzone onUploadSuccess={fetchData} />
         </div>
     );
 }
