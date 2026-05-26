@@ -93,14 +93,15 @@ function KtbBarChart({ units }: { units: KtbUnitSummary[] }) {
         const m = unit.รายการ.filter(i => (SVC_MAP[i.รายการขอเบิก] ?? i.รายการสั้น) === svcKey);
         return { name: svcKey, claim: m.reduce((s, i) => s + i.เรียกเก็บ, 0), comp: m.reduce((s, i) => s + i.ชดเชย, 0) };
       }).filter(s => s.claim > 0);
-      const pending = Math.max(0, unit.ชดเชย - unit.ไม่ชดเชย);
+      // แก้ไข: ไม่ชดเชย = เรียกเก็บ - ชดเชย
+      const pending = Math.max(0, unit.เรียกเก็บ - unit.ชดเชย);
       return { name: shortName, เรียกเก็บ: unit.เรียกเก็บ, ชดเชย: unit.ชดเชย, ไม่ชดเชย: pending, breakdown };
     }
     const m = unit.รายการ.filter(i => (SVC_MAP[i.รายการขอเบิก] ?? i.รายการสั้น) === selectedSvc);
     const claim = m.reduce((s, i) => s + i.เรียกเก็บ, 0);
     const comp = m.reduce((s, i) => s + i.ชดเชย, 0);
-    const nocomp = m.reduce((s, i) => s + i.ไม่ชดเชย, 0);
-    return { name: shortName, เรียกเก็บ: claim, ชดเชย: comp, ไม่ชดเชย: Math.max(0, comp - nocomp) };
+    // แก้ไข: ไม่ชดเชย = เรียกเก็บ - ชดเชย
+    return { name: shortName, เรียกเก็บ: claim, ชดเชย: comp, ไม่ชดเชย: Math.max(0, claim - comp) };
   }), [units, selectedSvc]);
 
   const colors = SVC_COLORS[selectedSvc] ?? SVC_COLORS["รวมทั้งหมด"];
@@ -311,7 +312,8 @@ function CrossTab({ units }: { units: KtbUnitSummary[] }) {
 // ─── Unit Card ────────────────────────────────────────────────────────────────
 function UnitCard({ unit }: { unit: KtbUnitSummary }) {
   const [open, setOpen] = useState(unit.isHospital);
-  const pending = Math.max(0, unit.ชดเชย - unit.ไม่ชดเชย);
+  // แก้ไข: ไม่ชดเชย = เรียกเก็บ - ชดเชย
+  const pending = Math.max(0, unit.เรียกเก็บ - unit.ชดเชย);
   const rate = unit.เรียกเก็บ > 0 ? Math.round((unit.ชดเชย / unit.เรียกเก็บ) * 1000) / 10 : 0;
   const rateColor = rate >= 90 ? "#15803d" : rate >= 60 ? "#b45309" : "#b91c1c";
 
@@ -365,7 +367,8 @@ function UnitCard({ unit }: { unit: KtbUnitSummary }) {
                   </thead>
                   <tbody>
                     {unit.รายการ.map((item, i) => {
-                      const svPending = Math.max(0, item.ชดเชย - item.ไม่ชดเชย);
+                      // แก้ไข: ไม่ชดเชย = เรียกเก็บ - ชดเชย
+                      const svPending = Math.max(0, item.เรียกเก็บ - item.ชดเชย);
                       const base = i % 2 === 0 ? "#fff" : "#f9fafb";
                       return (
                         <tr key={i} className="border-b border-gray-100 transition-colors" style={{ backgroundColor: base }}
@@ -507,8 +510,15 @@ export default function KtbDashboardPage() {
     count: filteredUnits.reduce((s, u) => s + u.จำนวน, 0),
     claim: filteredUnits.reduce((s, u) => s + u.เรียกเก็บ, 0),
     comp: filteredUnits.reduce((s, u) => s + u.ชดเชย, 0),
-    pending: filteredUnits.reduce((s, u) => s + Math.max(0, u.ชดเชย - u.ไม่ชดเชย), 0),
+    // แก้ไข: ไม่ชดเชย = เรียกเก็บ - ชดเชย
+    pending: filteredUnits.reduce((s, u) => s + Math.max(0, u.เรียกเก็บ - u.ชดเชย), 0),
   }), [filteredUnits]);
+
+  // แก้ไข: คำนวณ totalPending จาก data.units แทนที่จะใช้ data.totalPending จาก API
+  const totalPending = useMemo(() => {
+    if (!data) return 0;
+    return data.units.reduce((s, u) => s + Math.max(0, u.เรียกเก็บ - u.ชดเชย), 0);
+  }, [data]);
 
   const isFiltered = filterUnit !== "ทั้งหมด" || filterBatch !== "ทั้งหมด";
 
@@ -579,7 +589,7 @@ export default function KtbDashboardPage() {
               <span>แสดง <b className="text-gray-800">{filteredUnits.length}</b> หน่วยบริการ</span>
               <span>เรียกเก็บ <b className="text-gray-800">{fmtB(filteredTotals.claim)}</b> ฿</span>
               <span>ชดเชย <b className="text-green-700">{fmtB(filteredTotals.comp)}</b> ฿</span>
-              <span>ไม่ชดเชย<b className="text-orange-600">{fmtB(filteredTotals.pending)}</b> ฿</span>
+              <span>ไม่ชดเชย <b className="text-orange-600">{fmtB(filteredTotals.pending)}</b> ฿</span>
             </motion.div>
           )}
         </div>
@@ -594,7 +604,7 @@ export default function KtbDashboardPage() {
               <KpiCard icon={TrendingUp} label="รายการทั้งหมด" value={fmt(isFiltered ? filteredTotals.count : data.totalRows)} sub={isFiltered ? "รายการที่กรองแล้ว" : "รายการในระบบ"} accent="#0369A1" bg="#E0F2FE" />
               <KpiCard icon={Banknote} label="เรียกเก็บรวม" value={fmtB(isFiltered ? filteredTotals.claim : data.totalClaim)} sub="บาท" accent="#854D0E" bg="#FEF9C3" />
               <KpiCard icon={BadgeCheck} label="ชดเชย" value={fmtB(isFiltered ? filteredTotals.comp : data.totalComp)} sub={`${data.batches.length} งวดจ่าย`} accent="#3B6D11" bg="#EAF3DE" />
-              <KpiCard icon={AlertTriangle} label="ไม่ชดเชย" value={fmtB(isFiltered ? filteredTotals.pending : data.totalPending)} sub="ยังไม่ได้การชดเชย" accent="#C2410C" bg="#FFF7ED" />
+              <KpiCard icon={AlertTriangle} label="ไม่ชดเชย" value={fmtB(isFiltered ? filteredTotals.pending : totalPending)} sub="ยังไม่ได้การชดเชย" accent="#C2410C" bg="#FFF7ED" />
             </>}
         </div>
       )}
