@@ -49,8 +49,8 @@ export const DASHBOARD_ITEMS: SidebarItem[] = [
     icon: Wallet,
   },
   {
-    label: "TB",
-    href: "/pages/tb-dashboard",
+    label: "DMTB",
+    href: "/pages/dmtb-dashboard",
     icon: Activity,
   },
   {
@@ -67,7 +67,27 @@ export const DASHBOARD_ITEMS: SidebarItem[] = [
     label: "STM OPD-UCS",
     href: "/pages/stm-dashboard",
     icon: Banknote,
-  }
+  },
+  {
+    label: "ผู้ป่วยยาเสพติด",
+    href: "/pages/drug-dashboard",
+    icon: Activity,
+  },
+  {
+    label: "Home Ward ยาเสพติด",
+    href: "/pages/homeward-dashboard",
+    icon: BedDouble,
+  },
+  {
+    label: "Sepsis",
+    href: "/pages/sepsis-dashboard",
+    icon: Activity,
+  },
+  {
+    label: "วัณโรค (TB)",
+    href: "/pages/tb-dashboard",
+    icon: Activity,
+  },
 ];
 
 export const REPORT_ITEMS: SidebarItem[] = [

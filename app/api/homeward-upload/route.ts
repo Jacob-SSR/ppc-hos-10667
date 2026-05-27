@@ -1,4 +1,4 @@
-// app/api/tb-upload/route.ts
+// app/api/homeward-upload/route.ts
 import { NextRequest, NextResponse } from "next/server";
 import { writeFileSync, mkdirSync } from "fs";
 import path from "path";
@@ -20,38 +20,32 @@ export async function POST(req: NextRequest) {
     const buf = Buffer.from(bytes);
 
     const wb = XLSX.read(buf, { type: "buffer" });
-    // Find patient sheet
-    const sheetName =
-      wb.SheetNames.find(
-        (n) => n.includes("ผู้ป่วย") || n.toLowerCase().includes("patient"),
-      ) ?? wb.SheetNames[0];
-    const ws = wb.Sheets[sheetName];
-    const raw = XLSX.utils.sheet_to_json<unknown[]>(ws, {
-      header: 1,
-      defval: null,
-    }) as unknown[][];
-    const total = raw
-      .slice(1)
-      .filter((r) => (r as unknown[])[1] != null).length;
-
-    if (total === 0)
-      return NextResponse.json(
-        { error: "ไม่พบข้อมูลผู้ป่วยในไฟล์ (ตรวจสอบ sheet ผู้ป่วย)" },
-        { status: 400 },
-      );
+    let totalRows = 0;
+    for (const name of wb.SheetNames) {
+      const ws = wb.Sheets[name];
+      const raw = XLSX.utils.sheet_to_json<unknown[]>(ws, {
+        header: 1,
+        defval: null,
+      }) as unknown[][];
+      totalRows += raw
+        .slice(1)
+        .filter((r) => (r as unknown[])[7] != null).length;
+    }
+    if (totalRows === 0)
+      return NextResponse.json({ error: "ไม่พบข้อมูลในไฟล์" }, { status: 400 });
 
     const dataDir = path.join(process.cwd(), "data");
     mkdirSync(dataDir, { recursive: true });
-    writeFileSync(path.join(dataDir, "tb-patients.xlsx"), buf);
+    writeFileSync(path.join(dataDir, "homeward.xlsx"), buf);
 
     return NextResponse.json({
       success: true,
-      message: `อัปโหลดสำเร็จ — ${total} ราย จาก sheet "${sheetName}"`,
-      rows: total,
+      message: `อัปโหลดสำเร็จ — ${totalRows} ราย จาก ${wb.SheetNames.length} เดือน`,
+      rows: totalRows,
       filename: file.name,
     });
   } catch (err) {
-    console.error("TB upload error:", err);
+    console.error("HomeWard upload error:", err);
     return NextResponse.json(
       { error: "อัปโหลดไม่สำเร็จ: " + (err as Error).message },
       { status: 500 },
