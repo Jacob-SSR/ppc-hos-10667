@@ -1,16 +1,15 @@
 "use client";
 
-import { useEffect, useState, useCallback, useMemo } from "react";
+import { useEffect, useState, useCallback, useMemo, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid,
-  ResponsiveContainer, PieChart, Pie, Cell, LineChart, Line,
+  ResponsiveContainer, PieChart, Pie, Cell,
 } from "recharts";
 import {
-  RefreshCw, Info, UploadCloud, CheckCircle2, XCircle,
-  AlertTriangle, TrendingUp, Shield, Car, Users, Activity,
+  RefreshCw, Info, AlertTriangle, TrendingUp, Shield, Car, Users, Activity,
+  Wifi, WifiOff, Clock,
 } from "lucide-react";
-import { useRef } from "react";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 interface AccidentSummary {
@@ -29,10 +28,14 @@ interface AccidentSummary {
 }
 
 interface AccidentDashboardData {
-  updatedAt: string; sheetName: string; summary: AccidentSummary;
+  updatedAt: string;
+  sheetName: string;
+  summary: AccidentSummary;
 }
 
 // ─── Constants ────────────────────────────────────────────────────────────────
+const REFRESH_INTERVAL_MS = 30_000; // auto-refresh ทุก 30 วินาที
+
 const fmt = (n: number) => n.toLocaleString("th-TH");
 const fmtB = (n: number) =>
   n.toLocaleString("th-TH", { minimumFractionDigits: 1, maximumFractionDigits: 1 });
@@ -40,10 +43,6 @@ const fmtB = (n: number) =>
 const SEVERITY_COLOR: Record<string, string> = {
   "Dead": "#A32D2D", "Resuscitation": "#791F1F", "Emergency": "#E24B4A",
   "Urgent": "#BA7517", "semi - urgent": "#378ADD", "non - urgent": "#639922",
-};
-const STATUS_COLOR: Record<string, string> = {
-  "Dead": "#A32D2D", "Admit": "#185FA5", "D/C": "#3B6D11",
-  "follow up": "#854F0B",
 };
 const VEHICLE_COLOR: Record<string, string> = {
   "จักรยานยนต์": "#EF9F27", "ผู้โดยสาร": "#85B7EB",
@@ -54,8 +53,15 @@ const VEHICLE_COLOR: Record<string, string> = {
 function toThaiDate(iso: string): string {
   if (!iso) return "";
   const [y, m, d] = iso.slice(0, 10).split("-");
-  const thaiMonths = ["","ม.ค.","ก.พ.","มี.ค.","เม.ย.","พ.ค.","มิ.ย.","ก.ค.","ส.ค.","ก.ย.","ต.ค.","พ.ย.","ธ.ค."];
+  const thaiMonths = ["", "ม.ค.", "ก.พ.", "มี.ค.", "เม.ย.", "พ.ค.", "มิ.ย.", "ก.ค.", "ส.ค.", "ก.ย.", "ต.ค.", "พ.ย.", "ธ.ค."];
   return `${Number(d)} ${thaiMonths[Number(m)]} ${Number(y) + 543}`;
+}
+
+function timeAgo(iso: string): string {
+  const diff = Math.floor((Date.now() - new Date(iso).getTime()) / 1000);
+  if (diff < 60) return `${diff} วินาทีที่แล้ว`;
+  if (diff < 3600) return `${Math.floor(diff / 60)} นาทีที่แล้ว`;
+  return `${Math.floor(diff / 3600)} ชั่วโมงที่แล้ว`;
 }
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
@@ -121,68 +127,21 @@ function HBarChart({ data, colorMap }: {
   );
 }
 
-function UploadDropzone({ onSuccess }: { onSuccess: () => void }) {
-  const inputRef = useRef<HTMLInputElement>(null);
-  const [dragging, setDragging] = useState(false);
-  const [uploading, setUploading] = useState(false);
-  const [result, setResult] = useState<{ ok: boolean; msg: string } | null>(null);
-
-  const upload = useCallback(async (file: File) => {
-    setUploading(true); setResult(null);
-    const form = new FormData(); form.append("file", file);
-    try {
-      const res = await fetch("/api/accident-upload", { method: "POST", body: form, credentials: "include" });
-      const json = await res.json();
-      setResult({ ok: json.success, msg: json.message ?? json.error });
-      if (json.success) setTimeout(onSuccess, 600);
-    } catch { setResult({ ok: false, msg: "เชื่อมต่อ server ไม่ได้" }); }
-    finally { setUploading(false); }
-  }, [onSuccess]);
-
+// ─── Countdown ring ───────────────────────────────────────────────────────────
+function CountdownRing({ secondsLeft, total }: { secondsLeft: number; total: number }) {
+  const pct = secondsLeft / total;
+  const r = 10;
+  const circ = 2 * Math.PI * r;
   return (
-    <div className="bg-white border border-gray-200 rounded-2xl p-4">
-      <div className="flex items-center justify-between mb-3">
-        <h4 className="text-sm font-bold text-[#717171]">อัปโหลดข้อมูลอุบัติเหตุ</h4>
-        <span className="text-[11px] text-gray-400">accident.xlsx</span>
-      </div>
-      <motion.div
-        onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
-        onDragLeave={() => setDragging(false)}
-        onDrop={(e) => { e.preventDefault(); setDragging(false); const f = e.dataTransfer.files[0]; if (f) upload(f); }}
-        onClick={() => !uploading && inputRef.current?.click()}
-        animate={{ borderColor: dragging ? "#3aa36a" : "#d1d5db", backgroundColor: dragging ? "#f0faf4" : "#fafafa", scale: dragging ? 1.01 : 1 }}
-        className="border-2 border-dashed rounded-xl cursor-pointer flex flex-col items-center gap-2 py-6 select-none"
-      >
-        <input ref={inputRef} type="file" accept=".xlsx,.xls" className="hidden"
-          onChange={(e) => { const f = e.target.files?.[0]; if (f) upload(f); e.target.value = ""; }} />
-        <AnimatePresence mode="wait">
-          {uploading ? (
-            <motion.div key="up" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="flex flex-col items-center gap-2">
-              <motion.div animate={{ rotate: 360 }} transition={{ duration: 1, repeat: Infinity, ease: "linear" }}><RefreshCw size={28} className="text-green-600" /></motion.div>
-              <p className="text-sm font-semibold text-green-700">กำลังอัปโหลด...</p>
-            </motion.div>
-          ) : result?.ok ? (
-            <motion.div key="ok" initial={{ opacity: 0, scale: 0.85 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0 }} className="flex flex-col items-center gap-1">
-              <CheckCircle2 size={28} className="text-green-600" />
-              <p className="text-sm font-bold text-green-700">{result.msg}</p>
-              <p className="text-xs text-gray-400 underline cursor-pointer" onClick={(e) => { e.stopPropagation(); setResult(null); }}>อัปโหลดไฟล์ใหม่</p>
-            </motion.div>
-          ) : result ? (
-            <motion.div key="err" initial={{ opacity: 0, scale: 0.85 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0 }} className="flex flex-col items-center gap-1">
-              <XCircle size={28} className="text-red-500" />
-              <p className="text-sm font-semibold text-red-600">{result.msg}</p>
-              <p className="text-xs text-gray-500 underline cursor-pointer" onClick={(e) => { e.stopPropagation(); setResult(null); }}>ลองใหม่</p>
-            </motion.div>
-          ) : (
-            <motion.div key="idle" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="flex flex-col items-center gap-1 pointer-events-none">
-              <UploadCloud size={28} style={{ color: dragging ? "#3aa36a" : "#9ca3af" }} />
-              <p className="text-sm font-semibold text-gray-600">{dragging ? "ปล่อยเพื่ออัปโหลด" : "ลากวางไฟล์ หรือคลิกเพื่อเลือก"}</p>
-              <p className="text-xs text-gray-400">ไฟล์ Excel ข้อมูลอุบัติเหตุ RTI</p>
-            </motion.div>
-          )}
-        </AnimatePresence>
-      </motion.div>
-    </div>
+    <svg width={28} height={28} viewBox="0 0 28 28" className="-rotate-90">
+      <circle cx={14} cy={14} r={r} fill="none" stroke="#e5e7eb" strokeWidth={3} />
+      <circle cx={14} cy={14} r={r} fill="none" stroke="#3aa36a" strokeWidth={3}
+        strokeDasharray={circ}
+        strokeDashoffset={circ * (1 - pct)}
+        strokeLinecap="round"
+        style={{ transition: "stroke-dashoffset 1s linear" }}
+      />
+    </svg>
   );
 }
 
@@ -191,20 +150,41 @@ export default function AccidentDashboardPage() {
   const [data, setData] = useState<AccidentDashboardData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [noFile, setNoFile] = useState(false);
+  const [secondsLeft, setSecondsLeft] = useState(REFRESH_INTERVAL_MS / 1000);
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const countdownRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  const fetchData = useCallback(async () => {
-    setLoading(true); setError(null); setNoFile(false);
+  const fetchData = useCallback(async (silent = false) => {
+    if (!silent) setLoading(true);
+    setError(null);
     try {
-      const res = await fetch("/api/accident-dashboard", { credentials: "include" });
-      if (res.status === 404) { setNoFile(true); setLoading(false); return; }
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const res = await fetch("/api/accident-sheets", { credentials: "include" });
+      if (!res.ok) {
+        const json = await res.json().catch(() => ({}));
+        throw new Error(json.error ?? `HTTP ${res.status}`);
+      }
       setData(await res.json());
-    } catch (e) { setError((e as Error).message); }
-    finally { setLoading(false); }
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      if (!silent) setLoading(false);
+    }
+    // รีเซ็ต countdown
+    setSecondsLeft(REFRESH_INTERVAL_MS / 1000);
   }, []);
 
-  useEffect(() => { fetchData(); }, [fetchData]);
+  // auto-refresh
+  useEffect(() => {
+    fetchData();
+    timerRef.current = setInterval(() => fetchData(true), REFRESH_INTERVAL_MS);
+    countdownRef.current = setInterval(() => {
+      setSecondsLeft((s) => (s <= 1 ? REFRESH_INTERVAL_MS / 1000 : s - 1));
+    }, 1000);
+    return () => {
+      if (timerRef.current) clearInterval(timerRef.current);
+      if (countdownRef.current) clearInterval(countdownRef.current);
+    };
+  }, [fetchData]);
 
   const s = data?.summary;
 
@@ -227,94 +207,130 @@ export default function AccidentDashboardPage() {
     [s]);
 
   const timeSlotData = useMemo(() => {
-    const order = ["00:00–04:00","04:00–08:00","08:00–12:00","12:00–16:00","16:00–20:00","20:00–24:00"];
+    const order = ["00:00–04:00", "04:00–08:00", "08:00–12:00", "12:00–16:00", "16:00–20:00", "20:00–24:00"];
     const raw = s?.byTimeSlot ?? {};
     return order.map((t) => ({ t, count: raw[t] ?? 0 }));
   }, [s]);
 
   const dayData = useMemo(() =>
-    (s?.byDay ?? []).map((d) => ({ label: toThaiDate(d.date).slice(0, 6), count: d.count, date: d.date })),
+    (s?.byDay ?? []).map((d) => ({ label: toThaiDate(d.date).slice(0, 6), count: d.count })),
     [s]);
-
-  const shimmer = <div className="h-32 rounded-2xl bg-gray-100 animate-pulse" />;
 
   return (
     <div className="space-y-4">
       {/* Header */}
       <div className="bg-white border border-gray-200 rounded-2xl shadow-sm px-6 py-4 flex flex-wrap items-center justify-between gap-4">
         <div>
-          <h1 className="text-lg font-bold text-gray-800">
-            Dashboard อุบัติเหตุทางถนน (RTI)
-            {data?.sheetName && (
-              <span className="ml-2 text-sm font-normal text-gray-400">— {data.sheetName}</span>
+          <div className="flex items-center gap-2">
+            <h1 className="text-lg font-bold text-gray-800">
+              Dashboard อุบัติเหตุทางถนน (RTI)
+            </h1>
+            {/* Live badge */}
+            <span className="flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-bold border"
+              style={{ backgroundColor: "#f0faf4", borderColor: "#a8d5ba", color: "#1a5233" }}>
+              <span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse inline-block" />
+              LIVE
+            </span>
+          </div>
+          <p className="text-xs text-gray-400 mt-0.5 flex items-center gap-2">
+            <span>ดึงข้อมูลจาก Google Sheets แบบ Real-time</span>
+            {data && (
+              <>
+                <span>·</span>
+                <Clock size={11} />
+                <span>อัปเดต {timeAgo(data.updatedAt)}</span>
+              </>
             )}
-          </h1>
-          <p className="text-xs text-gray-400 mt-0.5">
-            ข้อมูลอุบัติเหตุทางถนน · ไม่แสดงชื่อ-นามสกุลผู้ป่วย
-            {data && <span className="ml-2">· อัปเดต {new Date(data.updatedAt).toLocaleString("th-TH")}</span>}
           </p>
         </div>
-        <button onClick={fetchData} disabled={loading}
-          className="flex items-center gap-1.5 border border-gray-200 rounded-lg px-3 py-1.5 text-sm text-gray-600 hover:bg-gray-50 disabled:opacity-40">
-          <motion.span animate={loading ? { rotate: 360 } : { rotate: 0 }}
-            transition={loading ? { duration: 0.8, repeat: Infinity, ease: "linear" } : {}}>
-            <RefreshCw size={14} />
-          </motion.span>
-          รีเฟรช
-        </button>
+
+        <div className="flex items-center gap-3">
+          {/* Countdown */}
+          <div className="flex items-center gap-1.5 text-xs text-gray-500">
+            <CountdownRing secondsLeft={secondsLeft} total={REFRESH_INTERVAL_MS / 1000} />
+            <span className="tabular-nums font-medium">{secondsLeft}s</span>
+          </div>
+
+          <button onClick={() => fetchData()} disabled={loading}
+            className="flex items-center gap-1.5 border border-gray-200 rounded-lg px-3 py-1.5 text-sm text-gray-600 hover:bg-gray-50 disabled:opacity-40 transition-colors">
+            <motion.span animate={loading ? { rotate: 360 } : { rotate: 0 }}
+              transition={loading ? { duration: 0.8, repeat: Infinity, ease: "linear" } : {}}>
+              <RefreshCw size={14} />
+            </motion.span>
+            รีเฟรช
+          </button>
+
+          {/* Connection status */}
+          {error
+            ? <span className="flex items-center gap-1 text-xs text-red-500 font-medium"><WifiOff size={13} />ไม่เชื่อมต่อ</span>
+            : data
+              ? <span className="flex items-center gap-1 text-xs text-green-600 font-medium"><Wifi size={13} />เชื่อมต่อแล้ว</span>
+              : null}
+        </div>
       </div>
 
-      {/* No file */}
-      {noFile && !loading && (
-        <div className="bg-amber-50 border border-amber-200 rounded-2xl p-6 flex items-start gap-3">
-          <Info size={18} className="text-amber-600 shrink-0 mt-0.5" />
+      {/* Error */}
+      {error && (
+        <div className="bg-red-50 border border-red-200 rounded-2xl p-4 flex items-start gap-3">
+          <Info size={16} className="text-red-500 shrink-0 mt-0.5" />
           <div>
-            <p className="text-sm font-bold text-amber-800">ยังไม่มีข้อมูล</p>
-            <p className="text-xs text-amber-700 mt-1">กรุณาอัปโหลดไฟล์ Excel ข้อมูลอุบัติเหตุ RTI ด้านล่าง</p>
+            <p className="text-sm font-bold text-red-700">ไม่สามารถดึงข้อมูลได้</p>
+            <p className="text-xs text-red-600 mt-0.5">{error}</p>
+            <p className="text-xs text-gray-400 mt-1">ตรวจสอบ GOOGLE_SERVICE_ACCOUNT_EMAIL / GOOGLE_PRIVATE_KEY ใน .env</p>
           </div>
         </div>
       )}
-      {error && <div className="bg-red-50 border border-red-200 rounded-2xl p-4 text-sm text-red-700">⚠️ {error}</div>}
+
+      {/* Loading shimmer */}
+      {loading && !data && (
+        <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-3">
+          {Array.from({ length: 8 }).map((_, i) => (
+            <div key={i} className="h-[130px] rounded-2xl bg-gray-100 animate-pulse" />
+          ))}
+        </div>
+      )}
 
       {/* KPI Cards */}
-      {(loading || s) && (
+      {s && (
         <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-3">
-          {loading ? Array.from({ length: 8 }).map((_, i) => <div key={i} className="h-[130px] rounded-2xl bg-gray-100 animate-pulse" />)
-            : s && (
-              <>
-                <KpiCard icon={Users} label="ผู้บาดเจ็บทั้งหมด" value={fmt(s.total)} sub="ราย" accent="#0369A1" bg="#E0F2FE" />
-                <KpiCard icon={AlertTriangle} label="เสียชีวิต" value={fmt(s.dead)} sub={`${fmtB((s.dead / s.total) * 100)}%`} accent="#A32D2D" bg="#FCEBEB" />
-                <KpiCard icon={Activity} label="Admit" value={fmt(s.admit)} sub={`${fmtB((s.admit / s.total) * 100)}%`} accent="#185FA5" bg="#E6F1FB" />
-                <KpiCard icon={TrendingUp} label="Refer รพ.อื่น" value={fmt(s.refer)} sub={`${fmtB((s.refer / s.total) * 100)}%`} accent="#854F0B" bg="#FAEEDA" />
-                <KpiCard icon={Users} label="กลับบ้าน (D/C)" value={fmt(s.dc)} sub={`${fmtB((s.dc / s.total) * 100)}%`} accent="#3B6D11" bg="#EAF3DE" />
-                <KpiCard icon={Car} label="จักรยานยนต์" value={fmt(s.motorcycleCount)} sub={`${fmtB((s.motorcycleCount / s.total) * 100)}%`} accent="#854F0B" bg="#FAEEDA" />
-                <KpiCard icon={AlertTriangle} label="ดื่มแล้วขับ" value={fmt(s.drinkCount)} sub={`${fmtB((s.drinkCount / s.total) * 100)}%`} accent="#A32D2D" bg="#FCEBEB" />
-                <KpiCard icon={Shield} label="อายุเฉลี่ย" value={`${s.avgAge} ปี`} sub={`${s.minAge}–${s.maxAge} ปี`} accent="#185FA5" bg="#E6F1FB" />
-              </>
-            )}
+          <KpiCard icon={Users} label="ผู้บาดเจ็บทั้งหมด" value={fmt(s.total)} sub="ราย" accent="#0369A1" bg="#E0F2FE" />
+          <KpiCard icon={AlertTriangle} label="เสียชีวิต" value={fmt(s.dead)}
+            sub={s.total > 0 ? `${fmtB((s.dead / s.total) * 100)}%` : "0%"} accent="#A32D2D" bg="#FCEBEB" />
+          <KpiCard icon={Activity} label="Admit" value={fmt(s.admit)}
+            sub={s.total > 0 ? `${fmtB((s.admit / s.total) * 100)}%` : "0%"} accent="#185FA5" bg="#E6F1FB" />
+          <KpiCard icon={TrendingUp} label="Refer รพ.อื่น" value={fmt(s.refer)}
+            sub={s.total > 0 ? `${fmtB((s.refer / s.total) * 100)}%` : "0%"} accent="#854F0B" bg="#FAEEDA" />
+          <KpiCard icon={Users} label="กลับบ้าน (D/C)" value={fmt(s.dc)}
+            sub={s.total > 0 ? `${fmtB((s.dc / s.total) * 100)}%` : "0%"} accent="#3B6D11" bg="#EAF3DE" />
+          <KpiCard icon={Car} label="จักรยานยนต์" value={fmt(s.motorcycleCount)}
+            sub={s.total > 0 ? `${fmtB((s.motorcycleCount / s.total) * 100)}%` : "0%"} accent="#854F0B" bg="#FAEEDA" />
+          <KpiCard icon={AlertTriangle} label="ดื่มแล้วขับ" value={fmt(s.drinkCount)}
+            sub={s.total > 0 ? `${fmtB((s.drinkCount / s.total) * 100)}%` : "0%"} accent="#A32D2D" bg="#FCEBEB" />
+          <KpiCard icon={Shield} label="อายุเฉลี่ย" value={`${s.avgAge} ปี`}
+            sub={`${s.minAge}–${s.maxAge} ปี`} accent="#185FA5" bg="#E6F1FB" />
         </div>
       )}
 
       {/* Charts row 1 */}
       {s && (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {/* Daily trend */}
           <SectionCard title="จำนวนผู้บาดเจ็บรายวัน">
-            <ResponsiveContainer width="100%" height={200}>
-              <BarChart data={dayData} margin={{ top: 4, right: 4, left: -20, bottom: 0 }} barCategoryGap="20%">
-                <CartesianGrid vertical={false} stroke="#e5e7eb" />
-                <XAxis dataKey="label" tick={{ fontSize: 10, fill: "#6b7280" }} axisLine={false} tickLine={false} interval="preserveStartEnd" />
-                <YAxis tick={{ fontSize: 10, fill: "#6b7280" }} axisLine={false} tickLine={false} />
-                <Tooltip
-                  formatter={(v: number) => [v + " ราย", "ผู้บาดเจ็บ"]}
-                  contentStyle={{ fontSize: 12, borderRadius: 8, border: "1px solid #e5e7eb" }}
-                />
-                <Bar dataKey="count" fill="#378ADD" radius={[3, 3, 0, 0]} />
-              </BarChart>
-            </ResponsiveContainer>
+            {dayData.length === 0
+              ? <p className="text-xs text-gray-400 text-center py-8">ยังไม่มีข้อมูล</p>
+              : (
+                <ResponsiveContainer width="100%" height={200}>
+                  <BarChart data={dayData} margin={{ top: 4, right: 4, left: -20, bottom: 0 }} barCategoryGap="20%">
+                    <CartesianGrid vertical={false} stroke="#e5e7eb" />
+                    <XAxis dataKey="label" tick={{ fontSize: 10, fill: "#6b7280" }} axisLine={false} tickLine={false} interval="preserveStartEnd" />
+                    <YAxis tick={{ fontSize: 10, fill: "#6b7280" }} axisLine={false} tickLine={false} />
+                    <Tooltip formatter={(v: number) => [v + " ราย", "ผู้บาดเจ็บ"]}
+                      contentStyle={{ fontSize: 12, borderRadius: 8, border: "1px solid #e5e7eb" }} />
+                    <Bar dataKey="count" fill="#378ADD" radius={[3, 3, 0, 0]} />
+                  </BarChart>
+                </ResponsiveContainer>
+              )}
           </SectionCard>
 
-          {/* Age x sex */}
           <SectionCard title="กลุ่มอายุแยกเพศ">
             <ResponsiveContainer width="100%" height={200}>
               <BarChart data={s.byAgeGroup} margin={{ top: 4, right: 4, left: -20, bottom: 0 }} barCategoryGap="20%" barGap={2}>
@@ -337,41 +353,44 @@ export default function AccidentDashboardPage() {
       {/* Charts row 2 */}
       {s && (
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          {/* Severity */}
           <SectionCard title="ระดับความรุนแรง">
-            <div className="flex flex-col items-center">
-              <div style={{ width: "100%", height: 160 }}>
-                <ResponsiveContainer>
-                  <PieChart>
-                    <Pie data={severityData} cx="50%" cy="50%" innerRadius={45} outerRadius={70}
-                      dataKey="count" paddingAngle={2}>
-                      {severityData.map((d, i) => <Cell key={i} fill={d.color} />)}
-                    </Pie>
-                    <Tooltip formatter={(v: number, n: string) => [v + " ราย", n]}
-                      contentStyle={{ fontSize: 12, borderRadius: 8 }} />
-                  </PieChart>
-                </ResponsiveContainer>
-              </div>
-              <div className="w-full space-y-1.5 mt-2">
-                {severityData.map((d) => (
-                  <div key={d.label} className="flex items-center justify-between text-xs">
-                    <span className="flex items-center gap-1.5">
-                      <span className="w-2.5 h-2.5 rounded-sm shrink-0" style={{ background: d.color }} />
-                      <span className="text-gray-600">{d.label}</span>
-                    </span>
-                    <span className="font-bold text-gray-800 tabular-nums">{d.count}</span>
+            {severityData.length === 0
+              ? <p className="text-xs text-gray-400 text-center py-8">ยังไม่มีข้อมูล</p>
+              : (
+                <div className="flex flex-col items-center">
+                  <div style={{ width: "100%", height: 160 }}>
+                    <ResponsiveContainer>
+                      <PieChart>
+                        <Pie data={severityData} cx="50%" cy="50%" innerRadius={45} outerRadius={70}
+                          dataKey="count" paddingAngle={2}>
+                          {severityData.map((d, i) => <Cell key={i} fill={d.color} />)}
+                        </Pie>
+                        <Tooltip formatter={(v: number, n: string) => [v + " ราย", n]}
+                          contentStyle={{ fontSize: 12, borderRadius: 8 }} />
+                      </PieChart>
+                    </ResponsiveContainer>
                   </div>
-                ))}
-              </div>
-            </div>
+                  <div className="w-full space-y-1.5 mt-2">
+                    {severityData.map((d) => (
+                      <div key={d.label} className="flex items-center justify-between text-xs">
+                        <span className="flex items-center gap-1.5">
+                          <span className="w-2.5 h-2.5 rounded-sm shrink-0" style={{ background: d.color }} />
+                          <span className="text-gray-600">{d.label}</span>
+                        </span>
+                        <span className="font-bold text-gray-800 tabular-nums">{d.count}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
           </SectionCard>
 
-          {/* Vehicle */}
           <SectionCard title="ประเภทพาหนะ">
-            <HBarChart data={vehicleData} colorMap={VEHICLE_COLOR} />
+            {vehicleData.length === 0
+              ? <p className="text-xs text-gray-400 text-center py-8">ยังไม่มีข้อมูล</p>
+              : <HBarChart data={vehicleData} colorMap={VEHICLE_COLOR} />}
           </SectionCard>
 
-          {/* Time slot */}
           <SectionCard title="ช่วงเวลาที่เกิดเหตุ">
             <div className="space-y-2">
               {timeSlotData.map((d) => {
@@ -401,12 +420,12 @@ export default function AccidentDashboardPage() {
       {/* Charts row 3 */}
       {s && (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {/* Tambon */}
           <SectionCard title="ตำบลที่เกิดเหตุ">
-            <HBarChart data={tambonData} />
+            {tambonData.length === 0
+              ? <p className="text-xs text-gray-400 text-center py-8">ยังไม่มีข้อมูล</p>
+              : <HBarChart data={tambonData} />}
           </SectionCard>
 
-          {/* Protection + Alcohol */}
           <SectionCard title="การป้องกันและปัจจัยเสี่ยง">
             <div className="grid grid-cols-2 gap-4">
               <div>
@@ -421,9 +440,8 @@ export default function AccidentDashboardPage() {
                 <p className="text-xs text-gray-400 font-medium mb-3">การดื่มสุรา</p>
                 <div className="space-y-3 mt-1">
                   {[
-                    { label: "ไม่ดื่ม", count: s.total - s.drinkCount - 2, color: "#639922" },
+                    { label: "ไม่ดื่ม", count: Math.max(0, s.total - s.drinkCount), color: "#639922" },
                     { label: "ดื่ม", count: s.drinkCount, color: "#A32D2D" },
-                    { label: "ไม่ทราบ", count: 2, color: "#888780" },
                   ].map((d) => (
                     <div key={d.label}>
                       <div className="flex justify-between text-xs mb-1">
@@ -434,7 +452,7 @@ export default function AccidentDashboardPage() {
                         <motion.div className="h-full rounded-full"
                           style={{ backgroundColor: d.color }}
                           initial={{ width: 0 }}
-                          animate={{ width: `${(d.count / s.total) * 100}%` }}
+                          animate={{ width: `${s.total > 0 ? (d.count / s.total) * 100 : 0}%` }}
                           transition={{ duration: 0.6, ease: "easeOut" }}
                         />
                       </div>
@@ -454,8 +472,17 @@ export default function AccidentDashboardPage() {
         </div>
       )}
 
-      {/* Upload */}
-      <UploadDropzone onSuccess={fetchData} />
+      {/* Empty state */}
+      {!loading && !error && data && s?.total === 0 && (
+        <div className="bg-amber-50 border border-amber-200 rounded-2xl p-8 flex flex-col items-center gap-3 text-center">
+          <Info size={32} className="text-amber-500" />
+          <p className="text-sm font-bold text-amber-800">ยังไม่มีข้อมูลใน Spreadsheet</p>
+          <p className="text-xs text-amber-700">เพิ่มข้อมูลลงใน Google Sheets แล้ว Dashboard จะอัปเดตอัตโนมัติทุก 30 วินาที</p>
+          <p className="text-[11px] text-gray-400 font-mono mt-1">
+            ID: 1XlHb3jU93RzZ7kkE-LY1vL2sFRTiesh2nxRw9vGDeWY
+          </p>
+        </div>
+      )}
     </div>
   );
 }
