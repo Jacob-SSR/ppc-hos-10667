@@ -4,7 +4,16 @@
 // แต่ละ sheet = รายเดือน เช่น "พฤศจิกายน 2568", "ธันวาคม 2568" ฯลฯ
 
 import { NextResponse } from "next/server";
-import { google } from "googleapis";
+import {
+  getSheetClient,
+  getAllSheetTitles,
+  getValues,
+  toStr,
+  toNum,
+  toNumOrNull,
+  parseDate as parseDateShared,
+  sheetsError,
+} from "@/lib/sheets";
 
 const SPREADSHEET_ID =
   process.env.HOMEWARD_SPREADSHEET_ID ||
@@ -61,51 +70,15 @@ export interface HomeWardSummary {
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
-function toStr(v: unknown): string {
-  if (v == null) return "";
-  return String(v).trim();
-}
-
-function toNum(v: unknown): number | null {
-  if (v == null || v === "") return null;
-  const n = Number(String(v).replace(/,/g, "").trim());
-  return isNaN(n) ? null : n;
-}
-
+// homeward: chodchey ต้องเป็น number เสมอ (ไม่ใช่ null) → wrap toNumOrNull
 function toNumForce(v: unknown): number {
-  return toNum(v) ?? 0;
+  return toNumOrNull(v) ?? 0;
 }
 
-// แปลงวันที่จาก Google Sheets (ได้เป็น string ต่างๆ) → YYYY-MM-DD
+// parseDate เฉพาะ homeward — ปิด Excel serial เพื่อให้ตรง behavior เดิม
+// (เดิม homeward.parseDate ไม่รองรับ serial และไม่ validate ช่วงปี)
 function parseDate(raw: string): string {
-  if (!raw || raw.trim() === "" || raw.trim() === "-") return "";
-  const s = raw.trim();
-
-  // DD/MM/YYYY (Thai year พ.ศ.)
-  let m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
-  if (m) {
-    let y = parseInt(m[3]);
-    if (y > 2400) y -= 543;
-    return `${y}-${m[2].padStart(2, "0")}-${m[1].padStart(2, "0")}`;
-  }
-
-  // YYYY-MM-DD
-  m = s.match(/^(\d{4})-(\d{2})-(\d{2})$/);
-  if (m) {
-    let y = parseInt(m[1]);
-    if (y > 2400) y -= 543;
-    return `${y}-${m[2]}-${m[3]}`;
-  }
-
-  // DD-MM-YYYY
-  m = s.match(/^(\d{1,2})-(\d{1,2})-(\d{4})$/);
-  if (m) {
-    let y = parseInt(m[3]);
-    if (y > 2400) y -= 543;
-    return `${y}-${m[2].padStart(2, "0")}-${m[1].padStart(2, "0")}`;
-  }
-
-  return "";
+  return parseDateShared(raw, { serial: false });
 }
 
 // แปลงชื่อ sheet เป็น "YYYY-MM" (CE)
@@ -172,18 +145,6 @@ function classifyDrug(pdx: string): string {
   if (p.startsWith("F20")) return "จิตเภท (F20)";
   if (p.startsWith("F")) return `อื่นๆ (${pdx.substring(0, 3)})`;
   return "ไม่ระบุ";
-}
-
-// ─── Auth ─────────────────────────────────────────────────────────────────────
-async function getSheetClient() {
-  const auth = new google.auth.GoogleAuth({
-    credentials: {
-      client_email: process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL,
-      private_key: process.env.GOOGLE_PRIVATE_KEY?.replace(/\\n/g, "\n"),
-    },
-    scopes: ["https://www.googleapis.com/auth/spreadsheets.readonly"],
-  });
-  return google.sheets({ version: "v4", auth });
 }
 
 // ─── Parse one sheet ──────────────────────────────────────────────────────────
@@ -267,12 +228,12 @@ function parseSheet(
     const anRaw = toStr(r[cAn]);
 
     rows.push({
-      no: toNum(r[cNo]) ?? i,
+      no: toNumOrNull(r[cNo]) ?? i,
       month: monthKey,
       monthTh: sheetName,
       admitDate: parseDate(toStr(r[cAdmit])),
       dcDate: parseDate(toStr(r[cDc])),
-      daysStay: toNum(r[cDays]),
+      daysStay: toNumOrNull(r[cDays]),
       ward: toStr(r[cWard]),
       sitthi: toStr(r[cSitthi]),
       an: anRaw
@@ -282,15 +243,15 @@ function parseSheet(
       pdx,
       drugType: classifyDrug(pdx),
       tambon: toStr(r[cTambon]) || "ไม่ระบุ",
-      age: toNum(r[cAge]),
+      age: toNumOrNull(r[cAge]),
       rpsst: toStr(r[cRpsst]) || "ไม่ระบุ",
       chodchey,
-      preAdjRw: toNum(r[cPreAdj]),
-      adjRw: toNum(r[cAdj]),
-      rwPostAudit: toNum(r[cRwPost]),
+      preAdjRw: toNumOrNull(r[cPreAdj]),
+      adjRw: toNumOrNull(r[cAdj]),
+      rwPostAudit: toNumOrNull(r[cRwPost]),
       claimDate: parseDate(toStr(r[cClaim])),
       channel: toStr(r[cChannel]),
-      totalSubmitDays: toNum(r[cSubmit]),
+      totalSubmitDays: toNumOrNull(r[cSubmit]),
       isCompensated,
     });
   }
@@ -353,12 +314,7 @@ export async function GET(req: Request) {
     const sheets = await getSheetClient();
 
     // ดึงรายชื่อ sheet ทั้งหมด
-    const meta = await sheets.spreadsheets.get({
-      spreadsheetId: SPREADSHEET_ID,
-    });
-    const sheetNames = (meta.data.sheets ?? [])
-      .map((s) => s.properties?.title ?? "")
-      .filter(Boolean);
+    const sheetNames = await getAllSheetTitles(sheets, SPREADSHEET_ID);
 
     const allRows: HomeWardSheetRow[] = [];
     let firstDebug:
@@ -366,11 +322,7 @@ export async function GET(req: Request) {
       | undefined;
 
     for (const sheetName of sheetNames) {
-      const res = await sheets.spreadsheets.values.get({
-        spreadsheetId: SPREADSHEET_ID,
-        range: `${sheetName}!A:V`,
-      });
-      const raw = (res.data.values ?? []) as string[][];
+      const raw = await getValues(sheets, SPREADSHEET_ID, `${sheetName}!A:V`);
       if (raw.length < 2) continue;
 
       if (debug && !firstDebug) {
@@ -400,13 +352,6 @@ export async function GET(req: Request) {
 
     return NextResponse.json(response);
   } catch (err) {
-    console.error("HomewardSheets error:", err);
-    return NextResponse.json(
-      {
-        error:
-          "ดึงข้อมูลจาก Google Sheets ไม่สำเร็จ: " + (err as Error).message,
-      },
-      { status: 500 },
-    );
+    return sheetsError(err, "HomewardSheets");
   }
 }

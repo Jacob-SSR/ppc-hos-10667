@@ -1,15 +1,18 @@
 "use client";
 
-import { useEffect, useState, useCallback, useMemo, useRef } from "react";
-import { motion, AnimatePresence } from "framer-motion";
+import { useMemo } from "react";
+import { motion } from "framer-motion";
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid,
   ResponsiveContainer, PieChart, Pie, Cell,
 } from "recharts";
 import {
-  RefreshCw, Info, AlertTriangle, TrendingUp, Shield, Car, Users, Activity,
-  Wifi, WifiOff, Clock,
+  Info, AlertTriangle, TrendingUp, Shield, Car, Users, Activity, Clock,
 } from "lucide-react";
+import {
+  useAutoRefresh, timeAgo, CountdownRing, KpiCard, HBarList,
+  SectionCard, LiveBadge, ConnectionStatus, RefreshButton,
+} from "@/app/components/dashboard/live";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 interface AccidentSummary {
@@ -34,7 +37,7 @@ interface AccidentDashboardData {
 }
 
 // ─── Constants ────────────────────────────────────────────────────────────────
-const REFRESH_INTERVAL_MS = 30_000; // auto-refresh ทุก 30 วินาที
+const REFRESH_INTERVAL_MS = 30_000;
 
 const fmt = (n: number) => n.toLocaleString("th-TH");
 const fmtB = (n: number) =>
@@ -49,145 +52,10 @@ const VEHICLE_COLOR: Record<string, string> = {
   "รถยนต์ 4 ล้อ": "#97C459", "เดินทางเท้า": "#888780", "จักรยาน": "#D4537E",
 };
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
-function toThaiDate(iso: string): string {
-  if (!iso) return "";
-  const parts = iso.slice(0, 10).split("-");
-  if (parts.length !== 3) return iso;
-  const [y, m, d] = parts.map(Number);
-  if (isNaN(y) || isNaN(m) || isNaN(d) || m < 1 || m > 12) return iso;
-  const thaiMonths = ["", "ม.ค.", "ก.พ.", "มี.ค.", "เม.ย.", "พ.ค.", "มิ.ย.", "ก.ค.", "ส.ค.", "ก.ย.", "ต.ค.", "พ.ย.", "ธ.ค."];
-  return `${d} ${thaiMonths[m]} ${y + 543}`;
-}
-
-function timeAgo(iso: string): string {
-  const diff = Math.floor((Date.now() - new Date(iso).getTime()) / 1000);
-  if (diff < 60) return `${diff} วินาทีที่แล้ว`;
-  if (diff < 3600) return `${Math.floor(diff / 60)} นาทีที่แล้ว`;
-  return `${Math.floor(diff / 3600)} ชั่วโมงที่แล้ว`;
-}
-
-// ─── Sub-components ───────────────────────────────────────────────────────────
-function KpiCard({ icon: Icon, label, value, sub, accent, bg }: {
-  icon: React.ElementType; label: string; value: string; sub?: string; accent: string; bg: string;
-}) {
-  return (
-    <motion.div
-      className="rounded-2xl p-5 flex flex-col gap-2"
-      style={{ backgroundColor: bg }}
-      initial={{ opacity: 0, y: 12 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ type: "spring", stiffness: 260, damping: 22 }}
-    >
-      <div className="w-9 h-9 rounded-xl flex items-center justify-center"
-        style={{ backgroundColor: accent + "22" }}>
-        <Icon size={18} style={{ color: accent }} strokeWidth={1.8} />
-      </div>
-      <p className="text-xs font-bold tracking-wide" style={{ color: accent }}>{label}</p>
-      <p className="text-2xl font-extrabold tabular-nums" style={{ color: accent }}>{value}</p>
-      {sub && <p className="text-[11px]" style={{ color: accent + "99" }}>{sub}</p>}
-    </motion.div>
-  );
-}
-
-function SectionCard({ title, children }: { title: string; children: React.ReactNode }) {
-  return (
-    <div className="bg-white border border-gray-200 rounded-2xl shadow-sm p-5">
-      <p className="text-sm font-bold text-gray-600 mb-4">{title}</p>
-      {children}
-    </div>
-  );
-}
-
-function HBarChart({ data, colorMap }: {
-  data: { label: string; count: number }[];
-  colorMap?: Record<string, string>;
-}) {
-  const max = Math.max(...data.map((d) => d.count), 1);
-  return (
-    <div className="space-y-2">
-      {data.map((d) => {
-        const color = colorMap?.[d.label] ?? "#85B7EB";
-        return (
-          <div key={d.label} className="flex items-center gap-2">
-            <span className="text-xs text-gray-500 text-right shrink-0" style={{ width: 110 }}>
-              {d.label}
-            </span>
-            <div className="flex-1 h-5 rounded bg-gray-100 overflow-hidden">
-              <motion.div
-                className="h-full rounded"
-                style={{ backgroundColor: color }}
-                initial={{ width: 0 }}
-                animate={{ width: `${(d.count / max) * 100}%` }}
-                transition={{ duration: 0.6, ease: "easeOut" }}
-              />
-            </div>
-            <span className="text-xs font-bold tabular-nums text-gray-700 shrink-0 w-6">{d.count}</span>
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
-// ─── Countdown ring ───────────────────────────────────────────────────────────
-function CountdownRing({ secondsLeft, total }: { secondsLeft: number; total: number }) {
-  const pct = secondsLeft / total;
-  const r = 10;
-  const circ = 2 * Math.PI * r;
-  return (
-    <svg width={28} height={28} viewBox="0 0 28 28" className="-rotate-90">
-      <circle cx={14} cy={14} r={r} fill="none" stroke="#e5e7eb" strokeWidth={3} />
-      <circle cx={14} cy={14} r={r} fill="none" stroke="#3aa36a" strokeWidth={3}
-        strokeDasharray={circ}
-        strokeDashoffset={circ * (1 - pct)}
-        strokeLinecap="round"
-        style={{ transition: "stroke-dashoffset 1s linear" }}
-      />
-    </svg>
-  );
-}
-
 // ─── Page ─────────────────────────────────────────────────────────────────────
 export default function AccidentDashboardPage() {
-  const [data, setData] = useState<AccidentDashboardData | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [secondsLeft, setSecondsLeft] = useState(REFRESH_INTERVAL_MS / 1000);
-  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const countdownRef = useRef<ReturnType<typeof setInterval> | null>(null);
-
-  const fetchData = useCallback(async (silent = false) => {
-    if (!silent) setLoading(true);
-    setError(null);
-    try {
-      const res = await fetch("/api/accident-sheets", { credentials: "include" });
-      if (!res.ok) {
-        const json = await res.json().catch(() => ({}));
-        throw new Error(json.error ?? `HTTP ${res.status}`);
-      }
-      setData(await res.json());
-    } catch (e) {
-      setError((e as Error).message);
-    } finally {
-      if (!silent) setLoading(false);
-    }
-    // รีเซ็ต countdown
-    setSecondsLeft(REFRESH_INTERVAL_MS / 1000);
-  }, []);
-
-  // auto-refresh
-  useEffect(() => {
-    fetchData();
-    timerRef.current = setInterval(() => fetchData(true), REFRESH_INTERVAL_MS);
-    countdownRef.current = setInterval(() => {
-      setSecondsLeft((s) => (s <= 1 ? REFRESH_INTERVAL_MS / 1000 : s - 1));
-    }, 1000);
-    return () => {
-      if (timerRef.current) clearInterval(timerRef.current);
-      if (countdownRef.current) clearInterval(countdownRef.current);
-    };
-  }, [fetchData]);
+  const { data, loading, error, connected, secondsLeft, refetch } =
+    useAutoRefresh<AccidentDashboardData>("/api/accident-sheets", REFRESH_INTERVAL_MS);
 
   const s = data?.summary;
 
@@ -199,7 +67,7 @@ export default function AccidentDashboardPage() {
 
   const vehicleData = useMemo(() =>
     Object.entries(s?.byVehicle ?? {})
-      .map(([label, count]) => ({ label, count, color: VEHICLE_COLOR[label] ?? "#888780" }))
+      .map(([label, count]) => ({ label, count }))
       .sort((a, b) => b.count - a.count),
     [s]);
 
@@ -233,12 +101,7 @@ export default function AccidentDashboardPage() {
             <h1 className="text-lg font-bold text-gray-800">
               Dashboard อุบัติเหตุทางถนน (RTI)
             </h1>
-            {/* Live badge */}
-            <span className="flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-bold border"
-              style={{ backgroundColor: "#f0faf4", borderColor: "#a8d5ba", color: "#1a5233" }}>
-              <span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse inline-block" />
-              LIVE
-            </span>
+            <LiveBadge />
           </div>
           <p className="text-xs text-gray-400 mt-0.5 flex items-center gap-2">
             <span>ดึงข้อมูลจาก Google Sheets แบบ Real-time</span>
@@ -253,27 +116,12 @@ export default function AccidentDashboardPage() {
         </div>
 
         <div className="flex items-center gap-3">
-          {/* Countdown */}
           <div className="flex items-center gap-1.5 text-xs text-gray-500">
             <CountdownRing secondsLeft={secondsLeft} total={REFRESH_INTERVAL_MS / 1000} />
             <span className="tabular-nums font-medium">{secondsLeft}s</span>
           </div>
-
-          <button onClick={() => fetchData()} disabled={loading}
-            className="flex items-center gap-1.5 border border-gray-200 rounded-lg px-3 py-1.5 text-sm text-gray-600 hover:bg-gray-50 disabled:opacity-40 transition-colors">
-            <motion.span animate={loading ? { rotate: 360 } : { rotate: 0 }}
-              transition={loading ? { duration: 0.8, repeat: Infinity, ease: "linear" } : {}}>
-              <RefreshCw size={14} />
-            </motion.span>
-            รีเฟรช
-          </button>
-
-          {/* Connection status */}
-          {error
-            ? <span className="flex items-center gap-1 text-xs text-red-500 font-medium"><WifiOff size={13} />ไม่เชื่อมต่อ</span>
-            : data
-              ? <span className="flex items-center gap-1 text-xs text-green-600 font-medium"><Wifi size={13} />เชื่อมต่อแล้ว</span>
-              : null}
+          <RefreshButton loading={loading} onClick={refetch} />
+          <ConnectionStatus error={!!error} connected={connected && !!data} />
         </div>
       </div>
 
@@ -396,7 +244,7 @@ export default function AccidentDashboardPage() {
           <SectionCard title="ประเภทพาหนะ">
             {vehicleData.length === 0
               ? <p className="text-xs text-gray-400 text-center py-8">ยังไม่มีข้อมูล</p>
-              : <HBarChart data={vehicleData} colorMap={VEHICLE_COLOR} />}
+              : <HBarList data={vehicleData} colorMap={VEHICLE_COLOR} />}
           </SectionCard>
 
           <SectionCard title="ช่วงเวลาที่เกิดเหตุ">
@@ -431,14 +279,14 @@ export default function AccidentDashboardPage() {
           <SectionCard title="ตำบลที่เกิดเหตุ">
             {tambonData.length === 0
               ? <p className="text-xs text-gray-400 text-center py-8">ยังไม่มีข้อมูล</p>
-              : <HBarChart data={tambonData} />}
+              : <HBarList data={tambonData} />}
           </SectionCard>
 
           <SectionCard title="การป้องกันและปัจจัยเสี่ยง">
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <p className="text-xs text-gray-400 font-medium mb-3">การสวมหมวก/เข็มขัด</p>
-                <HBarChart
+                <HBarList
                   data={Object.entries(s.byProtection)
                     .map(([label, count]) => ({ label, count }))
                     .sort((a, b) => b.count - a.count)}
@@ -469,7 +317,7 @@ export default function AccidentDashboardPage() {
                 </div>
 
                 <p className="text-xs text-gray-400 font-medium mt-5 mb-3">ประเภทถนน</p>
-                <HBarChart
+                <HBarList
                   data={Object.entries(s.byRoad)
                     .map(([label, count]) => ({ label, count }))
                     .sort((a, b) => b.count - a.count)}

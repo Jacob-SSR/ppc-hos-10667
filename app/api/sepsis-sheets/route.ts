@@ -4,7 +4,14 @@
 // Sheet แยกรายปี: 2569, 2568, 2567, 2566
 
 import { NextResponse } from "next/server";
-import { google } from "googleapis";
+import {
+  getSheetClient,
+  getAllSheetTitles,
+  getValues,
+  toStr,
+  parseDate,
+  sheetsError,
+} from "@/lib/sheets";
 
 const SPREADSHEET_ID = process.env.Sepsis_SPREADSHEET_ID!;
 
@@ -139,43 +146,12 @@ function getColMap(layout: "new2569" | "new" | "old"): ColMap {
 }
 
 // ─── Normalizers ──────────────────────────────────────────────────────────────
-function toStr(v: unknown): string {
-  if (v == null) return "";
-  return String(v).trim();
-}
-
+// toNum เฉพาะ sepsis — ใช้ Number(v) ตรงๆ (ไม่ strip comma) + เช็ค isFinite
+// ต่างจาก toNumOrNull กลางที่ strip comma → เก็บ local ไว้เพื่อ behavior เดิม
 function toNum(v: unknown): number | null {
   if (v == null || v === "") return null;
   const n = Number(v);
   return isNaN(n) || !isFinite(n) ? null : n;
-}
-
-// แปลงวันที่จาก serial number (Google Sheets) หรือ string
-function toDateStr(v: unknown): string {
-  if (!v || v === "") return "";
-  const str = String(v).trim();
-
-  // Serial number (Google Sheets date)
-  const num = Number(str);
-  if (!isNaN(num) && num > 1000) {
-    const date = new Date((num - 25569) * 86400 * 1000);
-    let y = date.getUTCFullYear();
-    if (y > 2400) y -= 543;
-    if (y < 1900 || y > 2200) return "";
-    const m = String(date.getUTCMonth() + 1).padStart(2, "0");
-    const d = String(date.getUTCDate()).padStart(2, "0");
-    return `${y}-${m}-${d}`;
-  }
-
-  // ISO or TH date string
-  const iso = str.match(/^(\d{4})-(\d{2})-(\d{2})/);
-  if (iso) {
-    let y = parseInt(iso[1]);
-    if (y > 2400) y -= 543;
-    return `${y}-${iso[2]}-${iso[3]}`;
-  }
-
-  return "";
 }
 
 function normPathogen(raw: string): string {
@@ -250,18 +226,6 @@ function normComorbidity(raw: string): string[] {
   return result.length > 0 ? result : ["อื่นๆ"];
 }
 
-// ─── Google Sheets client ─────────────────────────────────────────────────────
-async function getSheetClient() {
-  const auth = new google.auth.GoogleAuth({
-    credentials: {
-      client_email: process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL,
-      private_key: process.env.GOOGLE_PRIVATE_KEY?.replace(/\\n/g, "\n"),
-    },
-    scopes: ["https://www.googleapis.com/auth/spreadsheets.readonly"],
-  });
-  return google.sheets({ version: "v4", auth });
-}
-
 // ─── Parse one sheet ──────────────────────────────────────────────────────────
 function parseSheet(raw: string[][], thaiYear: string): SepsisSheetRow[] {
   if (raw.length < 2) return [];
@@ -275,8 +239,9 @@ function parseSheet(raw: string[][], thaiYear: string): SepsisSheetRow[] {
     const name = toStr(r[cm.name]);
     if (!name || name === "ลำดับ" || name === "ชื่อ-สกุล") continue;
 
-    const serviceDate = toDateStr(r[cm.serviceDate]);
-    const dxDate = cm.dxDate >= 0 ? toDateStr(r[cm.dxDate]) : "";
+    const serviceDate = parseDate(r[cm.serviceDate], { validate: true });
+    const dxDate =
+      cm.dxDate >= 0 ? parseDate(r[cm.dxDate], { validate: true }) : "";
 
     let septicShock: boolean | null = null;
     if (cm.septicShock != null && cm.septicShock >= 0) {
@@ -303,7 +268,8 @@ function parseSheet(raw: string[][], thaiYear: string): SepsisSheetRow[] {
       diagnosis: toStr(r[cm.diagnosis]),
       septicShock,
       atb: toStr(r[cm.atb]),
-      atbDate: cm.atbDate >= 0 ? toDateStr(r[cm.atbDate]) : "",
+      atbDate:
+        cm.atbDate >= 0 ? parseDate(r[cm.atbDate], { validate: true }) : "",
       cultureType: toStr(r[cm.culture]),
       pathogen: normPathogen(toStr(r[cm.pathogen])),
       patientStatus: toStr(r[cm.patientStatus]),
@@ -425,11 +391,7 @@ export async function GET() {
     const sheets = await getSheetClient();
 
     // ดึงรายชื่อ sheets ทั้งหมด
-    const meta = await sheets.spreadsheets.get({
-      spreadsheetId: SPREADSHEET_ID,
-    });
-    const sheetNames =
-      meta.data.sheets?.map((s) => s.properties?.title ?? "") ?? [];
+    const sheetNames = await getAllSheetTitles(sheets, SPREADSHEET_ID);
 
     // กรองเฉพาะ sheet ที่มีปีงบประมาณ (2565-2569)
     const yearSheets = sheetNames.filter((n) => /256[5-9]/.test(n));
@@ -448,11 +410,7 @@ export async function GET() {
 
     await Promise.all(
       yearSheets.map(async (sheetName) => {
-        const res = await sheets.spreadsheets.values.get({
-          spreadsheetId: SPREADSHEET_ID,
-          range: `${sheetName}!A:Z`,
-        });
-        const raw = (res.data.values ?? []) as string[][];
+        const raw = await getValues(sheets, SPREADSHEET_ID, `${sheetName}!A:Z`);
         const thaiYear = sheetName.trim().match(/(\d{4})/)?.[1] ?? sheetName;
         const parsed = parseSheet(raw, thaiYear);
         allRows.push(...parsed);
@@ -474,13 +432,6 @@ export async function GET() {
       sheetNames: yearSheets,
     });
   } catch (err) {
-    console.error("SepsisSheets error:", err);
-    return NextResponse.json(
-      {
-        error:
-          "ดึงข้อมูลจาก Google Sheets ไม่สำเร็จ: " + (err as Error).message,
-      },
-      { status: 500 },
-    );
+    return sheetsError(err, "SepsisSheets");
   }
 }

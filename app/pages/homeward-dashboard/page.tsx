@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useState, useCallback, useRef, useMemo } from "react";
-import { motion, AnimatePresence } from "framer-motion";
+import { useState, useMemo } from "react";
+import { motion } from "framer-motion";
 import {
     BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid,
     ResponsiveContainer, PieChart, Pie, Cell, AreaChart, Area,
@@ -11,6 +11,7 @@ import {
     Users, AlertTriangle, Building2, MapPin, Activity, TrendingUp,
     CheckCircle2,
 } from "lucide-react";
+import { useAutoRefresh } from "@/app/components/dashboard/live";
 import type { HomeWardSheetsData, HomeWardSheetRow, HomeWardSummary } from "@/app/api/homeward-sheets/route";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -48,7 +49,7 @@ const TT_STYLE = {
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 const fmt = (n: number) => n.toLocaleString("th-TH");
 
-// ─── Countdown Ring ───────────────────────────────────────────────────────────
+// ─── Countdown Ring (เฉพาะ homeward — track เขียว mint, เลขกลาง) ─────────────────
 function CountdownRing({ secondsLeft, total }: { secondsLeft: number; total: number }) {
     const r = 10, circ = 2 * Math.PI * r;
     const prog = circ * (1 - secondsLeft / total);
@@ -66,7 +67,7 @@ function CountdownRing({ secondsLeft, total }: { secondsLeft: number; total: num
     );
 }
 
-// ─── KPI Card ─────────────────────────────────────────────────────────────────
+// ─── KPI Card (เฉพาะ homeward — card ขาว icon box, ต่างจาก KpiCard กลาง) ─────────
 function KpiCard({ icon: Icon, label, value, sub, accent, accentBg }: {
     icon: React.ElementType; label: string; value: string;
     sub?: string; accent: string; accentBg: string;
@@ -89,7 +90,7 @@ function KpiCard({ icon: Icon, label, value, sub, accent, accentBg }: {
     );
 }
 
-// ─── Chart Card ───────────────────────────────────────────────────────────────
+// ─── Chart Card (เฉพาะ homeward — mint theme) ────────────────────────────────────
 function ChartCard({ title, icon: Icon, children }: {
     title: string; icon: React.ElementType; children: React.ReactNode;
 }) {
@@ -104,7 +105,7 @@ function ChartCard({ title, icon: Icon, children }: {
     );
 }
 
-// ─── Horizontal Bar List ──────────────────────────────────────────────────────
+// ─── Horizontal Bar List (เฉพาะ homeward) ────────────────────────────────────────
 function HBarList({ data, colors }: { data: [string, number][]; colors: string[] }) {
     const max = Math.max(...data.map(([, v]) => v), 1);
     return (
@@ -126,7 +127,7 @@ function HBarList({ data, colors }: { data: [string, number][]; colors: string[]
     );
 }
 
-// ─── Legend ───────────────────────────────────────────────────────────────────
+// ─── Legend (เฉพาะ homeward — รองรับ value optional) ─────────────────────────────
 function Legend({ items }: { items: { label: string; color: string; value?: number }[] }) {
     return (
         <div className="flex flex-wrap gap-x-4 gap-y-1 mt-2">
@@ -441,43 +442,10 @@ function DashboardCharts({ rows, summary }: { rows: HomeWardSheetRow[]; summary:
 
 // ─── Main Page ────────────────────────────────────────────────────────────────
 export default function HomeWardDashboardPage() {
-    const [data, setData] = useState<HomeWardSheetsData | null>(null);
-    const [loading, setLoading] = useState(true);
-    const [error, setError] = useState<string | null>(null);
-    const [connected, setConnected] = useState(true);
-    const [secondsLeft, setSecondsLeft] = useState(REFRESH_INTERVAL_MS / 1000);
+    const { data, loading, error, connected, secondsLeft, refetch } =
+        useAutoRefresh<HomeWardSheetsData>("/api/homeward-sheets", REFRESH_INTERVAL_MS);
+
     const [filters, setFilters] = useState<Filters>(EMPTY_FILTERS);
-    const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
-    const countRef = useRef<ReturnType<typeof setInterval> | null>(null);
-
-    const fetchData = useCallback(async (silent = false) => {
-        if (!silent) setLoading(true);
-        setError(null);
-        try {
-            const res = await fetch("/api/homeward-sheets", { credentials: "include" });
-            if (!res.ok) throw new Error(`HTTP ${res.status}`);
-            const json: HomeWardSheetsData = await res.json();
-            setData(json);
-            setConnected(true);
-        } catch (e) {
-            setConnected(false);
-            if (!silent) setError((e as Error).message);
-        } finally {
-            if (!silent) setLoading(false);
-            setSecondsLeft(REFRESH_INTERVAL_MS / 1000);
-        }
-    }, []);
-
-    // auto-refresh
-    useEffect(() => {
-        fetchData();
-        timerRef.current = setInterval(() => fetchData(true), REFRESH_INTERVAL_MS);
-        countRef.current = setInterval(() => setSecondsLeft((s) => (s > 1 ? s - 1 : REFRESH_INTERVAL_MS / 1000)), 1000);
-        return () => {
-            if (timerRef.current) clearInterval(timerRef.current);
-            if (countRef.current) clearInterval(countRef.current);
-        };
-    }, [fetchData]);
 
     const filteredRows = useMemo(() => {
         if (!data) return [];
@@ -561,7 +529,7 @@ export default function HomeWardDashboardPage() {
                             ? <Wifi size={16} className="text-green-200" />
                             : <WifiOff size={16} className="text-red-300" />}
                         <CountdownRing secondsLeft={secondsLeft} total={REFRESH_INTERVAL_MS / 1000} />
-                        <button onClick={() => fetchData()} disabled={loading}
+                        <button onClick={refetch} disabled={loading}
                             className="flex items-center gap-1.5 bg-white/10 hover:bg-white/20 text-white border border-white/20 rounded-lg px-3 py-1.5 text-sm transition-colors disabled:opacity-40">
                             <motion.span animate={loading ? { rotate: 360 } : { rotate: 0 }}
                                 transition={loading ? { duration: 0.8, repeat: Infinity, ease: "linear" } : {}}>

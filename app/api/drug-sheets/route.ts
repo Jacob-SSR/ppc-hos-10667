@@ -1,9 +1,14 @@
-// app/api/drug-sheets/route.ts
-// ดึงข้อมูลผู้ป่วยยาเสพติดจาก Google Sheets แบบ real-time
-// Spreadsheet ID เก็บใน .env: DRUG_SPREADSHEET_ID
-
 import { NextResponse } from "next/server";
-import { google } from "googleapis";
+import {
+  getSheetClient,
+  getAllSheetTitles,
+  getValues,
+  toStr,
+  toNum,
+  countBy,
+  parseDate,
+  sheetsError,
+} from "@/lib/sheets";
 
 const SPREADSHEET_ID = process.env.DRUG_SPREADSHEET_ID!;
 
@@ -61,16 +66,7 @@ export interface DrugSheetsDashboardData {
   debug?: { headers: string[]; sampleRow: string[] };
 }
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
-function toStr(v: unknown): string {
-  if (v == null) return "";
-  return String(v).trim();
-}
-function toNum(v: unknown): number {
-  const n = Number(v);
-  return isNaN(n) ? 0 : n;
-}
-
+// ─── Helpers เฉพาะ drug ───────────────────────────────────────────────────────
 function normalizeColor(raw: string): string {
   if (!raw) return "ไม่ระบุ";
   const r = raw.trim();
@@ -82,105 +78,7 @@ function normalizeColor(raw: string): string {
   return r || "ไม่ระบุ";
 }
 
-// แปลงวันที่ทุกรูปแบบที่ Google Sheets ส่งมา → YYYY-MM-DD (ค.ศ.)
-function parseDateStr(v: unknown): string {
-  if (!v || v === "" || v === "-") return "";
-  const s = String(v).trim();
-
-  // D/M/YYYY หรือ DD/MM/YYYY (พ.ศ. หรือ ค.ศ.)
-  const slashFmt = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
-  if (slashFmt) {
-    const d = parseInt(slashFmt[1]);
-    const m = parseInt(slashFmt[2]);
-    let y = parseInt(slashFmt[3]);
-    if (y > 2400) y -= 543;
-    if (y < 1900 || y > 2200) return "";
-    return `${y}-${String(m).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
-  }
-
-  // D-M-YYYY หรือ DD-MM-YYYY
-  const dashFmt = s.match(/^(\d{1,2})-(\d{1,2})-(\d{4})$/);
-  if (dashFmt) {
-    const d = parseInt(dashFmt[1]);
-    const m = parseInt(dashFmt[2]);
-    let y = parseInt(dashFmt[3]);
-    if (y > 2400) y -= 543;
-    if (y < 1900 || y > 2200) return "";
-    return `${y}-${String(m).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
-  }
-
-  // YYYY-MM-DD (ISO)
-  const isoFmt = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
-  if (isoFmt) {
-    let y = parseInt(isoFmt[1]);
-    if (y > 2400) y -= 543;
-    if (y < 1900 || y > 2200) return "";
-    return `${y}-${isoFmt[2]}-${isoFmt[3]}`;
-  }
-
-  // YYYY/MM/DD
-  const isoSlash = s.match(/^(\d{4})\/(\d{2})\/(\d{2})$/);
-  if (isoSlash) {
-    let y = parseInt(isoSlash[1]);
-    if (y > 2400) y -= 543;
-    if (y < 1900 || y > 2200) return "";
-    return `${y}-${isoSlash[2]}-${isoSlash[3]}`;
-  }
-
-  // วันเดือนปีภาษาไทย: "1 ม.ค. 2568", "15 ธันวาคม 2567"
-  const thaiMonths: Record<string, string> = {
-    "ม.ค.": "01",
-    "ก.พ.": "02",
-    "มี.ค.": "03",
-    "เม.ย.": "04",
-    "พ.ค.": "05",
-    "มิ.ย.": "06",
-    "ก.ค.": "07",
-    "ส.ค.": "08",
-    "ก.ย.": "09",
-    "ต.ค.": "10",
-    "พ.ย.": "11",
-    "ธ.ค.": "12",
-    มกราคม: "01",
-    กุมภาพันธ์: "02",
-    มีนาคม: "03",
-    เมษายน: "04",
-    พฤษภาคม: "05",
-    มิถุนายน: "06",
-    กรกฎาคม: "07",
-    สิงหาคม: "08",
-    กันยายน: "09",
-    ตุลาคม: "10",
-    พฤศจิกายน: "11",
-    ธันวาคม: "12",
-  };
-  for (const [thMonth, numMonth] of Object.entries(thaiMonths)) {
-    const escaped = thMonth.replace(/\./g, "\\.");
-    const thaiRe = new RegExp(`(\\d{1,2})\\s*${escaped}\\s*(\\d{4})`);
-    const thaiMatch = s.match(thaiRe);
-    if (thaiMatch) {
-      let y = parseInt(thaiMatch[2]);
-      if (y > 2400) y -= 543;
-      if (y < 1900 || y > 2200) continue;
-      return `${y}-${numMonth}-${String(parseInt(thaiMatch[1])).padStart(2, "0")}`;
-    }
-  }
-
-  // Excel serial number (Google Sheets formatted as number)
-  const num = Number(s);
-  if (!isNaN(num) && num > 25569 && num < 55000) {
-    const date = new Date((num - 25569) * 86400 * 1000);
-    let y = date.getUTCFullYear();
-    if (y > 2400) y -= 543;
-    if (y < 1900 || y > 2200) return "";
-    const mo = String(date.getUTCMonth() + 1).padStart(2, "0");
-    const d = String(date.getUTCDate()).padStart(2, "0");
-    return `${y}-${mo}-${d}`;
-  }
-
-  return "";
-}
-
+// month label เฉพาะ drug: "ม.ค./68" (ต่างจาก monthLabelShort กลางที่เป็น "ม.ค. 68")
 function getMonthLabel(dateStr: string): string {
   if (!dateStr || dateStr.length < 7) return "";
   const y = parseInt(dateStr.slice(0, 4));
@@ -201,18 +99,6 @@ function getMonthLabel(dateStr: string): string {
   ];
   if (isNaN(y) || isNaN(m) || m < 1 || m > 12) return "";
   return `${MONTHS[m - 1]}/${String(y + 543).slice(2)}`;
-}
-
-// ─── Google Sheets client ─────────────────────────────────────────────────────
-async function getSheetClient() {
-  const auth = new google.auth.GoogleAuth({
-    credentials: {
-      client_email: process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL,
-      private_key: process.env.GOOGLE_PRIVATE_KEY?.replace(/\\n/g, "\n"),
-    },
-    scopes: ["https://www.googleapis.com/auth/spreadsheets.readonly"],
-  });
-  return google.sheets({ version: "v4", auth });
 }
 
 // ─── Parse rows จาก sheet ────────────────────────────────────────────────────
@@ -268,12 +154,13 @@ function parseRows(raw: string[][]): DrugSheetRow[] {
     const hn = cHN >= 0 ? toStr(r[cHN]) : "";
     if (!firstName && !hn) continue;
 
-    // พยายาม parse startDate จากทุก column ที่มีวันที่
-    let startDate = cStartDate >= 0 ? parseDateStr(r[cStartDate]) : "";
+    // พยายาม parse startDate จาก column ที่ระบุ
+    let startDate =
+      cStartDate >= 0 ? parseDate(r[cStartDate], { validate: true }) : "";
     // ถ้ายังไม่ได้ ลองทุก cell ในแถวที่ดูเหมือนวันที่
     if (!startDate) {
       for (let j = 0; j < r.length; j++) {
-        const parsed = parseDateStr(r[j]);
+        const parsed = parseDate(r[j], { validate: true });
         if (parsed && parsed >= "2020-") {
           // ปี 2020+ น่าจะเป็นวันที่รับบำบัด
           startDate = parsed;
@@ -340,15 +227,6 @@ function buildSummary(rows: DrugSheetRow[]): DrugDashboardSummary {
   const minV2 = v2s.length > 0 ? Math.min(...v2s) : 0;
   const maxV2 = v2s.length > 0 ? Math.max(...v2s) : 0;
 
-  const countBy = (key: keyof DrugSheetRow) => {
-    const m: Record<string, number> = {};
-    rows.forEach((r) => {
-      const v = String(r[key] ?? "ไม่ระบุ").trim() || "ไม่ระบุ";
-      m[v] = (m[v] || 0) + 1;
-    });
-    return m;
-  };
-
   const byAgeGroup: Record<string, number> = {
     "< 18 ปี": 0,
     "18-25 ปี": 0,
@@ -386,14 +264,11 @@ function buildSummary(rows: DrugSheetRow[]): DrugDashboardSummary {
     if (lbl) monthMap[lbl] = (monthMap[lbl] || 0) + 1;
   });
   const byMonth = Object.entries(monthMap)
-    .sort(([a], [b]) => {
-      // sort by YYYY-MM derived from label (rough sort)
-      return a.localeCompare(b, "th");
-    })
+    .sort(([a], [b]) => a.localeCompare(b, "th"))
     .map(([month, count]) => ({ month, count }));
 
   // Normalize referral
-  const rawReferral = countBy("referralMethod");
+  const rawReferral = countBy(rows, "referralMethod");
   const byReferral: Record<string, number> = {};
   Object.entries(rawReferral).forEach(([k, v]) => {
     const clean = k.replace(/์{2,}/g, "์").trim() || "ไม่ระบุ";
@@ -417,12 +292,12 @@ function buildSummary(rows: DrugSheetRow[]): DrugDashboardSummary {
     avgV2,
     minV2,
     maxV2,
-    byTreatStatus: countBy("treatStatus"),
-    byDetailStatus: countBy("detailStatus"),
-    byProgram: countBy("program"),
-    byTambon: countBy("tambon"),
+    byTreatStatus: countBy(rows, "treatStatus"),
+    byDetailStatus: countBy(rows, "detailStatus"),
+    byProgram: countBy(rows, "program"),
+    byTambon: countBy(rows, "tambon"),
     byReferral,
-    byColor: countBy("colorSeverity"),
+    byColor: countBy(rows, "colorSeverity"),
     byAgeGroup,
     byV2Group,
     byMonth,
@@ -444,32 +319,23 @@ export async function GET(req: Request) {
 
     const sheets = await getSheetClient();
 
-    const meta = await sheets.spreadsheets.get({
-      spreadsheetId: SPREADSHEET_ID,
-    });
-    const allSheets = meta.data.sheets ?? [];
-
     // เลือก sheet: หาที่มีชื่อเกี่ยวกับผู้ป่วย/ข้อมูล หรือใช้แผ่นแรก
+    const allTitles = await getAllSheetTitles(sheets, SPREADSHEET_ID);
     const targetSheet =
-      allSheets.find((s) => {
-        const title = (s.properties?.title ?? "").toLowerCase();
+      allTitles.find((title) => {
+        const t = title.toLowerCase();
         return (
-          title.includes("ผู้ป่วย") ||
-          title.includes("patient") ||
-          title.includes("ข้อมูล") ||
-          title.includes("data") ||
-          title.includes("drug")
+          t.includes("ผู้ป่วย") ||
+          t.includes("patient") ||
+          t.includes("ข้อมูล") ||
+          t.includes("data") ||
+          t.includes("drug")
         );
-      })?.properties?.title ??
-      allSheets[0]?.properties?.title ??
+      }) ??
+      allTitles[0] ??
       "Sheet1";
 
-    const res = await sheets.spreadsheets.values.get({
-      spreadsheetId: SPREADSHEET_ID,
-      range: `${targetSheet}!A:AJ`,
-    });
-
-    const raw = (res.data.values ?? []) as string[][];
+    const raw = await getValues(sheets, SPREADSHEET_ID, `${targetSheet}!A:AJ`);
     const rows = parseRows(raw);
     const summary = buildSummary(rows);
 
@@ -490,13 +356,6 @@ export async function GET(req: Request) {
 
     return NextResponse.json(result);
   } catch (err) {
-    console.error("DrugSheets error:", err);
-    return NextResponse.json(
-      {
-        error:
-          "ดึงข้อมูลจาก Google Sheets ไม่สำเร็จ: " + (err as Error).message,
-      },
-      { status: 500 },
-    );
+    return sheetsError(err, "DrugSheets");
   }
 }

@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useState, useCallback, useMemo, useRef } from "react";
-import { motion, AnimatePresence } from "framer-motion";
+import { useState, useMemo } from "react";
+import { motion } from "framer-motion";
 import {
     BarChart, Bar, PieChart, Pie, Cell,
     XAxis, YAxis, Tooltip, ResponsiveContainer, Legend,
@@ -12,6 +12,7 @@ import {
     CheckCircle, MapPin, ChevronUp, ChevronDown, Search, X, Download,
 } from "lucide-react";
 import * as XLSX from "xlsx";
+import { useAutoRefresh, timeAgo, CountdownRing } from "@/app/components/dashboard/live";
 import type { StrokeSheetsDashboardData, StrokeSheetRow } from "@/app/api/stroke-sheets/route";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -44,31 +45,11 @@ function ymLabel(ym: string): string {
     return `${THAI_MONTHS[m - 1]} ${String(y + 543).slice(2)}`;
 }
 
-function timeAgo(iso: string): string {
-    const diff = Math.floor((Date.now() - new Date(iso).getTime()) / 1000);
-    if (diff < 60) return `${diff} วินาทีที่แล้ว`;
-    if (diff < 3600) return `${Math.floor(diff / 60)} นาทีที่แล้ว`;
-    return `${Math.floor(diff / 3600)} ชั่วโมงที่แล้ว`;
-}
-
 function isAF(ekg: string): boolean {
     return /\bAF\b/.test(ekg) && !/non-AF/i.test(ekg);
 }
 
-// ─── Countdown Ring ───────────────────────────────────────────────────────────
-function CountdownRing({ secondsLeft, total }: { secondsLeft: number; total: number }) {
-    const r = 10, circ = 2 * Math.PI * r;
-    return (
-        <svg width={28} height={28} viewBox="0 0 28 28" className="-rotate-90">
-            <circle cx={14} cy={14} r={r} fill="none" stroke="#e5e7eb" strokeWidth={3} />
-            <circle cx={14} cy={14} r={r} fill="none" stroke="#7ec8a0" strokeWidth={3}
-                strokeDasharray={circ} strokeDashoffset={circ * (1 - secondsLeft / total)}
-                strokeLinecap="round" style={{ transition: "stroke-dashoffset 1s linear" }} />
-        </svg>
-    );
-}
-
-// ─── KPI Card ─────────────────────────────────────────────────────────────────
+// ─── KPI Card (เฉพาะ stroke — border-left style, ต่างจาก KpiCard กลาง) ──────────
 function KpiCard({ label, value, sub, icon: Icon, accent, delay = 0 }: {
     label: string; value: string | number; sub?: string;
     icon: React.ElementType; accent: string; delay?: number;
@@ -92,7 +73,7 @@ function KpiCard({ label, value, sub, icon: Icon, accent, delay = 0 }: {
     );
 }
 
-// ─── Chart Card ───────────────────────────────────────────────────────────────
+// ─── Chart Card (เฉพาะ stroke — header เขียว uppercase, ต่างจาก SectionCard กลาง) ──
 function ChartCard({ title, children, className = "" }: {
     title: string; children: React.ReactNode; className?: string;
 }) {
@@ -114,10 +95,8 @@ function SortIcon({ active, asc }: { active: boolean; asc: boolean }) {
 
 // ─── Main Page ────────────────────────────────────────────────────────────────
 export default function StrokeDashboardPage() {
-    const [data, setData] = useState<StrokeSheetsDashboardData | null>(null);
-    const [loading, setLoading] = useState(true);
-    const [error, setError] = useState<string | null>(null);
-    const [secondsLeft, setSecondsLeft] = useState(REFRESH_INTERVAL_MS / 1000);
+    const { data, loading, error, connected, secondsLeft, refetch } =
+        useAutoRefresh<StrokeSheetsDashboardData>("/api/stroke-sheets", REFRESH_INTERVAL_MS);
 
     // Filters
     const [search, setSearch] = useState("");
@@ -133,40 +112,6 @@ export default function StrokeDashboardPage() {
     const [sortAsc, setSortAsc] = useState(false);
     const [page, setPage] = useState(1);
     const PAGE_SIZE = 20;
-
-    const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
-    const countdownRef = useRef<ReturnType<typeof setInterval> | null>(null);
-
-    const fetchData = useCallback(async (silent = false) => {
-        if (!silent) setLoading(true);
-        setError(null);
-        try {
-            const res = await fetch("/api/stroke-sheets", { credentials: "include" });
-            if (!res.ok) {
-                const json = await res.json().catch(() => ({}));
-                throw new Error(json.error ?? `HTTP ${res.status}`);
-            }
-            setData(await res.json());
-        } catch (e) {
-            setError((e as Error).message);
-        } finally {
-            if (!silent) setLoading(false);
-        }
-        setSecondsLeft(REFRESH_INTERVAL_MS / 1000);
-    }, []);
-
-    useEffect(() => {
-        fetchData();
-        timerRef.current = setInterval(() => fetchData(true), REFRESH_INTERVAL_MS);
-        countdownRef.current = setInterval(
-            () => setSecondsLeft((s) => (s <= 1 ? REFRESH_INTERVAL_MS / 1000 : s - 1)),
-            1000
-        );
-        return () => {
-            if (timerRef.current) clearInterval(timerRef.current);
-            if (countdownRef.current) clearInterval(countdownRef.current);
-        };
-    }, [fetchData]);
 
     const rows = data?.rows ?? [];
 
@@ -296,8 +241,8 @@ export default function StrokeDashboardPage() {
         XLSX.writeFile(wb, `stroke_${new Date().toISOString().slice(0, 10)}.xlsx`);
     };
 
-    const TH = ({ label, k }: { label: string; k: keyof StrokeSheetRow }) => (
-        <th onClick={() => handleSort(k)}
+    const renderTH = (label: string, k: keyof StrokeSheetRow) => (
+        <th key={k} onClick={() => handleSort(k)}
             className="px-3 py-2.5 text-left text-[10px] font-bold uppercase tracking-wider text-[#1a5233] cursor-pointer whitespace-nowrap select-none hover:bg-[#d6f0e0] transition-colors">
             <span className="flex items-center gap-1">
                 {label}
@@ -340,10 +285,10 @@ export default function StrokeDashboardPage() {
 
                 <div className="flex items-center gap-2">
                     <div className="flex items-center gap-1.5 text-green-200 text-xs">
-                        <CountdownRing secondsLeft={secondsLeft} total={REFRESH_INTERVAL_MS / 1000} />
+                        <CountdownRing secondsLeft={secondsLeft} total={REFRESH_INTERVAL_MS / 1000} color="#7ec8a0" />
                         <span className="tabular-nums">{secondsLeft}s</span>
                     </div>
-                    <button onClick={() => fetchData()} disabled={loading}
+                    <button onClick={refetch} disabled={loading}
                         className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold bg-white text-[#1a5233] rounded-lg hover:bg-[#f0faf4] disabled:opacity-50">
                         <motion.span animate={loading ? { rotate: 360 } : { rotate: 0 }}
                             transition={loading ? { duration: 0.8, repeat: Infinity, ease: "linear" } : {}}>
@@ -548,17 +493,17 @@ export default function StrokeDashboardPage() {
                             <thead className="bg-[#f0faf4] sticky top-0 z-10">
                                 <tr>
                                     <th className="px-3 py-2.5 text-left text-[10px] font-bold text-[#1a5233]">#</th>
-                                    <TH label="ชื่อ-นามสกุล" k="name" />
-                                    <TH label="HN" k="hn" />
-                                    <TH label="อายุ" k="age" />
-                                    <TH label="วันที่" k="date" />
-                                    <TH label="ประเภท" k="type" />
-                                    <TH label="Onset" k="onset" />
-                                    <TH label="NIHSS" k="nihss" />
-                                    <TH label="EKG" k="ekg" />
-                                    <TH label="เขต" k="district" />
-                                    <TH label="rtPA" k="rtPA" />
-                                    <TH label="Outcome" k="outcome" />
+                                    {renderTH("ชื่อ-นามสกุล", "name")}
+                                    {renderTH("HN", "hn")}
+                                    {renderTH("อายุ", "age")}
+                                    {renderTH("วันที่", "date")}
+                                    {renderTH("ประเภท", "type")}
+                                    {renderTH("Onset", "onset")}
+                                    {renderTH("NIHSS", "nihss")}
+                                    {renderTH("EKG", "ekg")}
+                                    {renderTH("เขต", "district")}
+                                    {renderTH("rtPA", "rtPA")}
+                                    {renderTH("Outcome", "outcome")}
                                     <th className="px-3 py-2.5 text-left text-[10px] font-bold text-[#1a5233]">หมายเหตุ / IMC</th>
                                 </tr>
                             </thead>

@@ -3,7 +3,15 @@
 // Spreadsheet ID เก็บใน .env: STROKE_SPREADSHEET_ID
 
 import { NextResponse } from "next/server";
-import { google } from "googleapis";
+import {
+  getSheetClient,
+  getFirstSheetTitle,
+  getValues,
+  toStr,
+  toNumOrNull,
+  parseDate,
+  sheetsError,
+} from "@/lib/sheets";
 
 const SPREADSHEET_ID = process.env.STROKE_SPREADSHEET_ID!;
 
@@ -39,108 +47,6 @@ export interface StrokeSheetsDashboardData {
   sheetName: string;
   rows: StrokeSheetRow[];
   debug?: { headers: string[]; sampleRow: string[] };
-}
-
-// ─── Helpers ──────────────────────────────────────────────────────────────────
-function toStr(v: unknown): string {
-  if (v == null) return "";
-  return String(v).trim();
-}
-
-function toNum(v: unknown): number | null {
-  if (v == null || v === "" || v === "-") return null;
-  const n = parseFloat(String(v));
-  return isNaN(n) ? null : n;
-}
-
-// รองรับ datetime string จาก Google Sheets API ซึ่งส่งเป็น string เสมอ
-// รูปแบบที่พบ: "2023-10-02T00:00:00.000Z", "2/10/2023", "2567-10-02", serialNumber
-function parseDateStr(v: unknown): string {
-  if (!v || v === "" || v === "-") return "";
-  const s = String(v).trim();
-
-  // ISO datetime: "2023-10-02T00:00:00.000Z"
-  const iso = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
-  if (iso) {
-    let y = parseInt(iso[1]);
-    if (y > 2400) y -= 543;
-    if (y < 1900 || y > 2200) return "";
-    return `${y}-${iso[2]}-${iso[3]}`;
-  }
-
-  // D/M/YYYY หรือ DD/MM/YYYY
-  const slash = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
-  if (slash) {
-    const d = parseInt(slash[1]);
-    const m = parseInt(slash[2]);
-    let y = parseInt(slash[3]);
-    if (y > 2400) y -= 543;
-    if (y < 1900 || y > 2200) return "";
-    return `${y}-${String(m).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
-  }
-
-  // D-M-YYYY
-  const dash = s.match(/^(\d{1,2})-(\d{1,2})-(\d{4})$/);
-  if (dash) {
-    let y = parseInt(dash[3]);
-    if (y > 2400) y -= 543;
-    if (y < 1900 || y > 2200) return "";
-    return `${y}-${dash[2].padStart(2, "0")}-${dash[1].padStart(2, "0")}`;
-  }
-
-  // Excel serial number (Google Sheets ส่งเป็น number ถ้า column format=Date)
-  const num = Number(s);
-  if (!isNaN(num) && num > 25569 && num < 55000) {
-    const date = new Date((num - 25569) * 86400 * 1000);
-    let y = date.getUTCFullYear();
-    if (y > 2400) y -= 543;
-    if (y < 1900 || y > 2200) return "";
-    const mo = String(date.getUTCMonth() + 1).padStart(2, "0");
-    const d = String(date.getUTCDate()).padStart(2, "0");
-    return `${y}-${mo}-${d}`;
-  }
-
-  // วันที่ภาษาไทย เช่น "2 ต.ค. 2566"
-  const thaiMonths: Record<string, string> = {
-    "ม.ค.": "01",
-    "ก.พ.": "02",
-    "มี.ค.": "03",
-    "เม.ย.": "04",
-    "พ.ค.": "05",
-    "มิ.ย.": "06",
-    "ก.ค.": "07",
-    "ส.ค.": "08",
-    "ก.ย.": "09",
-    "ต.ค.": "10",
-    "พ.ย.": "11",
-    "ธ.ค.": "12",
-  };
-  for (const [th, num2] of Object.entries(thaiMonths)) {
-    const re = new RegExp(
-      `(\\d{1,2})\\s*${th.replace(".", "\\.")}\\s*(\\d{4})`,
-    );
-    const m = s.match(re);
-    if (m) {
-      let y = parseInt(m[2]);
-      if (y > 2400) y -= 543;
-      if (y < 1900 || y > 2200) continue;
-      return `${y}-${num2}-${String(parseInt(m[1])).padStart(2, "0")}`;
-    }
-  }
-
-  return "";
-}
-
-// ─── Google Sheets client ─────────────────────────────────────────────────────
-async function getSheetClient() {
-  const auth = new google.auth.GoogleAuth({
-    credentials: {
-      client_email: process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL,
-      private_key: process.env.GOOGLE_PRIVATE_KEY?.replace(/\\n/g, "\n"),
-    },
-    scopes: ["https://www.googleapis.com/auth/spreadsheets.readonly"],
-  });
-  return google.sheets({ version: "v4", auth });
 }
 
 // ─── Column header map (ตรงกับไฟล์จริง) ─────────────────────────────────────
@@ -245,16 +151,16 @@ function parseRows(raw: string[][]): StrokeSheetRow[] {
 
     rows.push({
       id: id++,
-      no: cNo >= 0 ? toNum(r[cNo]) : null,
+      no: cNo >= 0 ? toNumOrNull(r[cNo]) : null,
       hn: hnClean,
       name,
-      age: cAge >= 0 ? toNum(r[cAge]) : null,
+      age: cAge >= 0 ? toNumOrNull(r[cAge]) : null,
       comorbidity: cComorbidity >= 0 ? toStr(r[cComorbidity]) : "",
-      date: cDate >= 0 ? parseDateStr(r[cDate]) : "",
+      date: cDate >= 0 ? parseDate(r[cDate], { validate: true }) : "",
       onset: cOnset >= 0 ? toStr(r[cOnset]) : "",
       type: cType >= 0 ? toStr(r[cType]) : "",
       diagnosis: cDiag >= 0 ? toStr(r[cDiag]) : "",
-      nihss: cNIHSS >= 0 ? toNum(r[cNIHSS]) : null,
+      nihss: cNIHSS >= 0 ? toNumOrNull(r[cNIHSS]) : null,
       dtx: cDTX >= 0 ? toStr(r[cDTX]) : "",
       ekg: cEKG >= 0 ? toStr(r[cEKG]) : "",
       ems: cEMS >= 0 ? toStr(r[cEMS]) : "",
@@ -288,17 +194,10 @@ export async function GET(req: Request) {
 
     const sheets = await getSheetClient();
 
-    const meta = await sheets.spreadsheets.get({
-      spreadsheetId: SPREADSHEET_ID,
-    });
-    const targetSheet = meta.data.sheets?.[0]?.properties?.title ?? "Sheet1";
+    const targetSheet = await getFirstSheetTitle(sheets, SPREADSHEET_ID);
 
-    const res = await sheets.spreadsheets.values.get({
-      spreadsheetId: SPREADSHEET_ID,
-      range: `${targetSheet}!A:V`, // คอลัมน์ A–V ครอบคลุม 22 คอลัมน์
-    });
+    const raw = await getValues(sheets, SPREADSHEET_ID, `${targetSheet}!A:V`);
 
-    const raw = (res.data.values ?? []) as string[][];
     const rows = parseRows(raw);
 
     const result: StrokeSheetsDashboardData = {
@@ -316,13 +215,6 @@ export async function GET(req: Request) {
 
     return NextResponse.json(result);
   } catch (err) {
-    console.error("StrokeSheets error:", err);
-    return NextResponse.json(
-      {
-        error:
-          "ดึงข้อมูลจาก Google Sheets ไม่สำเร็จ: " + (err as Error).message,
-      },
-      { status: 500 },
-    );
+    return sheetsError(err, "StrokeSheets");
   }
 }

@@ -3,7 +3,7 @@ import { cookies } from "next/headers";
 import jwt from "jsonwebtoken";
 import { db2 } from "@/lib/db";
 import { RowDataPacket } from "mysql2";
-import { google } from "googleapis";
+import { getSheetClient, sheetsError } from "@/lib/sheets";
 
 type UserRow = RowDataPacket & { user: string; name: string; role: string };
 
@@ -23,17 +23,6 @@ async function getUser() {
   } catch {
     return null;
   }
-}
-
-async function getSheetClient() {
-  const auth = new google.auth.GoogleAuth({
-    credentials: {
-      client_email: process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL,
-      private_key: process.env.GOOGLE_PRIVATE_KEY?.replace(/\\n/g, "\n"),
-    },
-    scopes: ["https://www.googleapis.com/auth/spreadsheets"],
-  });
-  return google.sheets({ version: "v4", auth });
 }
 
 const SHEET_NAME = process.env.IT_WORKLOG_SHEET_NAME ?? "บันทึกประจำวัน";
@@ -124,7 +113,7 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
   try {
-    const sheets = await getSheetClient();
+    const sheets = await getSheetClient(false);
     const res = await sheets.spreadsheets.values.get({
       spreadsheetId: SPREADSHEET_ID,
       range: `${SHEET_NAME}!A:AN`,
@@ -236,7 +225,7 @@ export async function POST(req: NextRequest) {
   ];
 
   try {
-    const sheets = await getSheetClient();
+    const sheets = await getSheetClient(false);
 
     // ตรวจสอบว่ามี header แล้วยัง
     const check = await sheets.spreadsheets.values.get({

@@ -1,16 +1,20 @@
 "use client";
 
-import { useEffect, useState, useCallback, useMemo, useRef } from "react";
-import { motion, AnimatePresence } from "framer-motion";
+import { useState, useMemo } from "react";
 import {
     BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid,
-    ResponsiveContainer, PieChart, Pie, Cell, LineChart, Line,
+    ResponsiveContainer, PieChart, Pie, Cell, Line,
 } from "recharts";
 import {
-    RefreshCw, Info, Wifi, WifiOff, Clock,
+    Info, Clock,
     Users, AlertTriangle, Activity, TrendingUp, Skull,
     ShieldAlert, Microscope, MapPin, HeartPulse, CheckCircle2,
 } from "lucide-react";
+import {
+    useAutoRefresh, timeAgo, CountdownRing, KpiCard, HBarList,
+    SectionCard, MiniPagination, LiveBadge, ConnectionStatus, RefreshButton,
+} from "@/app/components/dashboard/live";
+import { usePagination } from "@/hooks/usePagination";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 interface SepsisYearSummary {
@@ -91,101 +95,8 @@ const PALETTE = [
 
 const YEAR_COLORS = ["#7F77DD", "#378ADD", "#1D9E75", "#639922", "#EF9F27"];
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
 const fmt = (n: number) => n.toLocaleString("th-TH");
 const fmtB = (n: number) => n.toLocaleString("th-TH", { minimumFractionDigits: 1, maximumFractionDigits: 1 });
-
-function timeAgo(iso: string): string {
-    const diff = Math.floor((Date.now() - new Date(iso).getTime()) / 1000);
-    if (diff < 60) return `${diff} วินาทีที่แล้ว`;
-    if (diff < 3600) return `${Math.floor(diff / 60)} นาทีที่แล้ว`;
-    return `${Math.floor(diff / 3600)} ชั่วโมงที่แล้ว`;
-}
-
-// ─── Sub-components ───────────────────────────────────────────────────────────
-function KpiCard({
-    icon: Icon, label, value, sub, accent, bg, highlight,
-}: {
-    icon: React.ElementType; label: string; value: string;
-    sub?: string; accent: string; bg: string; highlight?: boolean;
-}) {
-    return (
-        <motion.div
-            className={`rounded-2xl p-5 flex flex-col gap-2 ${highlight ? "ring-2 ring-red-300" : ""}`}
-            style={{ backgroundColor: bg }}
-            initial={{ opacity: 0, y: 12 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ type: "spring", stiffness: 260, damping: 22 }}
-        >
-            <div className="w-9 h-9 rounded-xl flex items-center justify-center" style={{ backgroundColor: accent + "22" }}>
-                <Icon size={18} style={{ color: accent }} strokeWidth={1.8} />
-            </div>
-            <p className="text-xs font-bold tracking-wide" style={{ color: accent }}>{label}</p>
-            <p className="text-2xl font-extrabold tabular-nums" style={{ color: accent }}>{value}</p>
-            {sub && <p className="text-[11px]" style={{ color: accent + "99" }}>{sub}</p>}
-        </motion.div>
-    );
-}
-
-function SectionCard({ title, icon: Icon, children, wide }: {
-    title: string; icon?: React.ElementType; children: React.ReactNode; wide?: boolean;
-}) {
-    return (
-        <div className={`bg-white border border-gray-200 rounded-2xl shadow-sm p-5 ${wide ? "col-span-2" : ""}`}>
-            <div className="flex items-center gap-2 mb-4">
-                {Icon && <Icon size={15} className="text-gray-400" />}
-                <p className="text-sm font-bold text-gray-600">{title}</p>
-            </div>
-            {children}
-        </div>
-    );
-}
-
-function HBarList({ data, colors, total }: {
-    data: [string, number][]; colors: string[]; total?: number;
-}) {
-    const max = Math.max(...data.map(([, v]) => v), 1);
-    return (
-        <div className="space-y-2">
-            {data.map(([label, val], i) => {
-                const pct = total ? Math.round((val / total) * 100) : 0;
-                return (
-                    <div key={label} className="flex items-center gap-2 text-xs">
-                        <span className="w-36 flex-shrink-0 text-right text-gray-500 truncate leading-tight" title={label}>
-                            {label}
-                        </span>
-                        <div className="flex-1 h-5 bg-gray-100 rounded overflow-hidden">
-                            <motion.div
-                                className="h-full rounded"
-                                style={{ backgroundColor: colors[i % colors.length] }}
-                                initial={{ width: 0 }}
-                                animate={{ width: `${(val / max) * 100}%` }}
-                                transition={{ duration: 0.5, ease: "easeOut", delay: i * 0.03 }}
-                            />
-                        </div>
-                        <span className="w-12 flex-shrink-0 text-right font-semibold text-gray-700 tabular-nums">
-                            {val}{total ? ` (${pct}%)` : ""}
-                        </span>
-                    </div>
-                );
-            })}
-        </div>
-    );
-}
-
-function CountdownRing({ secondsLeft, total }: { secondsLeft: number; total: number }) {
-    const pct = secondsLeft / total;
-    const r = 10;
-    const circ = 2 * Math.PI * r;
-    return (
-        <svg width={28} height={28} viewBox="0 0 28 28" className="-rotate-90">
-            <circle cx={14} cy={14} r={r} fill="none" stroke="#e5e7eb" strokeWidth={3} />
-            <circle cx={14} cy={14} r={r} fill="none" stroke="#3aa36a" strokeWidth={3}
-                strokeDasharray={circ} strokeDashoffset={circ * (1 - pct)}
-                strokeLinecap="round" style={{ transition: "stroke-dashoffset 1s linear" }} />
-        </svg>
-    );
-}
 
 // ─── Year Tab ─────────────────────────────────────────────────────────────────
 function YearTab({ years, selected, onSelect }: {
@@ -218,12 +129,7 @@ function YearTab({ years, selected, onSelect }: {
 
 // ─── Patient Table ────────────────────────────────────────────────────────────
 function PatientTable({ rows }: { rows: SepsisRow[] }) {
-    const [page, setPage] = useState(1);
-    const PAGE = 20;
-    const pages = Math.max(1, Math.ceil(rows.length / PAGE));
-    const paged = rows.slice((page - 1) * PAGE, page * PAGE);
-
-    useEffect(() => setPage(1), [rows.length]);
+    const { page, setPage, totalPages, paged, pageSize } = usePagination(rows, 20);
 
     return (
         <div className="bg-white border border-gray-200 rounded-2xl shadow-sm overflow-hidden">
@@ -292,66 +198,17 @@ function PatientTable({ rows }: { rows: SepsisRow[] }) {
                     </tbody>
                 </table>
             </div>
-            {pages > 1 && (
-                <div className="flex items-center justify-between px-5 py-3 border-t border-gray-100">
-                    <p className="text-xs text-gray-400">หน้า {page} / {pages}</p>
-                    <div className="flex gap-2">
-                        <button onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={page === 1}
-                            className="px-3 py-1.5 border border-gray-200 rounded-lg text-xs text-gray-600 disabled:opacity-30 hover:bg-gray-50">
-                            ← ก่อนหน้า
-                        </button>
-                        <button onClick={() => setPage((p) => Math.min(pages, p + 1))} disabled={page === pages}
-                            className="px-3 py-1.5 border border-gray-200 rounded-lg text-xs text-gray-600 disabled:opacity-30 hover:bg-gray-50">
-                            ถัดไป →
-                        </button>
-                    </div>
-                </div>
-            )}
+            <MiniPagination page={page} totalPages={totalPages} onChange={setPage} />
         </div>
     );
 }
 
 // ─── Main Page ────────────────────────────────────────────────────────────────
 export default function SepsisDashboardPage() {
-    const [data, setData] = useState<DashboardData | null>(null);
-    const [loading, setLoading] = useState(true);
-    const [error, setError] = useState<string | null>(null);
+    const { data, loading, error, connected, secondsLeft, refetch } =
+        useAutoRefresh<DashboardData>("/api/sepsis-sheets", REFRESH_INTERVAL_MS);
+
     const [selectedYear, setSelectedYear] = useState("all");
-    const [secondsLeft, setSecondsLeft] = useState(REFRESH_INTERVAL_MS / 1000);
-
-    const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
-    const countdownRef = useRef<ReturnType<typeof setInterval> | null>(null);
-
-    const fetchData = useCallback(async (silent = false) => {
-        if (!silent) setLoading(true);
-        setError(null);
-        try {
-            const res = await fetch("/api/sepsis-sheets", { credentials: "include" });
-            if (!res.ok) {
-                const json = await res.json().catch(() => ({}));
-                throw new Error(json.error ?? `HTTP ${res.status}`);
-            }
-            setData(await res.json());
-        } catch (e) {
-            setError((e as Error).message);
-        } finally {
-            if (!silent) setLoading(false);
-        }
-        setSecondsLeft(REFRESH_INTERVAL_MS / 1000);
-    }, []);
-
-    useEffect(() => {
-        fetchData();
-        timerRef.current = setInterval(() => fetchData(true), REFRESH_INTERVAL_MS);
-        countdownRef.current = setInterval(
-            () => setSecondsLeft((s) => (s <= 1 ? REFRESH_INTERVAL_MS / 1000 : s - 1)),
-            1000
-        );
-        return () => {
-            if (timerRef.current) clearInterval(timerRef.current);
-            if (countdownRef.current) clearInterval(countdownRef.current);
-        };
-    }, [fetchData]);
 
     const years = useMemo(() => data?.summary.byYear.map((y) => y.year) ?? [], [data]);
 
@@ -360,11 +217,6 @@ export default function SepsisDashboardPage() {
         if (!data) return [];
         return selectedYear === "all" ? data.rows : data.rows.filter((r) => r.year === selectedYear);
     }, [data, selectedYear]);
-
-    const activeYearData = useMemo(
-        () => selectedYear === "all" ? null : data?.summary.byYear.find((y) => y.year === selectedYear) ?? null,
-        [data, selectedYear]
-    );
 
     // KPIs from filtered rows
     const kpiTotal = activeRows.length;
@@ -488,11 +340,7 @@ export default function SepsisDashboardPage() {
                         <h1 className="text-lg font-bold text-gray-800">
                             Dashboard ผู้ป่วยติดเชื้อในกระแสเลือด (Sepsis)
                         </h1>
-                        <span className="flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-bold border"
-                            style={{ backgroundColor: "#f0faf4", borderColor: "#a8d5ba", color: "#1a5233" }}>
-                            <span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse inline-block" />
-                            LIVE
-                        </span>
+                        <LiveBadge />
                     </div>
                     <p className="text-xs text-gray-400 mt-0.5 flex items-center gap-2 flex-wrap">
                         <span>ดึงข้อมูลจาก Google Sheets แบบ Real-time</span>
@@ -513,19 +361,8 @@ export default function SepsisDashboardPage() {
                         <CountdownRing secondsLeft={secondsLeft} total={REFRESH_INTERVAL_MS / 1000} />
                         <span className="tabular-nums font-medium">{secondsLeft}s</span>
                     </div>
-                    <button onClick={() => fetchData()} disabled={loading}
-                        className="flex items-center gap-1.5 border border-gray-200 rounded-lg px-3 py-1.5 text-sm text-gray-600 hover:bg-gray-50 disabled:opacity-40">
-                        <motion.span animate={loading ? { rotate: 360 } : { rotate: 0 }}
-                            transition={loading ? { duration: 0.8, repeat: Infinity, ease: "linear" } : {}}>
-                            <RefreshCw size={14} />
-                        </motion.span>
-                        รีเฟรช
-                    </button>
-                    {error
-                        ? <span className="flex items-center gap-1 text-xs text-red-500 font-medium"><WifiOff size={13} />ไม่เชื่อมต่อ</span>
-                        : data
-                            ? <span className="flex items-center gap-1 text-xs text-green-600 font-medium"><Wifi size={13} />เชื่อมต่อแล้ว</span>
-                            : null}
+                    <RefreshButton loading={loading} onClick={refetch} />
+                    <ConnectionStatus error={!!error} connected={connected && !!data} />
                 </div>
             </div>
 
