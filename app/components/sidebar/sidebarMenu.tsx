@@ -18,6 +18,7 @@ import {
   Settings,
   UserSearch,
   Pill,
+  Brain,
 } from "lucide-react";
 
 import { SidebarItem, SidebarGroup, SidebarSubGroup } from "./types";
@@ -43,6 +44,12 @@ export const DASHBOARD_GROUPS: SidebarSubGroup[] = [
         label: "บันทึกงาน IT",
         href: "/pages/it-worklog",
         icon: Activity,
+        group: "main",
+      },
+      {
+        label: "ตรวจสุขภาพประจำปี",
+        href: "/pages/health-checkup",
+        icon: HeartPulse,
         group: "main",
       },
     ],
@@ -117,6 +124,12 @@ export const DASHBOARD_GROUPS: SidebarSubGroup[] = [
         icon: Activity,
         group: "disease",
       },
+      {
+        label: "Stroke Dashboard",
+        href: "/pages/stroke-dashboard",
+        icon: Brain,
+        group: "disease",
+      }
     ],
   },
 ];
