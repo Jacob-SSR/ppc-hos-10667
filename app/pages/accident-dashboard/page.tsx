@@ -52,9 +52,12 @@ const VEHICLE_COLOR: Record<string, string> = {
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 function toThaiDate(iso: string): string {
   if (!iso) return "";
-  const [y, m, d] = iso.slice(0, 10).split("-");
+  const parts = iso.slice(0, 10).split("-");
+  if (parts.length !== 3) return iso;
+  const [y, m, d] = parts.map(Number);
+  if (isNaN(y) || isNaN(m) || isNaN(d) || m < 1 || m > 12) return iso;
   const thaiMonths = ["", "ม.ค.", "ก.พ.", "มี.ค.", "เม.ย.", "พ.ค.", "มิ.ย.", "ก.ค.", "ส.ค.", "ก.ย.", "ต.ค.", "พ.ย.", "ธ.ค."];
-  return `${Number(d)} ${thaiMonths[Number(m)]} ${Number(y) + 543}`;
+  return `${d} ${thaiMonths[m]} ${y + 543}`;
 }
 
 function timeAgo(iso: string): string {
@@ -213,8 +216,13 @@ export default function AccidentDashboardPage() {
   }, [s]);
 
   const dayData = useMemo(() =>
-    (s?.byDay ?? []).map((d) => ({ label: toThaiDate(d.date).slice(0, 6), count: d.count })),
-    [s]);
+    (s?.byDay ?? []).map((d) => {
+      const parts = d.date.split("-");
+      const label = parts.length === 3
+        ? `${Number(parts[2])}/${Number(parts[1])}`
+        : d.date;
+      return { label, count: d.count };
+    }), [s]);
 
   return (
     <div className="space-y-4">

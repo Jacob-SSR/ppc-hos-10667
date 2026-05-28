@@ -1,16 +1,33 @@
 // app/api/it-worklog-sheets/route.ts
-// ดึงข้อมูลจาก Google Sheets แทน CSV เพื่อให้ it-worklog page เห็นข้อมูลที่กรอกผ่าน form ได้เลย
+// ดึงข้อมูลจาก Google Sheets — IT Worklog Dashboard
+// Spreadsheet ID: 1erNklVSAmTSXKgPPU1fvd2LXTsLg_iGJgHNGjUpAEpQ
 
 import { NextResponse } from "next/server";
 import { google } from "googleapis";
-import type { WorkRow } from "@/app/api/it-worklog-csv/route";
 
-// Re-export WorkRow type
-export type { WorkRow };
+export interface WorkRow {
+  date: string;
+  staff: string;
+  mainTask: string;
+  subTask: string;
+  subHosXP: string;
+  subIntranet: string;
+  subComputer: string;
+  subNetwork: string;
+  subReport: string;
+  subOther: string;
+  subDoc: string;
+  urgency: string;
+  devType: string;
+  duration: number;
+  department: string;
+  timeliness: string;
+}
 
 const SHEET_NAME = process.env.IT_WORKLOG_SHEET_NAME ?? "บันทึกประจำวัน";
 const SPREADSHEET_ID =
-  process.env.IT_WORKLOG_SPREADSHEET_ID ?? process.env.GOOGLE_SHEET_ID!;
+  process.env.IT_WORKLOG_SPREADSHEET_ID ||
+  "1erNklVSAmTSXKgPPU1fvd2LXTsLg_iGJgHNGjUpAEpQ";
 
 async function getSheetClient() {
   const auth = new google.auth.GoogleAuth({
@@ -25,14 +42,12 @@ async function getSheetClient() {
 
 function normalizeDate(raw: string): string {
   if (!raw) return "";
-  // รองรับ YYYY-MM-DD หรือ DD/MM/YYYY หรือ DD/MM/YYYY+543
   const iso = raw.match(/^(\d{4})-(\d{2})-(\d{2})$/);
   if (iso) {
     const y = parseInt(iso[1]);
     const ce = y > 2400 ? y - 543 : y;
     return `${ce}-${iso[2]}-${iso[3]}`;
   }
-  // รูปแบบ DD/MM/YYYY (พ.ศ.)
   const thai = raw.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
   if (thai) {
     const d = thai[1].padStart(2, "0");
@@ -41,6 +56,14 @@ function normalizeDate(raw: string): string {
     const ce = y > 2400 ? y - 543 : y;
     return `${ce}-${m}-${d}`;
   }
+  // รูปแบบ DD/MM/YY (พ.ศ. 2 หลัก)
+  const short = raw.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2})$/);
+  if (short) {
+    const d = short[1].padStart(2, "0");
+    const m = short[2].padStart(2, "0");
+    const y = parseInt(short[3]) + 2500; // assume พ.ศ.
+    return `${y - 543}-${m}-${d}`;
+  }
   return "";
 }
 
@@ -48,11 +71,8 @@ function parseSheetRows(rows: string[][]): WorkRow[] {
   if (rows.length < 2) return [];
 
   const header = rows[0].map((h) => String(h).trim());
-
-  // map header → index
   const idx = (name: string) => header.findIndex((h) => h.includes(name));
 
-  const iTimestamp = 0; // col A ประทับเวลา
   const iStaff = idx("ชื่อเจ้าหน้าที่ไอที");
   const iMain = idx("เลือกงานหลัก");
   const iIntranet = idx("เลือกงานIntranet");
@@ -70,12 +90,11 @@ function parseSheetRows(rows: string[][]): WorkRow[] {
   const iDuration = idx("รวมระยะเวลา");
   const iTimeliness = idx("ความทันเวลา");
   const iDept = idx("ฝ่าย");
-  const iDoc = header.findIndex((h) => h === "คำถาม"); // ระบบเอกสาร
+  const iDoc = header.findIndex((h) => h === "คำถาม");
 
   const get = (row: string[], i: number) =>
     i >= 0 ? (row[i] ?? "").trim() : "";
 
-  /** เลือก sub-task ที่ตรงกับ mainTask */
   function resolveSubTask(mainTask: string, row: string[]): string {
     const t = mainTask.trim();
     if (t === "ระบบ HosXP") return get(row, iHosXP);
@@ -94,7 +113,6 @@ function parseSheetRows(rows: string[][]): WorkRow[] {
 
   for (let i = 1; i < rows.length; i++) {
     const row = rows[i] as string[];
-    // skip แถวว่างหรือ separator
     if (!row || !row[iDate] || !row[iStaff]) continue;
 
     const rawDate = get(row, iDate);
@@ -103,8 +121,7 @@ function parseSheetRows(rows: string[][]): WorkRow[] {
 
     const mainTask = get(row, iMain);
     const subTask = resolveSubTask(mainTask, row);
-    const durationRaw = get(row, iDuration);
-    const duration = Number(durationRaw) || 0;
+    const duration = Number(get(row, iDuration)) || 0;
 
     result.push({
       date,
@@ -131,13 +148,6 @@ function parseSheetRows(rows: string[][]): WorkRow[] {
 
 export async function GET() {
   try {
-    if (!SPREADSHEET_ID) {
-      return NextResponse.json(
-        { error: "ไม่ได้ตั้งค่า GOOGLE_SHEET_ID" },
-        { status: 500 },
-      );
-    }
-
     const sheets = await getSheetClient();
     const res = await sheets.spreadsheets.values.get({
       spreadsheetId: SPREADSHEET_ID,

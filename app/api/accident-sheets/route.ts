@@ -1,13 +1,9 @@
 // app/api/accident-sheets/route.ts
-// ดึงข้อมูลอุบัติเหตุจาก Google Sheets แบบ real-time
-// Spreadsheet ID: 1XlHb3jU93RzZ7kkE-LY1vL2sFRTiesh2nxRw9vGDeWY
-
 import { NextResponse } from "next/server";
 import { google } from "googleapis";
 
 const SPREADSHEET_ID = process.env.ACCIDENT_SPREADSHEET_ID!;
 
-// ─── หัวตารางเหมือนกับที่ parseXlsx ใช้ (ภาษาไทย) ──────────────────────────
 const COLUMN_MAP: Record<string, keyof AccidentRow> = {
   ลำดับ: "no",
   HN: "hn",
@@ -74,6 +70,83 @@ function toNum(v: unknown): number {
   return isNaN(n) ? 0 : n;
 }
 
+// ─── แปลงวันที่ทุกรูปแบบ → "YYYY-MM-DD" (CE) ─────────────────────────────────
+function normalizeDate(raw: string): string {
+  if (!raw || raw.trim() === "" || raw.trim() === "-") return "";
+  const s = raw.trim();
+
+  // Excel serial number (เช่น 45678) — Sheets บางครั้ง format เป็นตัวเลข
+  const serial = Number(s);
+  if (!isNaN(serial) && serial > 40000 && serial < 60000) {
+    const d = new Date(Date.UTC(1899, 11, 30) + serial * 86400000);
+    const y = d.getUTCFullYear();
+    const mo = String(d.getUTCMonth() + 1).padStart(2, "0");
+    const dy = String(d.getUTCDate()).padStart(2, "0");
+    return `${y}-${mo}-${dy}`;
+  }
+
+  // YYYY-MM-DD
+  let m = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (m) {
+    let y = parseInt(m[1]);
+    if (y > 2400) y -= 543;
+    return `${y}-${m[2]}-${m[3]}`;
+  }
+
+  // DD/MM/YYYY หรือ D/M/YYYY
+  m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+  if (m) {
+    let y = parseInt(m[3]);
+    if (y > 2400) y -= 543;
+    return `${y}-${m[2].padStart(2, "0")}-${m[1].padStart(2, "0")}`;
+  }
+
+  // DD-MM-YYYY
+  m = s.match(/^(\d{1,2})-(\d{1,2})-(\d{4})/);
+  if (m) {
+    let y = parseInt(m[3]);
+    if (y > 2400) y -= 543;
+    return `${y}-${m[2].padStart(2, "0")}-${m[1].padStart(2, "0")}`;
+  }
+
+  // YYYY/MM/DD
+  m = s.match(/^(\d{4})\/(\d{2})\/(\d{2})/);
+  if (m) {
+    let y = parseInt(m[1]);
+    if (y > 2400) y -= 543;
+    return `${y}-${m[2]}-${m[3]}`;
+  }
+
+  // Thai long format เช่น "15 มีนาคม 2568"
+  const THAI_MONTHS_LONG: Record<string, string> = {
+    มกราคม: "01",
+    กุมภาพันธ์: "02",
+    มีนาคม: "03",
+    เมษายน: "04",
+    พฤษภาคม: "05",
+    มิถุนายน: "06",
+    กรกฎาคม: "07",
+    สิงหาคม: "08",
+    กันยายน: "09",
+    ตุลาคม: "10",
+    พฤศจิกายน: "11",
+    ธันวาคม: "12",
+  };
+  for (const [th, mm] of Object.entries(THAI_MONTHS_LONG)) {
+    if (s.includes(th)) {
+      const nums = s.match(/(\d+)/g);
+      if (nums && nums.length >= 2) {
+        const day = nums[0].padStart(2, "0");
+        let year = parseInt(nums[nums.length - 1]);
+        if (year > 2400) year -= 543;
+        return `${year}-${mm}-${day}`;
+      }
+    }
+  }
+
+  return "";
+}
+
 async function getSheetClient() {
   const auth = new google.auth.GoogleAuth({
     credentials: {
@@ -87,13 +160,12 @@ async function getSheetClient() {
 
 function parseRows(rawRows: string[][]): {
   rows: AccidentRow[];
-  sheetName: string;
+  headers: string[];
+  sampleRow: string[];
 } {
-  if (rawRows.length < 2) return { rows: [], sheetName: "Sheet1" };
+  if (rawRows.length < 2) return { rows: [], headers: [], sampleRow: [] };
 
   const header = rawRows[0].map((h) => toStr(h));
-
-  // build index map
   const colIndex: Partial<Record<keyof AccidentRow, number>> = {};
   header.forEach((h, i) => {
     const key = COLUMN_MAP[h];
@@ -108,12 +180,13 @@ function parseRows(rawRows: string[][]): {
   const rows: AccidentRow[] = [];
   for (let i = 1; i < rawRows.length; i++) {
     const row = rawRows[i];
-    // skip empty rows
     if (!row || row.every((c) => !c || !String(c).trim())) continue;
 
     const hn = get(row, "hn");
-    const treatDate = get(row, "treatDate");
-    if (!hn && !treatDate) continue;
+    const treatDateRaw = get(row, "treatDate");
+    if (!hn && !treatDateRaw) continue;
+
+    const treatDate = normalizeDate(treatDateRaw) || treatDateRaw;
 
     rows.push({
       no: toNum(get(row, "no")) || i,
@@ -121,7 +194,8 @@ function parseRows(rawRows: string[][]): {
       age: toNum(get(row, "age")),
       sex: get(row, "sex"),
       treatDate,
-      accidentDate: get(row, "accidentDate"),
+      accidentDate:
+        normalizeDate(get(row, "accidentDate")) || get(row, "accidentDate"),
       timeSlot: get(row, "timeSlot"),
       prb: get(row, "prb"),
       rights: get(row, "rights"),
@@ -144,7 +218,7 @@ function parseRows(rawRows: string[][]): {
     });
   }
 
-  return { rows, sheetName: "Google Sheets" };
+  return { rows, headers: header, sampleRow: rawRows[1] ?? [] };
 }
 
 function buildSummary(rows: AccidentRow[]) {
@@ -179,20 +253,13 @@ function buildSummary(rows: AccidentRow[]) {
   const maxAge = ages.length > 0 ? Math.max(...ages) : 0;
 
   const count = (arr: AccidentRow[], key: keyof AccidentRow) => {
-    const m: Record<string, number> = {};
+    const map: Record<string, number> = {};
     arr.forEach((r) => {
       const v = String(r[key] || "ไม่ระบุ").trim() || "ไม่ระบุ";
-      m[v] = (m[v] || 0) + 1;
+      map[v] = (map[v] || 0) + 1;
     });
-    return m;
+    return map;
   };
-
-  const byVehicle = count(rows, "vehicle");
-  const bySeverity = count(rows, "severity");
-  const byTambon = count(rows, "tambon");
-  const byStatus = count(rows, "status");
-  const byProtection = count(rows, "protection");
-  const byRoad = count(rows, "road");
 
   const byTimeSlot: Record<string, number> = {};
   rows.forEach((r) => {
@@ -230,14 +297,17 @@ function buildSummary(rows: AccidentRow[]) {
     };
   });
 
+  // byDay — รับเฉพาะ YYYY-MM-DD ที่ valid
   const dayMap: Record<string, number> = {};
   rows.forEach((r) => {
-    const d = r.treatDate.slice(0, 10);
-    if (d) dayMap[d] = (dayMap[d] || 0) + 1;
+    const d = r.treatDate?.slice(0, 10) ?? "";
+    if (d.length === 10 && /^\d{4}-\d{2}-\d{2}$/.test(d)) {
+      dayMap[d] = (dayMap[d] || 0) + 1;
+    }
   });
   const byDay = Object.entries(dayMap)
     .sort(([a], [b]) => a.localeCompare(b))
-    .map(([date, count]) => ({ date, count }));
+    .map(([date, c]) => ({ date, count: c }));
 
   return {
     total,
@@ -255,23 +325,23 @@ function buildSummary(rows: AccidentRow[]) {
     motorcycleCount,
     helmetWorn,
     helmetNot,
-    byVehicle,
-    bySeverity,
-    byTambon,
+    byVehicle: count(rows, "vehicle"),
+    bySeverity: count(rows, "severity"),
+    byTambon: count(rows, "tambon"),
     byTimeSlot,
-    byStatus,
-    byProtection,
+    byStatus: count(rows, "status"),
+    byProtection: count(rows, "protection"),
     byAgeGroup,
     byDay,
-    byRoad,
+    byRoad: count(rows, "road"),
   };
 }
 
-export async function GET() {
+export async function GET(req: Request) {
+  const debug = new URL(req.url).searchParams.get("debug") === "1";
+
   try {
     const sheets = await getSheetClient();
-
-    // ดึง Sheet แรก (หรือ Sheet ชื่ออุบัติเหตุ)
     const meta = await sheets.spreadsheets.get({
       spreadsheetId: SPREADSHEET_ID,
     });
@@ -283,8 +353,22 @@ export async function GET() {
     });
 
     const raw = (res.data.values ?? []) as string[][];
-    const { rows, sheetName } = parseRows(raw);
+    const { rows, headers, sampleRow } = parseRows(raw);
     const summary = buildSummary(rows);
+
+    // Debug: ดู raw treatDate ของแต่ละ row
+    if (debug) {
+      return NextResponse.json({
+        headers,
+        sampleRow,
+        treatDateSamples: rows.slice(0, 10).map((r) => ({
+          hn: r.hn,
+          treatDate: r.treatDate,
+        })),
+        byDayCount: summary.byDay.length,
+        totalRows: rows.length,
+      });
+    }
 
     return NextResponse.json({
       updatedAt: new Date().toISOString(),
