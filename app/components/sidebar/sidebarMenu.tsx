@@ -88,6 +88,12 @@ export const DASHBOARD_GROUPS: SidebarSubGroup[] = [
         icon: Banknote,
         group: "claim",
       },
+      {
+        label: "งานเคลม ANC ฝากครรภ์",
+        href: "/pages/anc-dashboard",
+        icon: Baby,
+        group: "claim",
+      },
     ],
   },
 

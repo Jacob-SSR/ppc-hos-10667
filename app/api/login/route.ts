@@ -36,7 +36,7 @@ export async function POST(req: Request) {
   if (user.passweb.startsWith("$2b$") || user.passweb.startsWith("$2a$")) {
     isValid = await bcrypt.compare(password, user.passweb);
   } else {
-    isValid = md5(password) === user.passweb;
+    isValid = md5(password).toLowerCase() === user.passweb.toLowerCase();
 
     if (isValid) {
       const newHash = await bcrypt.hash(password, 12);
