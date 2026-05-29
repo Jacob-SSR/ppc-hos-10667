@@ -13,6 +13,7 @@ import {
   Sun,
   Moon,
   FilePen,
+  MapPinned,
 } from "lucide-react";
 
 import NavGroup from "./NavGroup";
@@ -66,6 +67,9 @@ export default function Sidebar() {
     useState<boolean | null>(null);
 
   const [isIT, setIsIT] =
+    useState(false);
+
+  const [isPikad, setIsPikad] =
     useState(false);
 
   // =========================
@@ -347,6 +351,31 @@ export default function Sidebar() {
                 </div>
               </Link>
             )}
+
+            <Link
+              href="https://pikad-phlapphla-chai.vercel.app/"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="
+    flex items-center gap-2.5
+    px-3 py-2.5 rounded-lg
+    text-sm font-medium
+    transition-colors
+    text-gray-600 hover:bg-[#e8f5ee]
+  "
+            >
+              <MapPinned size={16} />
+
+              <div>
+                <div className="text-xs">
+                  ค้นหาพิกัดหลังคาเรือน
+                </div>
+
+                <div className="text-[10px] text-gray-400">
+                  ระบบค้นหาพิกัด
+                </div>
+              </div>
+            </Link>
           </>
         )}
 
