@@ -35,6 +35,12 @@ export const DASHBOARD_GROUPS: SidebarSubGroup[] = [
         group: "main",
       },
       {
+        label: "IP & Home Ward",
+        href: "/pages/ip-homeward-dashboard",
+        icon: BedDouble,
+        group: "main"
+      },
+      {
         label: "สถิติผู้รับบริการแยกเวร",
         href: "/pages/shift-stats",
         icon: BarChart3,
@@ -129,7 +135,7 @@ export const DASHBOARD_GROUPS: SidebarSubGroup[] = [
         href: "/pages/stroke-dashboard",
         icon: Brain,
         group: "disease",
-      }
+      },
     ],
   },
 ];
