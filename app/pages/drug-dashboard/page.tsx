@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, memo } from "react";
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid,
   ResponsiveContainer, PieChart, Pie, Cell, Area, AreaChart,
@@ -34,7 +34,7 @@ const REFRESH_INTERVAL_MS = 30_000;
 const fmt = (n: number) => n.toLocaleString("th-TH");
 
 // ─── Charts ───────────────────────────────────────────────────────────────────
-function DashboardCharts({ s }: { s: DrugDashboardSummary }) {
+const DashboardCharts = memo(function DashboardCharts({ s }: { s: DrugDashboardSummary }) {
   const tip = { contentStyle: { fontSize: 12, borderRadius: 8, border: "1px solid #e5e7eb" } };
 
   const colorData = Object.entries(s.byColor).filter(([k]) => k !== "ไม่ระบุ")
@@ -69,7 +69,8 @@ function DashboardCharts({ s }: { s: DrugDashboardSummary }) {
     <>
       <div className="flex justify-center">
         <PieChart width={160} height={160}>
-          <Pie data={data} cx={75} cy={75} innerRadius={45} outerRadius={70} dataKey="value" paddingAngle={3}>
+          <Pie data={data} cx={75} cy={75} innerRadius={45} outerRadius={70} dataKey="value"
+            paddingAngle={3} isAnimationActive={false}>
             {data.map((d, i) => <Cell key={i} fill={d.color} stroke="none" />)}
           </Pie>
           <Tooltip formatter={(v: number) => [v + " ราย"]} {...tip} />
@@ -95,7 +96,8 @@ function DashboardCharts({ s }: { s: DrugDashboardSummary }) {
             <YAxis tick={{ fontSize: 11, fill: "#6b7280" }} axisLine={false} tickLine={false} />
             <Tooltip {...tip} formatter={(v: number) => [v + " ราย", "จำนวน"]} />
             <Area type="monotone" dataKey="count" stroke={C.green} strokeWidth={2.5}
-              fill="url(#drugGrad)" dot={{ r: 3, fill: C.green }} activeDot={{ r: 5 }} />
+              fill="url(#drugGrad)" dot={{ r: 3, fill: C.green }} activeDot={{ r: 5 }}
+              isAnimationActive={false} />
           </AreaChart>
         </ResponsiveContainer>
       </SectionCard>
@@ -114,7 +116,7 @@ function DashboardCharts({ s }: { s: DrugDashboardSummary }) {
               <XAxis type="number" tick={{ fontSize: 11, fill: "#6b7280" }} axisLine={false} tickLine={false} />
               <YAxis type="category" dataKey="name" tick={{ fontSize: 11, fill: "#6b7280" }} axisLine={false} tickLine={false} width={60} />
               <Tooltip formatter={(v: number) => [v + " ราย"]} {...tip} />
-              <Bar dataKey="value" radius={[0, 4, 4, 0]}>
+              <Bar dataKey="value" radius={[0, 4, 4, 0]} isAnimationActive={false}>
                 {programData.map((d, i) => <Cell key={i} fill={d.color} />)}
               </Bar>
             </BarChart>
@@ -131,7 +133,7 @@ function DashboardCharts({ s }: { s: DrugDashboardSummary }) {
               <XAxis dataKey="name" tick={{ fontSize: 10, fill: "#6b7280" }} axisLine={false} tickLine={false} />
               <YAxis tick={{ fontSize: 11, fill: "#6b7280" }} axisLine={false} tickLine={false} />
               <Tooltip formatter={(v: number) => [v + " ราย"]} {...tip} />
-              <Bar dataKey="value" radius={[4, 4, 0, 0]}>
+              <Bar dataKey="value" radius={[4, 4, 0, 0]} isAnimationActive={false}>
                 {v2Data.map((d, i) => <Cell key={i} fill={d.color} />)}
               </Bar>
             </BarChart>
@@ -147,7 +149,7 @@ function DashboardCharts({ s }: { s: DrugDashboardSummary }) {
               <XAxis dataKey="name" tick={{ fontSize: 9, fill: "#6b7280" }} axisLine={false} tickLine={false} />
               <YAxis tick={{ fontSize: 11, fill: "#6b7280" }} axisLine={false} tickLine={false} />
               <Tooltip formatter={(v: number) => [v + " ราย"]} {...tip} />
-              <Bar dataKey="value" fill={C.blue} radius={[4, 4, 0, 0]} />
+              <Bar dataKey="value" fill={C.blue} radius={[4, 4, 0, 0]} isAnimationActive={false} />
             </BarChart>
           </ResponsiveContainer>
         </SectionCard>
@@ -160,7 +162,7 @@ function DashboardCharts({ s }: { s: DrugDashboardSummary }) {
       </div>
     </div>
   );
-}
+});
 
 // ─── Patient Table ────────────────────────────────────────────────────────────
 function PatientTable({ rows }: { rows: DrugSheetsDashboardData["rows"] }) {
