@@ -106,6 +106,7 @@ export default function StrokeDashboardPage() {
     const [fOutcome, setFOutcome] = useState("");
     const [fEMS, setFEMS] = useState("");
     const [fIMC, setFIMC] = useState("");
+    const [fDept, setFDept] = useState("");
 
     // Table
     const [sortKey, setSortKey] = useState<keyof StrokeSheetRow>("date");
@@ -120,6 +121,8 @@ export default function StrokeDashboardPage() {
         [...new Set(rows.map(r => r.date.slice(0, 4)).filter(Boolean))].sort().reverse(), [rows]);
     const districts = useMemo(() =>
         [...new Set(rows.map(r => r.district).filter(Boolean))].sort(), [rows]);
+    const departments = useMemo(() =>
+        [...new Set(rows.map(r => r.department).filter(Boolean))].sort(), [rows]);
 
     // Filtered + sorted rows
     const filtered = useMemo(() => {
@@ -131,6 +134,7 @@ export default function StrokeDashboardPage() {
             if (fEMS && r.ems !== fEMS) return false;
             if (fIMC === "yes" && !r.isIMC) return false;
             if (fIMC === "no" && r.isIMC) return false;
+            if (fDept && r.department !== fDept) return false;
             if (search) {
                 const q = search.toLowerCase();
                 const blob = [r.name, r.hn, r.district, r.diagnosis, r.definiteDx, r.note].join(" ").toLowerCase();
@@ -146,7 +150,7 @@ export default function StrokeDashboardPage() {
                 : String(bv).localeCompare(String(av), "th");
         });
         return out;
-    }, [rows, fYear, fType, fDistrict, fOutcome, fEMS, fIMC, search, sortKey, sortAsc]);
+    }, [rows, fYear, fType, fDistrict, fOutcome, fEMS, fIMC, fDept, search, sortKey, sortAsc]);
 
     const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
     const paged = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
@@ -184,6 +188,35 @@ export default function StrokeDashboardPage() {
         const map: Record<string, number> = {};
         filtered.forEach(r => { if (r.district) map[r.district] = (map[r.district] || 0) + 1; });
         return Object.entries(map).sort(([, a], [, b]) => b - a).map(([name, value]) => ({ name, value }));
+    }, [filtered]);
+
+    // ─── สรุป KPI รายแผนก ──────────────────────────────────────────────
+    const deptStats = useMemo(() => {
+        const map: Record<string, StrokeSheetRow[]> = {};
+        filtered.forEach(r => {
+            const d = r.department || "ไม่ระบุ";
+            (map[d] ??= []).push(r);
+        });
+        return Object.entries(map)
+            .map(([name, list]) => {
+                const t = list.length;
+                const nums = list.map(r => r.nihss).filter((n): n is number => n != null);
+                return {
+                    name,
+                    total: t,
+                    fast: list.filter(r => r.type === "FAST TRACT").length,
+                    rtpa: list.filter(r => /yes/i.test(r.rtPA)).length,
+                    ems: list.filter(r => /yes/i.test(r.ems)).length,
+                    imc: list.filter(r => r.isIMC).length,
+                    improved: list.filter(r => /improve/i.test(r.outcome)).length,
+                    dead: list.filter(r => /dead/i.test(r.outcome)).length,
+                    af: list.filter(r => isAF(r.ekg)).length,
+                    avgNIHSS: nums.length
+                        ? Math.round((nums.reduce((s, v) => s + v, 0) / nums.length) * 10) / 10
+                        : 0,
+                };
+            })
+            .sort((a, b) => b.total - a.total);
     }, [filtered]);
 
     const ageData = useMemo(() => {
@@ -224,20 +257,29 @@ export default function StrokeDashboardPage() {
 
     const clearFilters = () => {
         setSearch(""); setFYear(""); setFType(""); setFDistrict("");
-        setFOutcome(""); setFEMS(""); setFIMC(""); setPage(1);
+        setFOutcome(""); setFEMS(""); setFIMC(""); setFDept(""); setPage(1);
     };
-    const hasFilter = search || fYear || fType || fDistrict || fOutcome || fEMS || fIMC;
+    const hasFilter = search || fYear || fType || fDistrict || fOutcome || fEMS || fIMC || fDept;
 
     const exportExcel = () => {
         const ws = XLSX.utils.json_to_sheet(filtered.map(r => ({
             ลำดับ: r.no, ชื่อ: r.name, HN: r.hn, อายุ: r.age,
             วันที่: r.date, ประเภท: r.type, Onset: r.onset,
-            NIHSS: r.nihss, EKG: r.ekg, เขต: r.district,
+            NIHSS: r.nihss, EKG: r.ekg, เขต: r.district, แผนก: r.department,
             "Definite Dx": r.definiteDx, rtPA: r.rtPA,
             Outcome: r.outcome, IMC: r.isIMC ? "Yes" : "", หมายเหตุ: r.note,
         })));
         const wb = XLSX.utils.book_new();
         XLSX.utils.book_append_sheet(wb, ws, "Stroke");
+
+        // sheet สรุปรายแผนก
+        const wsDept = XLSX.utils.json_to_sheet(deptStats.map(d => ({
+            แผนก: d.name, ทั้งหมด: d.total, FAST: d.fast, rtPA: d.rtpa,
+            "EMS 1669": d.ems, IMC: d.imc, Improve: d.improved,
+            เสียชีวิต: d.dead, AF: d.af, "NIHSS เฉลี่ย": d.avgNIHSS,
+        })));
+        XLSX.utils.book_append_sheet(wb, wsDept, "สรุปรายแผนก");
+
         XLSX.writeFile(wb, `stroke_${new Date().toISOString().slice(0, 10)}.xlsx`);
     };
 
@@ -331,6 +373,7 @@ export default function StrokeDashboardPage() {
                 {[
                     { label: "ปี", val: fYear, set: setFYear, opts: years.map(y => ({ v: y, l: `${Number(y) + 543}` })) },
                     { label: "ประเภท", val: fType, set: setFType, opts: ["FAST TRACT", "Non-FAST TRACT"].map(v => ({ v, l: v })) },
+                    { label: "แผนก", val: fDept, set: setFDept, opts: departments.map(v => ({ v, l: v })) },
                     { label: "เขต", val: fDistrict, set: setFDistrict, opts: districts.map(v => ({ v, l: v })) },
                     { label: "Outcome", val: fOutcome, set: setFOutcome, opts: ["Improve", "Dead"].map(v => ({ v, l: v })) },
                     { label: "EMS 1669", val: fEMS, set: setFEMS, opts: [{ v: "Yes", l: "ใช่" }, { v: "No", l: "ไม่ใช่" }] },
@@ -479,6 +522,78 @@ export default function StrokeDashboardPage() {
                 </ChartCard>
             )}
 
+            {/* ── สรุปแยกตามแผนก ── */}
+            {data && deptStats.length > 0 && (
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+                    {/* กราฟจำนวนตามแผนก */}
+                    <ChartCard title="จำนวนผู้ป่วยตามแผนก" className="lg:col-span-1">
+                        <div className="h-56">
+                            <ResponsiveContainer width="100%" height="100%">
+                                <BarChart data={deptStats} margin={{ top: 4, right: 8, left: -20, bottom: 0 }}>
+                                    <XAxis dataKey="name" tick={{ fontSize: 11, fill: "#374151" }} />
+                                    <YAxis tick={{ fontSize: 10, fill: "#6b7280" }} />
+                                    <Tooltip contentStyle={TT_STYLE} />
+                                    <Bar dataKey="total" name="จำนวน" radius={[3, 3, 0, 0]}>
+                                        {deptStats.map((_, i) => (
+                                            <Cell key={i} fill={C_BLUE[Math.min(i, C_BLUE.length - 1)]} />
+                                        ))}
+                                    </Bar>
+                                </BarChart>
+                            </ResponsiveContainer>
+                        </div>
+                    </ChartCard>
+
+                    {/* ตารางคำนวณรายแผนก */}
+                    <ChartCard title="สรุปตัวชี้วัดรายแผนก" className="lg:col-span-2">
+                        <div className="overflow-x-auto">
+                            <table className="w-full text-xs border-collapse">
+                                <thead className="bg-[#f0faf4]">
+                                    <tr>
+                                        {["แผนก", "ทั้งหมด", "FAST", "rtPA", "EMS 1669", "IMC", "Improve", "เสียชีวิต", "AF", "NIHSS เฉลี่ย"]
+                                            .map(h => (
+                                                <th key={h} className="px-3 py-2.5 text-left text-[10px] font-bold uppercase tracking-wider text-[#1a5233] whitespace-nowrap">
+                                                    {h}
+                                                </th>
+                                            ))}
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {deptStats.map((d, i) => (
+                                        <tr key={d.name} className={`border-b border-gray-100 hover:bg-[#f0faf4]/40 ${i % 2 === 1 ? "bg-gray-50/30" : ""}`}>
+                                            <td className="px-3 py-2 font-bold text-[#1a5233]">{d.name}</td>
+                                            <td className="px-3 py-2 font-bold text-gray-900">{d.total}</td>
+                                            <td className="px-3 py-2 text-gray-700">
+                                                {d.fast} <span className="text-gray-400">({d.total ? Math.round(d.fast / d.total * 100) : 0}%)</span>
+                                            </td>
+                                            <td className="px-3 py-2 text-gray-700">{d.rtpa}</td>
+                                            <td className="px-3 py-2 text-gray-700">{d.ems}</td>
+                                            <td className="px-3 py-2 text-amber-700 font-medium">{d.imc}</td>
+                                            <td className="px-3 py-2 text-green-700">{d.improved}</td>
+                                            <td className="px-3 py-2 text-red-600">{d.dead}</td>
+                                            <td className="px-3 py-2 text-purple-700">{d.af}</td>
+                                            <td className="px-3 py-2 font-bold text-gray-800">{d.avgNIHSS}</td>
+                                        </tr>
+                                    ))}
+                                    {/* แถวรวม */}
+                                    <tr className="border-t-2 border-[#a8d5ba] bg-[#f0faf4] font-bold">
+                                        <td className="px-3 py-2 text-[#1a5233]">รวม</td>
+                                        <td className="px-3 py-2 text-gray-900">{deptStats.reduce((s, d) => s + d.total, 0)}</td>
+                                        <td className="px-3 py-2 text-gray-700">{deptStats.reduce((s, d) => s + d.fast, 0)}</td>
+                                        <td className="px-3 py-2 text-gray-700">{deptStats.reduce((s, d) => s + d.rtpa, 0)}</td>
+                                        <td className="px-3 py-2 text-gray-700">{deptStats.reduce((s, d) => s + d.ems, 0)}</td>
+                                        <td className="px-3 py-2 text-amber-700">{deptStats.reduce((s, d) => s + d.imc, 0)}</td>
+                                        <td className="px-3 py-2 text-green-700">{deptStats.reduce((s, d) => s + d.improved, 0)}</td>
+                                        <td className="px-3 py-2 text-red-600">{deptStats.reduce((s, d) => s + d.dead, 0)}</td>
+                                        <td className="px-3 py-2 text-purple-700">{deptStats.reduce((s, d) => s + d.af, 0)}</td>
+                                        <td className="px-3 py-2 text-gray-400">—</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </ChartCard>
+                </div>
+            )}
+
             {/* ── Patient Table ── */}
             {data && (
                 <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
@@ -498,6 +613,7 @@ export default function StrokeDashboardPage() {
                                     {renderTH("อายุ", "age")}
                                     {renderTH("วันที่", "date")}
                                     {renderTH("ประเภท", "type")}
+                                    {renderTH("แผนก", "department")}
                                     {renderTH("Onset", "onset")}
                                     {renderTH("NIHSS", "nihss")}
                                     {renderTH("EKG", "ekg")}
@@ -519,6 +635,11 @@ export default function StrokeDashboardPage() {
                                             {r.type === "FAST TRACT"
                                                 ? <span className="bg-[#d6f0e0] text-[#1a5233] font-bold text-[10px] px-2 py-0.5 rounded-full">FAST</span>
                                                 : <span className="bg-gray-100 text-gray-600 text-[10px] px-2 py-0.5 rounded-full">Non-FAST</span>}
+                                        </td>
+                                        <td className="px-3 py-2">
+                                            {r.department
+                                                ? <span className="bg-[#e8f5ee] text-[#1a5233] font-semibold text-[10px] px-2 py-0.5 rounded-full">{r.department}</span>
+                                                : <span className="text-gray-400">-</span>}
                                         </td>
                                         <td className="px-3 py-2 whitespace-nowrap text-gray-700">{r.onset || "-"}</td>
                                         <td className="px-3 py-2 text-center font-bold text-gray-800">{r.nihss ?? "-"}</td>
@@ -554,7 +675,7 @@ export default function StrokeDashboardPage() {
                                     </tr>
                                 ))}
                                 {paged.length === 0 && (
-                                    <tr><td colSpan={13} className="text-center py-12 text-gray-400">ไม่พบข้อมูลตามเงื่อนไขที่เลือก</td></tr>
+                                    <tr><td colSpan={14} className="text-center py-12 text-gray-400">ไม่พบข้อมูลตามเงื่อนไขที่เลือก</td></tr>
                                 )}
                             </tbody>
                         </table>
