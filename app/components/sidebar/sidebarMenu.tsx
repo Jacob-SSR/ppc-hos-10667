@@ -65,15 +65,15 @@ export const DASHBOARD_GROUPS: SidebarSubGroup[] = [
     title: "งานเคลม / การเงิน",
     items: [
       {
-        label: "จัดสรรผลงานบริการ - MOPH CLAIM",
-        href: "/pages/billing-dashboard",
-        icon: Banknote,
+        label: "งานเคลม ANC ฝากครรภ์",
+        href: "/pages/anc-dashboard",
+        icon: Baby,
         group: "claim",
       },
       {
-        label: "KTB",
-        href: "/pages/ktb-dashboard",
-        icon: Wallet,
+        label: "จัดสรรผลงานบริการ - MOPH CLAIM",
+        href: "/pages/billing-dashboard",
+        icon: Banknote,
         group: "claim",
       },
       {
@@ -83,17 +83,18 @@ export const DASHBOARD_GROUPS: SidebarSubGroup[] = [
         group: "claim",
       },
       {
+        label: "KTB",
+        href: "/pages/ktb-dashboard",
+        icon: Wallet,
+        group: "claim",
+      },
+      {
         label: "STM OPD-UCS",
         href: "/pages/stm-dashboard",
         icon: Banknote,
         group: "claim",
       },
-      {
-        label: "งานเคลม ANC ฝากครรภ์",
-        href: "/pages/anc-dashboard",
-        icon: Baby,
-        group: "claim",
-      },
+
     ],
   },
 
@@ -101,15 +102,9 @@ export const DASHBOARD_GROUPS: SidebarSubGroup[] = [
     title: "งานโรค",
     items: [
       {
-        label: "อุบัติเหตุ",
-        href: "/pages/accident-dashboard",
-        icon: AlertTriangle,
-        group: "disease",
-      },
-      {
-        label: "RDU Antibiotic Smart Use",
-        href: "/pages/rdu-dashboard",
-        icon: Pill,
+        label: "วัณโรค (TB)",
+        href: "/pages/tb-dashboard",
+        icon: Activity,
         group: "disease",
       },
       {
@@ -119,23 +114,32 @@ export const DASHBOARD_GROUPS: SidebarSubGroup[] = [
         group: "disease",
       },
       {
+        label: "อุบัติเหตุ",
+        href: "/pages/accident-dashboard",
+        icon: AlertTriangle,
+        group: "disease",
+      },
+
+      {
         label: "Home Ward ยาเสพติด",
         href: "/pages/homeward-dashboard",
         icon: BedDouble,
         group: "disease",
       },
       {
+        label: "RDU Antibiotic Smart Use",
+        href: "/pages/rdu-dashboard",
+        icon: Pill,
+        group: "disease",
+      },
+
+      {
         label: "Sepsis",
         href: "/pages/sepsis-dashboard",
         icon: Activity,
         group: "disease",
       },
-      {
-        label: "วัณโรค (TB)",
-        href: "/pages/tb-dashboard",
-        icon: Activity,
-        group: "disease",
-      },
+
       {
         label: "Stroke Dashboard",
         href: "/pages/stroke-dashboard",
