@@ -41,6 +41,24 @@ export const DASHBOARD_GROUPS: SidebarSubGroup[] = [
         group: "main"
       },
       {
+        label: "กายภาพบำบัด (PT)",
+        href: "/pages/pt-dashboard",
+        icon: Activity,
+        group: "main",
+      },
+      {
+        label: "ทันตกรรม (Dental)",
+        href: "/pages/dental-dashboard",
+        icon: Activity,
+        group: "main",
+      },
+      {
+        label: "แพทย์แผนไทย (TTM)",
+        href: "/pages/ttm-dashboard",
+        icon: Activity,
+        group: "main",
+      },
+      {
         label: "สถิติผู้รับบริการแยกเวร",
         href: "/pages/shift-stats",
         icon: BarChart3,
@@ -58,6 +76,7 @@ export const DASHBOARD_GROUPS: SidebarSubGroup[] = [
         icon: HeartPulse,
         group: "main",
       },
+
     ],
   },
 
@@ -101,12 +120,7 @@ export const DASHBOARD_GROUPS: SidebarSubGroup[] = [
   {
     title: "งานโรค",
     items: [
-      {
-        label: "กายภาพบำบัด (PT)",
-        href: "/pages/pt-dashboard",
-        icon: Activity,
-        group: "disease",
-      },
+
       {
         label: "วัณโรค (TB)",
         href: "/pages/tb-dashboard",
@@ -120,12 +134,6 @@ export const DASHBOARD_GROUPS: SidebarSubGroup[] = [
         group: "disease"
       },
       {
-        label: "ทันตกรรม (Dental)",
-        href: "/pages/dental-dashboard",
-        icon: Activity,
-        group: "disease",
-      },
-      {
         label: "ผู้ป่วยยาเสพติด",
         href: "/pages/drug-dashboard",
         icon: Activity,
@@ -135,12 +143,6 @@ export const DASHBOARD_GROUPS: SidebarSubGroup[] = [
         label: "อุบัติเหตุ",
         href: "/pages/accident-dashboard",
         icon: AlertTriangle,
-        group: "disease",
-      },
-      {
-        label: "แพทย์แผนไทย (TTM)",
-        href: "/pages/ttm-dashboard",
-        icon: Activity,
         group: "disease",
       },
       {
