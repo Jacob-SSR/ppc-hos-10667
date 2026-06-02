@@ -119,7 +119,10 @@ export const DASHBOARD_GROUPS: SidebarSubGroup[] = [
         icon: AlertTriangle,
         group: "disease",
       },
-
+      { label: "งานการพยาบาลผู้คลอด (ANC)", 
+        href: "/pages/anc-nursing-dashboard", 
+        icon: Baby, 
+        group: "disease" },
       {
         label: "Home Ward ยาเสพติด",
         href: "/pages/homeward-dashboard",

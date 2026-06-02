@@ -85,5 +85,6 @@ export const config = {
     "/api/accident-dashboard/:path*",
     "/api/accident-upload/:path*",
     "/api/fall-report/:path*",
+    "/api/anc-nursing/:path*",
   ],
 };
