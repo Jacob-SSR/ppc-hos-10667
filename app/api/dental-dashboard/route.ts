@@ -1,0 +1,62 @@
+// app/api/dental-dashboard/route.ts
+// Dashboard ทันตกรรม — ส่งข้อมูลครบ 8 ชุดในคำขอเดียว
+// รับ ?preset=today|7days|30days|thismonth  หรือ  ?start=YYYY-MM-DD&end=YYYY-MM-DD
+import { NextResponse } from "next/server";
+import { getDentalDashboard } from "@/lib/dental.service";
+
+export const dynamic = "force-dynamic";
+
+function fmt(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(
+    d.getDate(),
+  ).padStart(2, "0")}`;
+}
+
+function rangeFromPreset(preset: string): { start: string; end: string } {
+  const now = new Date(
+    new Date().toLocaleString("en-US", { timeZone: "Asia/Bangkok" }),
+  );
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const end = fmt(today);
+
+  if (preset === "7days") {
+    const s = new Date(today);
+    s.setDate(s.getDate() - 6);
+    return { start: fmt(s), end };
+  }
+  if (preset === "30days") {
+    const s = new Date(today);
+    s.setDate(s.getDate() - 29);
+    return { start: fmt(s), end };
+  }
+  if (preset === "thismonth") {
+    return {
+      start: fmt(new Date(today.getFullYear(), today.getMonth(), 1)),
+      end,
+    };
+  }
+  return { start: end, end };
+}
+
+export async function GET(req: Request) {
+  try {
+    const { searchParams } = new URL(req.url);
+    const startParam = searchParams.get("start");
+    const endParam = searchParams.get("end");
+    const preset = searchParams.get("preset") ?? "today";
+
+    const { start, end } =
+      startParam && endParam
+        ? { start: startParam, end: endParam }
+        : rangeFromPreset(preset);
+
+    const data = await getDentalDashboard(start, end);
+    return NextResponse.json({ ...data, start, end });
+  } catch (error) {
+    console.error("Dental dashboard error:", error);
+    return NextResponse.json(
+      { error: "Internal Server Error" },
+      { status: 500 },
+    );
+  }
+}

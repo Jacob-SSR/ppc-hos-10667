@@ -102,8 +102,26 @@ export const DASHBOARD_GROUPS: SidebarSubGroup[] = [
     title: "งานโรค",
     items: [
       {
+        label: "กายภาพบำบัด (PT)",
+        href: "/pages/pt-dashboard",
+        icon: Activity,
+        group: "disease",
+      },
+      {
         label: "วัณโรค (TB)",
         href: "/pages/tb-dashboard",
+        icon: Activity,
+        group: "disease",
+      },
+      {
+        label: "งานการพยาบาลผู้คลอด (ANC)",
+        href: "/pages/anc-nursing-dashboard",
+        icon: Baby,
+        group: "disease"
+      },
+      {
+        label: "ทันตกรรม (Dental)",
+        href: "/pages/dental-dashboard",
         icon: Activity,
         group: "disease",
       },
@@ -119,10 +137,12 @@ export const DASHBOARD_GROUPS: SidebarSubGroup[] = [
         icon: AlertTriangle,
         group: "disease",
       },
-      { label: "งานการพยาบาลผู้คลอด (ANC)", 
-        href: "/pages/anc-nursing-dashboard", 
-        icon: Baby, 
-        group: "disease" },
+      {
+        label: "แพทย์แผนไทย (TTM)",
+        href: "/pages/ttm-dashboard",
+        icon: Activity,
+        group: "disease",
+      },
       {
         label: "Home Ward ยาเสพติด",
         href: "/pages/homeward-dashboard",
