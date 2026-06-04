@@ -41,19 +41,25 @@ export const DASHBOARD_GROUPS: SidebarSubGroup[] = [
         group: "main"
       },
       {
-        label: "กายภาพบำบัด (PT)",
+        label: "IMC",
+        href: "/pages/imc-dashboard",
+        icon: Activity,
+        group: "main"
+      },
+      {
+        label: "กายภาพบำบัด",
         href: "/pages/pt-dashboard",
         icon: Activity,
         group: "main",
       },
       {
-        label: "ทันตกรรม (Dental)",
+        label: "ทันตกรรม",
         href: "/pages/dental-dashboard",
         icon: Activity,
         group: "main",
       },
       {
-        label: "แพทย์แผนไทย (TTM)",
+        label: "แพทย์แผนไทย",
         href: "/pages/ttm-dashboard",
         icon: Activity,
         group: "main",
