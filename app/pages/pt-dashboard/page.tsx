@@ -1,13 +1,19 @@
 "use client";
-// app/pages/pt-dashboard/page.tsx
-// Dashboard กายภาพบำบัด (PT/PTA) — พอร์ตจาก DASHBO_1.HTM เข้าระบบจริง
-// ดึง /api/pt-dashboard (records[] + queue[]) แล้วคำนวณทุก section ฝั่ง client
-import { useEffect, useMemo, useRef, useState, useCallback } from "react";
-import { Chart, registerables } from "chart.js";
+import { useMemo, useState } from "react";
+import { motion, AnimatePresence } from "framer-motion";
+import {
+    Users, Activity, Banknote, Stethoscope, UserCog,
+    Search, ChevronRight, Printer, FileSpreadsheet, ListChecks, Clock, Table2,
+} from "lucide-react";
+import { PieChart, Pie, Cell, Tooltip as RTooltip, ResponsiveContainer } from "recharts";
 import { exportToExcel } from "@/lib/exportExcel";
-
-Chart.register(...registerables);
-
+import {
+    useAutoRefresh, timeAgo, CountdownRing,
+    KpiCard, HBarList, SectionCard, LiveBadge, ConnectionStatus, RefreshButton,
+} from "@/app/components/dashboard/live";
+import { Shimmer } from "@/app/components/ui/Shimmer";
+import { EmptyState } from "@/app/components/ui/EmptyState";
+import { formatThaiDate } from "@/lib/dateUtils";
 // ─── Types ──────────────────────────────────────────────────────────────────
 interface PtRecord {
     date: string;
@@ -38,8 +44,10 @@ interface ApiResp {
     updatedAt: string;
 }
 
-
 type Preset = "today" | "7days" | "30days" | "thismonth";
+
+// ─── Constants / theme ──────────────────────────────────────────────────────
+const REFRESH_MS = 60_000;
 
 const PRESETS: { key: Preset; label: string }[] = [
     { key: "today", label: "วันนี้" },
@@ -48,24 +56,92 @@ const PRESETS: { key: Preset; label: string }[] = [
     { key: "thismonth", label: "เดือนนี้" },
 ];
 
-const SHL: Record<string, string> = { morning: "เวรเช้า", evening: "เวรเย็น" };
-const SHC: Record<string, string> = { morning: "sh-m", evening: "sh-e" };
-const RC: Record<string, string> = {
-    UC: "right-uc",
-    ข้าราชการ: "right-gov",
-    ประกันสังคม: "right-sso",
-    จ่ายเอง: "right-self",
+const MINT = {
+    50: "#f0faf4", 100: "#d6f0e0", 200: "#a8d5ba", 300: "#7ec8a0",
+    400: "#55b882", 500: "#3aa36a", 600: "#2d8a56", 700: "#236b43", 800: "#1a5233",
 };
+
+const SHIFT_LABEL: Record<string, string> = { morning: "เวรเช้า", evening: "เวรเย็น" };
+const SHIFT_FULL: Record<string, string> = {
+    morning: "เวรเช้า (08:30–16:30)",
+    evening: "เวรเย็น (16:30–20:30)",
+};
+
+const RIGHT_COLOR: Record<string, string> = {
+    UC: "#185FA5",
+    "ข้าราชการ": "#3B6D11",
+    "ประกันสังคม": "#854F0B",
+    "จ่ายเอง": "#5b21b6",
+};
+const CHART_PALETTE = ["#185FA5", "#3B6D11", "#854F0B", "#5b21b6", "#3aa36a", "#c0392b"];
+
 const baht = (n: number) => "฿" + (n || 0).toLocaleString();
+
+// ─── Small UI helpers ─────────────────────────────────────────────────────────
+function RoleBadge({ role }: { role: string }) {
+    const pt = role === "pt";
+    return (
+        <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${pt ? "bg-blue-100 text-blue-700" : "bg-green-100 text-green-700"}`}>
+            {pt ? "PT" : "PTA"}
+        </span>
+    );
+}
+
+function ShiftBadge({ shift }: { shift: string }) {
+    const m = shift === "morning";
+    return (
+        <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${m ? "bg-amber-100 text-amber-800" : "bg-purple-100 text-purple-800"}`}>
+            {SHIFT_LABEL[shift] ?? shift}
+        </span>
+    );
+}
+
+// thead สีเขียวมินต์ ให้ตรงกับ TableHeader กลางของระบบ
+function Th({ children, className = "" }: { children: React.ReactNode; className?: string }) {
+    return (
+        <th
+            className={`text-white text-left px-3 py-2 text-xs font-semibold whitespace-nowrap ${className}`}
+            style={{ backgroundColor: MINT[300] }}
+        >
+            {children}
+        </th>
+    );
+}
+
+// แถวตาราง zebra + hover แบบเดียวกับ TableRow กลาง
+function Tr({ index, children }: { index: number; children: React.ReactNode }) {
+    const base = index % 2 ? "#f9fafb" : "#ffffff";
+    return (
+        <tr
+            className="border-b border-gray-100 transition-colors"
+            style={{ backgroundColor: base }}
+            onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = MINT[50])}
+            onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = base)}
+        >
+            {children}
+        </tr>
+    );
+}
+
+function EmptyRow({ cols }: { cols: number }) {
+    return (
+        <tr>
+            <td colSpan={cols} className="text-center text-gray-400 py-4 text-sm">
+                ไม่มีข้อมูล
+            </td>
+        </tr>
+    );
+}
 
 // ─── Component ────────────────────────────────────────────────────────────────
 export default function PtDashboardPage() {
     const [preset, setPreset] = useState<Preset>("today");
-    const [records, setRecords] = useState<PtRecord[]>([]);
-    const [queue, setQueue] = useState<PtQueueItem[]>([]);
-    const [updatedAt, setUpdatedAt] = useState<string>("");
-    const [loading, setLoading] = useState(true);
-    const [err, setErr] = useState<string | null>(null);
+
+    const { data, loading, error, connected, secondsLeft, refetch } =
+        useAutoRefresh<ApiResp>(`/api/pt-dashboard?preset=${preset}`, REFRESH_MS);
+
+    const records = useMemo(() => data?.records ?? [], [data]);
+    const queue = useMemo(() => data?.queue ?? [], [data]);
 
     // filters
     const [q, setQ] = useState("");
@@ -77,63 +153,24 @@ export default function PtDashboardPage() {
     const [openSD, setOpenSD] = useState<Record<string, boolean>>({});
     const [collapsedGrp, setCollapsedGrp] = useState<Record<string, boolean>>({});
 
-    const rightChartRef = useRef<HTMLCanvasElement | null>(null);
-    const procChartRef = useRef<HTMLCanvasElement | null>(null);
-    const rightChartInst = useRef<Chart | null>(null);
-    const procChartInst = useRef<Chart | null>(null);
-
-    const load = useCallback(async (p: Preset) => {
-        setLoading(true);
-        setErr(null);
-        try {
-            const res = await fetch(`/api/pt-dashboard?preset=${p}`, { cache: "no-store" });
-            if (!res.ok) throw new Error("โหลดข้อมูลไม่สำเร็จ");
-            const data: ApiResp = await res.json();
-            setRecords(data.records || []);
-            setQueue(data.queue || []);
-            setUpdatedAt(data.updatedAt || new Date().toISOString());
-        } catch (e) {
-            setErr(e instanceof Error ? e.message : "เกิดข้อผิดพลาด");
-            setRecords([]);
-            setQueue([]);
-        } finally {
-            setLoading(false);
-        }
-    }, []);
-
-    useEffect(() => {
-        load(preset);
-        const t = setInterval(() => load(preset), 60000);
-        return () => clearInterval(t);
-    }, [preset, load]);
-
     // ── KPI ──
     const kpi = useMemo(() => {
         const pts = new Set(records.map((r) => r.hn)).size;
-        const vis = records.length;
         const inc = records.reduce((a, r) => a + r.income, 0);
         const pt = records.filter((r) => r.role === "pt");
         const pta = records.filter((r) => r.role === "pta");
         return {
-            pts,
-            vis,
-            inc,
-            ptV: pt.length,
-            ptI: pt.reduce((a, r) => a + r.income, 0),
-            ptaV: pta.length,
-            ptaI: pta.reduce((a, r) => a + r.income, 0),
+            pts, vis: records.length, inc,
+            ptV: pt.length, ptI: pt.reduce((a, r) => a + r.income, 0),
+            ptaV: pta.length, ptaI: pta.reduce((a, r) => a + r.income, 0),
         };
     }, [records]);
 
     // ── staff summary ──
     const staffRows = useMemo(() => {
-        const map: Record<
-            string,
-            { name: string; role: string; pts: Set<string>; vis: number; inc: number }
-        > = {};
+        const map: Record<string, { name: string; role: string; pts: Set<string>; vis: number; inc: number }> = {};
         records.forEach((r) => {
-            if (!map[r.staff_id])
-                map[r.staff_id] = { name: r.staff_name, role: r.role, pts: new Set(), vis: 0, inc: 0 };
+            if (!map[r.staff_id]) map[r.staff_id] = { name: r.staff_name, role: r.role, pts: new Set(), vis: 0, inc: 0 };
             map[r.staff_id].pts.add(r.hn);
             map[r.staff_id].vis++;
             map[r.staff_id].inc += r.income;
@@ -145,10 +182,7 @@ export default function PtDashboardPage() {
 
     // ── shifts × rights ──
     const shiftData = useMemo(() => {
-        const SH: Record<string, Record<string, { vis: number; inc: number }>> = {
-            morning: {},
-            evening: {},
-        };
+        const SH: Record<string, Record<string, { vis: number; inc: number }>> = { morning: {}, evening: {} };
         records.forEach((r) => {
             const sh = SH[r.shift] || SH.morning;
             if (!sh[r.right]) sh[r.right] = { vis: 0, inc: 0 };
@@ -158,23 +192,25 @@ export default function PtDashboardPage() {
         return SH;
     }, [records]);
 
-    // ── right totals (chart) ──
-    const rightTotals = useMemo(() => {
+    // ── right totals (pie) ──
+    const rightPie = useMemo(() => {
         const map: Record<string, number> = {};
-        records.forEach((r) => {
-            map[r.right] = (map[r.right] || 0) + r.income;
-        });
-        return map;
+        records.forEach((r) => { map[r.right] = (map[r.right] || 0) + r.income; });
+        return Object.entries(map).map(([name, value], i) => ({
+            name, value, color: RIGHT_COLOR[name] ?? CHART_PALETTE[i % CHART_PALETTE.length],
+        }));
     }, [records]);
 
-    // ── proc counts (chart) ──
+    // ── proc top (HBarList) ──
     const procTop = useMemo(() => {
         const map: Record<string, number> = {};
         records.forEach((r) => {
-            if (r.procedure && r.procedure !== "-")
-                map[r.procedure] = (map[r.procedure] || 0) + 1;
+            if (r.procedure && r.procedure !== "-") map[r.procedure] = (map[r.procedure] || 0) + 1;
         });
-        return Object.entries(map).sort((a, b) => b[1] - a[1]).slice(0, 8);
+        return Object.entries(map)
+            .sort((a, b) => b[1] - a[1])
+            .slice(0, 8)
+            .map(([label, count]) => ({ label, count }));
     }, [records]);
 
     // ── pivot staff × right ──
@@ -199,28 +235,20 @@ export default function PtDashboardPage() {
 
     // ── staff detail ──
     const staffDetail = useMemo(() => {
-        const map: Record<
-            string,
-            {
-                name: string;
-                role: string;
-                shifts: Record<string, { vis: number; inc: number }>;
-                rights: Record<string, { vis: number; inc: number }>;
-                procs: Record<string, number>;
-            }
-        > = {};
+        const map: Record<string, {
+            name: string; role: string;
+            shifts: Record<string, { vis: number; inc: number }>;
+            rights: Record<string, { vis: number; inc: number }>;
+            procs: Record<string, number>;
+        }> = {};
         records.forEach((r) => {
-            if (!map[r.staff_id])
-                map[r.staff_id] = { name: r.staff_name, role: r.role, shifts: {}, rights: {}, procs: {} };
+            if (!map[r.staff_id]) map[r.staff_id] = { name: r.staff_name, role: r.role, shifts: {}, rights: {}, procs: {} };
             const s = map[r.staff_id];
             if (!s.shifts[r.shift]) s.shifts[r.shift] = { vis: 0, inc: 0 };
-            s.shifts[r.shift].vis++;
-            s.shifts[r.shift].inc += r.income;
+            s.shifts[r.shift].vis++; s.shifts[r.shift].inc += r.income;
             if (!s.rights[r.right]) s.rights[r.right] = { vis: 0, inc: 0 };
-            s.rights[r.right].vis++;
-            s.rights[r.right].inc += r.income;
-            if (r.procedure && r.procedure !== "-")
-                s.procs[r.procedure] = (s.procs[r.procedure] || 0) + 1;
+            s.rights[r.right].vis++; s.rights[r.right].inc += r.income;
+            if (r.procedure && r.procedure !== "-") s.procs[r.procedure] = (s.procs[r.procedure] || 0) + 1;
         });
         return Object.entries(map).sort(
             (a, b) => (a[1].role === "pt" ? 0 : 1) - (b[1].role === "pt" ? 0 : 1),
@@ -235,15 +263,12 @@ export default function PtDashboardPage() {
             grpMap[r.staff_id].rows.push(r);
         });
         const ql = q.toLowerCase();
-        let grandV = 0,
-            grandI = 0;
         const groups = Object.entries(grpMap)
             .sort((a, b) => (a[1].role === "pt" ? 0 : 1) - (b[1].role === "pt" ? 0 : 1))
             .map(([sid, grp]) => {
                 if (fRole && grp.role !== fRole) return null;
                 const filtered = grp.rows.filter((r) => {
-                    const mq =
-                        !ql ||
+                    const mq = !ql ||
                         r.hn.toLowerCase().includes(ql) ||
                         r.patient_name.toLowerCase().includes(ql) ||
                         r.procedure.toLowerCase().includes(ql);
@@ -253,53 +278,14 @@ export default function PtDashboardPage() {
                 });
                 if (!filtered.length) return null;
                 const grpI = filtered.reduce((a, r) => a + r.income, 0);
-                grandV += filtered.length;
-                grandI += grpI;
                 return { sid, grp, filtered, grpI };
             })
             .filter(Boolean) as { sid: string; grp: { name: string; role: string }; filtered: PtRecord[]; grpI: number }[];
+
+        const grandV = groups.reduce((a, g) => a + g.filtered.length, 0);
+        const grandI = groups.reduce((a, g) => a + g.grpI, 0);
         return { groups, grandV, grandI };
     }, [records, q, fRight, fShift, fRole]);
-
-    // ── charts ──
-    useEffect(() => {
-        if (!rightChartRef.current) return;
-        const labels = Object.keys(rightTotals);
-        const vals = Object.values(rightTotals);
-        const colors = ["#185FA5", "#854F0B", "#3B6D11", "#888780", "#5b21b6", "#c0392b"];
-        rightChartInst.current?.destroy();
-        rightChartInst.current = new Chart(rightChartRef.current, {
-            type: "doughnut",
-            data: { labels, datasets: [{ data: vals, backgroundColor: colors.slice(0, labels.length), borderWidth: 2 }] },
-            options: { plugins: { legend: { display: false } }, responsive: true, maintainAspectRatio: false },
-        });
-    }, [rightTotals]);
-
-    useEffect(() => {
-        if (!procChartRef.current) return;
-        procChartInst.current?.destroy();
-        procChartInst.current = new Chart(procChartRef.current, {
-            type: "bar",
-            data: {
-                labels: procTop.map((x) => x[0]),
-                datasets: [{ label: "จำนวนครั้ง", data: procTop.map((x) => x[1]), backgroundColor: "#1a6fa8", borderRadius: 4 }],
-            },
-            options: {
-                indexAxis: "y",
-                plugins: { legend: { display: false } },
-                responsive: true,
-                maintainAspectRatio: false,
-                scales: { x: { beginAtZero: true } },
-            },
-        });
-    }, [procTop]);
-
-    useEffect(() => {
-        return () => {
-            rightChartInst.current?.destroy();
-            procChartInst.current?.destroy();
-        };
-    }, []);
 
     // ── export ──
     const onExportExcel = () => {
@@ -307,7 +293,7 @@ export default function PtDashboardPage() {
         exportToExcel(
             records.map((r) => ({
                 วันที่: r.date,
-                เวร: SHL[r.shift] || r.shift,
+                เวร: SHIFT_LABEL[r.shift] || r.shift,
                 เจ้าหน้าที่: r.staff_name,
                 ประเภท: r.role === "pt" ? "PT" : "PTA",
                 HN: r.hn,
@@ -321,386 +307,475 @@ export default function PtDashboardPage() {
         );
     };
 
-    const colors = ["#185FA5", "#854F0B", "#3B6D11", "#888780", "#5b21b6", "#c0392b"];
-
     return (
-        <div className="pt-dash">
-            <style>{CSS}</style>
+        <div className="space-y-4 text-gray-800">
+            {/* print: ซ่อนปุ่มควบคุม + จัด A4 แนวนอน */}
+            <style>{`@media print{.no-print{display:none!important}@page{size:A4 landscape;margin:1.2cm}}`}</style>
 
-            <header className="pt-header">
+            {/* ── Header card ── */}
+            <div className="bg-white border border-gray-200 rounded-2xl shadow-sm px-6 py-4 flex flex-wrap items-center justify-between gap-4">
                 <div>
-                    <h1>ระบบรายงานกายภาพบำบัด HOS XP</h1>
-                    <div className="sub">รพ.พลับพลาชัย {updatedAt && `| อัปเดต ${new Date(updatedAt).toLocaleTimeString("th-TH")}`}</div>
+                    <div className="flex items-center gap-2">
+                        <Stethoscope size={18} style={{ color: MINT[800] }} />
+                        <h1 className="text-lg font-bold text-gray-800">ระบบรายงานกายภาพบำบัด</h1>
+                        <LiveBadge />
+                    </div>
+                    <p className="text-xs text-gray-400 mt-0.5 flex items-center gap-2">
+                        <span>รพ.พลับพลาชัย · ดึงจาก HOSxP แบบ Real-time</span>
+                        {data?.updatedAt && (
+                            <>
+                                <span>·</span>
+                                <Clock size={11} />
+                                <span>อัปเดต {timeAgo(data.updatedAt)}</span>
+                            </>
+                        )}
+                    </p>
                 </div>
-            </header>
 
-            <div className="controls">
-                <div className="sc-btns">
+                <div className="flex items-center gap-3 no-print">
+                    <div className="flex items-center gap-1.5 text-xs text-gray-500">
+                        <CountdownRing secondsLeft={secondsLeft} total={REFRESH_MS / 1000} />
+                        <span className="tabular-nums font-medium">{secondsLeft}s</span>
+                    </div>
+                    <RefreshButton loading={loading} onClick={refetch} />
+                    <ConnectionStatus error={!!error} connected={connected && !!data} />
+                </div>
+            </div>
+
+            {/* ── Controls ── */}
+            <div className="bg-white border border-gray-200 rounded-2xl shadow-sm px-6 py-3 flex flex-wrap items-center gap-3 no-print">
+                <div className="flex rounded-lg overflow-hidden border border-gray-200">
                     {PRESETS.map((p) => (
-                        <button key={p.key} className={preset === p.key ? "active" : ""} onClick={() => setPreset(p.key)}>
+                        <button
+                            key={p.key}
+                            onClick={() => setPreset(p.key)}
+                            className="px-3.5 py-1.5 text-xs transition-colors"
+                            style={{
+                                backgroundColor: preset === p.key ? MINT[500] : "#fff",
+                                color: preset === p.key ? "#fff" : "#4b5563",
+                                fontWeight: preset === p.key ? 600 : 400,
+                            }}
+                        >
                             {p.label}
                         </button>
                     ))}
                 </div>
-                <div className="export-bar">
-                    <button className="btn btn-green" onClick={onExportExcel}>📊 Excel</button>
-                    <button className="btn btn-gray" onClick={() => window.print()}>🖨️ พิมพ์ / PDF</button>
+
+                <div className="flex items-center gap-2 ml-auto">
+                    <button
+                        onClick={onExportExcel}
+                        disabled={!records.length}
+                        className="flex items-center gap-1.5 text-white text-sm font-semibold px-4 py-2 rounded-lg shadow-sm disabled:opacity-40 transition-colors"
+                        style={{ backgroundColor: MINT[500] }}
+                    >
+                        <FileSpreadsheet size={15} /> Excel
+                    </button>
+                    <button
+                        onClick={() => window.print()}
+                        className="flex items-center gap-1.5 text-gray-600 text-sm font-semibold px-4 py-2 rounded-lg border border-gray-200 hover:bg-gray-50 transition-colors"
+                    >
+                        <Printer size={15} /> พิมพ์ / PDF
+                    </button>
                 </div>
             </div>
 
-            <main>
-                {err && <div className="err-box">⚠️ {err}</div>}
-                {loading && <div className="loading">กำลังโหลด…</div>}
-
-                {/* KPI */}
-                <div className="kpi-row">
-                    <div className="kpi"><div className="lbl">ผู้ป่วยทั้งหมด</div><div className="val">{kpi.pts.toLocaleString()}</div><div className="sub">ราย</div></div>
-                    <div className="kpi"><div className="lbl">Visits ทั้งหมด</div><div className="val">{kpi.vis.toLocaleString()}</div><div className="sub">ครั้ง</div></div>
-                    <div className="kpi"><div className="lbl">รายได้รวม</div><div className="val">{baht(kpi.inc)}</div><div className="sub">บาท</div></div>
-                    <div className="kpi blue"><div className="lbl">นักกายภาพ PT</div><div className="val">{kpi.ptV.toLocaleString()}</div><div className="sub">visits / {baht(kpi.ptI)}</div></div>
-                    <div className="kpi green"><div className="lbl">ผู้ช่วยกายภาพ PTA</div><div className="val">{kpi.ptaV.toLocaleString()}</div><div className="sub">visits / {baht(kpi.ptaI)}</div></div>
+            {/* ── Error ── */}
+            {error && (
+                <div className="bg-red-50 border border-red-200 rounded-2xl p-4 text-sm font-medium text-red-700">
+                    ⚠️ {error}
                 </div>
+            )}
 
-                <div className="grid2">
-                    {/* staff summary */}
-                    <div className="card">
-                        <div className="card-hdr"><span className="dot" style={{ background: "var(--pt-primary)" }} />สรุปรายบุคคล</div>
-                        <div className="card-body">
-                            <table>
-                                <thead><tr><th>ชื่อ</th><th>ประเภท</th><th>ผู้ป่วย</th><th>Visits</th><th>รายได้</th></tr></thead>
-                                <tbody>
-                                    {staffRows.map((s, i) => (
-                                        <tr key={i}>
-                                            <td>{s.name}</td>
-                                            <td><span className={`role-${s.role}`}>{s.role === "pt" ? "PT" : "PTA"}</span></td>
-                                            <td className="num">{s.pts.size}</td>
-                                            <td className="num">{s.vis}</td>
-                                            <td className="inc">{baht(s.inc)}</td>
+            {/* ── Loading ── */}
+            {loading && !data && (
+                <>
+                    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+                        {Array.from({ length: 5 }).map((_, i) => <Shimmer key={i} h="h-[150px]" />)}
+                    </div>
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                        <Shimmer h="h-72" /><Shimmer h="h-72" />
+                    </div>
+                </>
+            )}
+
+            {/* ── Content ── */}
+            {data && (
+                <>
+                    {/* KPI */}
+                    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+                        <KpiCard icon={Users} label="ผู้ป่วยทั้งหมด" value={kpi.pts.toLocaleString()} sub="ราย" accent="#1a5233" bg="#f0faf4" />
+                        <KpiCard icon={Activity} label="Visits ทั้งหมด" value={kpi.vis.toLocaleString()} sub="ครั้ง" accent="#0369A1" bg="#E0F2FE" />
+                        <KpiCard icon={Banknote} label="รายได้รวม" value={baht(kpi.inc)} sub="บาท" accent="#854D0E" bg="#FEF9C3" />
+                        <KpiCard icon={Stethoscope} label="นักกายภาพ PT" value={kpi.ptV.toLocaleString()} sub={`visits · ${baht(kpi.ptI)}`} accent="#185FA5" bg="#E6F1FB" />
+                        <KpiCard icon={UserCog} label="ผู้ช่วยกายภาพ PTA" value={kpi.ptaV.toLocaleString()} sub={`visits · ${baht(kpi.ptaI)}`} accent="#065F46" bg="#D1FAE5" />
+                    </div>
+
+                    {/* staff summary + queue */}
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                        <SectionCard title="สรุปรายบุคคล" icon={Users} titleColor={MINT[800]}>
+                            <div className="overflow-x-auto rounded-xl border border-gray-200">
+                                <table className="min-w-full text-sm border-collapse">
+                                    <thead>
+                                        <tr>
+                                            <Th>ชื่อ</Th><Th>ประเภท</Th>
+                                            <Th className="text-right">ผู้ป่วย</Th>
+                                            <Th className="text-right">Visits</Th>
+                                            <Th className="text-right">รายได้</Th>
                                         </tr>
-                                    ))}
-                                    {!staffRows.length && <tr><td colSpan={5} className="empty">ไม่มีข้อมูล</td></tr>}
-                                </tbody>
-                            </table>
-                        </div>
-                    </div>
-
-                    {/* queue */}
-                    <div className="card">
-                        <div className="card-hdr"><span className="dot" style={{ background: "#4CAF50" }} />คิวรอรับบริการ (วันนี้)</div>
-                        <div className="card-body">
-                            {queue.length ? (
-                                queue.slice(0, 12).map((qi, i) => (
-                                    <div className="q-item" key={i}>
-                                        <span>{qi.queue_no}. {qi.patient_name} ({qi.hn})</span>
-                                        <span className={qi.status === "กำลังรับบริการ" ? "q-active" : "q-wait"}>{qi.status}</span>
-                                    </div>
-                                ))
-                            ) : (
-                                <div className="empty">ไม่มีคิวรอ</div>
-                            )}
-                        </div>
-                    </div>
-                </div>
-
-                <div className="grid2">
-                    {/* shifts */}
-                    <div className="card">
-                        <div className="card-hdr"><span className="dot" style={{ background: "var(--pt-morning)" }} />แยกตามเวร / สิทธิ์</div>
-                        <div className="card-body">
-                            {(["morning", "evening"] as const).map((sh) => (
-                                <div key={sh} style={{ marginBottom: 12 }}>
-                                    <div style={{ marginBottom: 5 }}>
-                                        <span className={SHC[sh]} style={{ fontSize: ".7rem", fontWeight: 600, padding: "2px 7px", borderRadius: 999 }}>
-                                            {sh === "morning" ? "เวรเช้า (08:30-16:30)" : "เวรเย็น (16:30-20:30)"}
-                                        </span>
-                                    </div>
-                                    <table>
-                                        <thead><tr><th>สิทธิ์</th><th>Visits</th><th>รายได้</th></tr></thead>
-                                        <tbody>
-                                            {Object.entries(shiftData[sh]).map(([k, v]) => (
-                                                <tr key={k}><td>{k}</td><td className="num">{v.vis}</td><td className="inc">{baht(v.inc)}</td></tr>
-                                            ))}
-                                            {!Object.keys(shiftData[sh]).length && <tr><td colSpan={3} className="empty">—</td></tr>}
-                                        </tbody>
-                                    </table>
-                                </div>
-                            ))}
-                        </div>
-                    </div>
-
-                    {/* right chart */}
-                    <div className="card">
-                        <div className="card-hdr"><span className="dot" style={{ background: "var(--pt-evening)" }} />กราฟรายได้ตามสิทธิ์</div>
-                        <div className="card-body">
-                            <div className="legend">
-                                {Object.entries(rightTotals).map(([l, v], i) => (
-                                    <span key={l}><span className="leg-sq" style={{ background: colors[i % colors.length] }} />{l} {baht(v)}</span>
-                                ))}
+                                    </thead>
+                                    <tbody>
+                                        {staffRows.map((s, i) => (
+                                            <Tr key={i} index={i}>
+                                                <td className="px-3 py-2 text-gray-800">{s.name}</td>
+                                                <td className="px-3 py-2"><RoleBadge role={s.role} /></td>
+                                                <td className="px-3 py-2 text-right text-gray-700">{s.pts.size}</td>
+                                                <td className="px-3 py-2 text-right text-gray-700">{s.vis}</td>
+                                                <td className="px-3 py-2 text-right font-semibold" style={{ color: MINT[800] }}>{baht(s.inc)}</td>
+                                            </Tr>
+                                        ))}
+                                        {!staffRows.length && <EmptyRow cols={5} />}
+                                    </tbody>
+                                </table>
                             </div>
-                            <div className="chart-w"><canvas ref={rightChartRef} /></div>
-                        </div>
-                    </div>
-                </div>
+                        </SectionCard>
 
-                {/* patient list */}
-                <div className="card">
-                    <div className="card-hdr"><span className="dot" style={{ background: "#e91e63" }} />รายชื่อผู้ป่วย แยกรายเจ้าหน้าที่</div>
-                    <div className="card-body">
-                        <div className="pt-search">
-                            <input type="text" placeholder="ค้นหา HN / ชื่อ / หัตถการ..." value={q} onChange={(e) => setQ(e.target.value)} />
-                            <select value={fRight} onChange={(e) => setFRight(e.target.value)}>
-                                <option value="">สิทธิ์ทั้งหมด</option>
-                                <option>UC</option><option>ข้าราชการ</option><option>ประกันสังคม</option><option>จ่ายเอง</option>
-                            </select>
-                            <select value={fShift} onChange={(e) => setFShift(e.target.value)}>
-                                <option value="">เวรทั้งหมด</option>
-                                <option value="morning">เวรเช้า</option>
-                                <option value="evening">เวรเย็น</option>
-                            </select>
-                            <select value={fRole} onChange={(e) => setFRole(e.target.value)}>
-                                <option value="">PT + PTA</option>
-                                <option value="pt">PT เท่านั้น</option>
-                                <option value="pta">PTA เท่านั้น</option>
-                            </select>
-                        </div>
-
-                        {patientGroups.grandV ? (
-                            <>
-                                <div style={{ display: "flex", justifyContent: "flex-end", gap: 14, marginBottom: 8, fontSize: ".78rem", color: "var(--pt-muted)" }}>
-                                    <span>รวม <strong style={{ color: "var(--pt-text)" }}>{patientGroups.grandV} visits</strong></span>
-                                    <span>รายได้รวม <strong style={{ color: "var(--pt-primary)" }}>{baht(patientGroups.grandI)}</strong></span>
+                        <SectionCard title="คิวรอรับบริการ (วันนี้)" icon={ListChecks} titleColor={MINT[800]}>
+                            {queue.length ? (
+                                <div className="space-y-2">
+                                    {queue.slice(0, 12).map((qi, i) => {
+                                        const active = qi.status === "กำลังรับบริการ";
+                                        return (
+                                            <div
+                                                key={i}
+                                                className="flex items-center justify-between px-3 py-2 rounded-lg border border-gray-200 text-sm"
+                                                style={{ backgroundColor: MINT[50] }}
+                                            >
+                                                <span className="text-gray-700">
+                                                    <span className="font-semibold" style={{ color: MINT[800] }}>{qi.queue_no}.</span>{" "}
+                                                    {qi.patient_name}{" "}
+                                                    <span className="text-gray-400 text-xs font-mono">({qi.hn})</span>
+                                                </span>
+                                                <span className={`text-[11px] font-semibold ${active ? "text-green-600" : "text-amber-600"}`}>
+                                                    {qi.status}
+                                                </span>
+                                            </div>
+                                        );
+                                    })}
                                 </div>
-                                {patientGroups.groups.map(({ sid, grp, filtered, grpI }) => (
-                                    <div className="pt-grp" key={sid}>
-                                        <div className="pt-grp-hdr" onClick={() => setCollapsedGrp((s) => ({ ...s, [sid]: !s[sid] }))}>
-                                            <span className={`role-${grp.role}`}>{grp.role === "pt" ? "PT" : "PTA"}</span>
-                                            <span className="g-name">{grp.name}</span>
-                                            <span className="g-meta">{filtered.length} visits &nbsp;|&nbsp; {baht(grpI)}</span>
-                                            <span style={{ fontSize: ".78rem", color: "var(--pt-muted)" }}>{collapsedGrp[sid] ? "▶" : "▼"}</span>
+                            ) : (
+                                <p className="text-center text-gray-400 py-8 text-sm">ไม่มีคิวรอ</p>
+                            )}
+                        </SectionCard>
+                    </div>
+
+                    {/* shifts + right pie */}
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                        <SectionCard title="แยกตามเวร / สิทธิ์" icon={Clock} titleColor={MINT[800]}>
+                            <div className="space-y-4">
+                                {(["morning", "evening"] as const).map((sh) => (
+                                    <div key={sh}>
+                                        <div className="mb-1.5"><ShiftBadge shift={sh} />
+                                            <span className="text-[11px] text-gray-400 ml-2">{SHIFT_FULL[sh]}</span>
                                         </div>
-                                        <div className={`pt-grp-body${collapsedGrp[sid] ? " collapsed" : ""}`}>
-                                            <table style={{ fontSize: ".78rem" }}>
+                                        <div className="overflow-x-auto rounded-xl border border-gray-200">
+                                            <table className="min-w-full text-sm border-collapse">
                                                 <thead>
-                                                    <tr><th>วันที่</th><th>HN</th><th>ชื่อผู้ป่วย</th><th style={{ textAlign: "center" }}>หัตถการ</th><th>เวร</th><th>สิทธิ์</th><th style={{ textAlign: "right" }}>รายได้</th></tr>
+                                                    <tr>
+                                                        <Th>สิทธิ์</Th>
+                                                        <Th className="text-right">Visits</Th>
+                                                        <Th className="text-right">รายได้</Th>
+                                                    </tr>
                                                 </thead>
                                                 <tbody>
-                                                    {filtered.map((r, i) => (
-                                                        <tr key={i}>
-                                                            <td>{r.date}</td>
-                                                            <td style={{ fontFamily: "monospace", fontSize: ".75rem", color: "var(--pt-muted)" }}>{r.hn}</td>
-                                                            <td>{r.patient_name}</td>
-                                                            <td style={{ textAlign: "center" }}><span className="proc-pill" title={r.procedure_name}>{r.procedure}</span></td>
-                                                            <td><span className={SHC[r.shift]}>{SHL[r.shift]}</span></td>
-                                                            <td><span className={RC[r.right] || ""}>{r.right}</span></td>
-                                                            <td className="inc">{baht(r.income)}</td>
-                                                        </tr>
+                                                    {Object.entries(shiftData[sh]).map(([k, v], i) => (
+                                                        <Tr key={k} index={i}>
+                                                            <td className="px-3 py-2 text-gray-700">{k}</td>
+                                                            <td className="px-3 py-2 text-right text-gray-700">{v.vis}</td>
+                                                            <td className="px-3 py-2 text-right font-semibold" style={{ color: MINT[800] }}>{baht(v.inc)}</td>
+                                                        </Tr>
                                                     ))}
+                                                    {!Object.keys(shiftData[sh]).length && <EmptyRow cols={3} />}
                                                 </tbody>
-                                                <tfoot>
-                                                    <tr style={{ background: "var(--pt-primary-light)" }}>
-                                                        <td colSpan={6} style={{ fontWeight: 600, color: "var(--pt-muted)", fontSize: ".72rem" }}>รวม {filtered.length} visits</td>
-                                                        <td className="inc">{baht(grpI)}</td>
-                                                    </tr>
-                                                </tfoot>
                                             </table>
                                         </div>
                                     </div>
                                 ))}
-                            </>
-                        ) : (
-                            <div className="empty">ไม่พบข้อมูล</div>
-                        )}
-                    </div>
-                </div>
+                            </div>
+                        </SectionCard>
 
-                {/* staff detail */}
-                <div className="card">
-                    <div className="card-hdr"><span className="dot" style={{ background: "#2196F3" }} />สรุปรายเจ้าหน้าที่ (เวร / สิทธิ์ / หัตถการ)</div>
-                    <div className="card-body">
-                        {staffDetail.map(([sid, s]) => {
-                            const vis = Object.values(s.shifts).reduce((a, v) => a + v.vis, 0);
-                            const inc = Object.values(s.shifts).reduce((a, v) => a + v.inc, 0);
-                            const open = !!openSD[sid];
-                            const topProcs = Object.entries(s.procs).sort((a, b) => b[1] - a[1]).slice(0, 5);
-                            return (
-                                <div className="sc" key={sid}>
-                                    <div className="sc-hdr" onClick={() => setOpenSD((o) => ({ ...o, [sid]: !o[sid] }))}>
-                                        <span className={`role-${s.role}`}>{s.role === "pt" ? "PT" : "PTA"}</span>
-                                        <span style={{ fontWeight: 600, fontSize: ".88rem" }}>{s.name}</span>
-                                        <div className="sc-minis">
-                                            <span className="mini">Visits <strong>{vis}</strong></span>
-                                            <span className="mini">รายได้ <strong>{baht(inc)}</strong></span>
-                                        </div>
-                                        <span style={{ fontSize: ".8rem", color: "var(--pt-muted)", marginLeft: 4 }}>{open ? "▲" : "▼"}</span>
-                                    </div>
-                                    <div className={`sc-body${open ? " open" : ""}`}>
-                                        <div className="sc-grid">
-                                            <div>
-                                                <div className="dtitle">แยกตามเวร</div>
-                                                <table className="mini-table">
-                                                    <thead><tr><th>เวร</th><th className="nr">Visits</th><th className="nr">รายได้</th></tr></thead>
-                                                    <tbody>
-                                                        {Object.entries(s.shifts).map(([sh, v]) => (
-                                                            <tr key={sh}><td><span className={SHC[sh] || "sh-m"}>{SHL[sh] || sh}</span></td><td className="nr">{v.vis}</td><td className="nr">{baht(v.inc)}</td></tr>
-                                                        ))}
-                                                    </tbody>
-                                                </table>
-                                            </div>
-                                            <div>
-                                                <div className="dtitle">แยกตามสิทธิ์</div>
-                                                <table className="mini-table">
-                                                    <thead><tr><th>สิทธิ์</th><th className="nr">Visits</th><th className="nr">รายได้</th></tr></thead>
-                                                    <tbody>
-                                                        {Object.entries(s.rights).map(([rt, v]) => (
-                                                            <tr key={rt}><td>{rt}</td><td className="nr">{v.vis}</td><td className="nr">{baht(v.inc)}</td></tr>
-                                                        ))}
-                                                    </tbody>
-                                                </table>
-                                            </div>
-                                            <div>
-                                                <div className="dtitle">หัตถการ Top 5</div>
-                                                {topProcs.map(([c, n]) => (
-                                                    <span className="proc-tag" key={c}>{c} <b>({n})</b></span>
-                                                ))}
-                                                {!topProcs.length && <span className="empty">—</span>}
-                                            </div>
-                                        </div>
+                        <SectionCard title="รายได้ตามสิทธิ์" icon={Banknote} titleColor={MINT[800]}>
+                            {rightPie.length === 0 ? (
+                                <p className="text-center text-gray-400 py-8 text-sm">ยังไม่มีข้อมูล</p>
+                            ) : (
+                                <div className="flex flex-col items-center">
+                                    <ResponsiveContainer width="100%" height={220}>
+                                        <PieChart>
+                                            <Pie data={rightPie} cx="50%" cy="50%" innerRadius={50} outerRadius={80}
+                                                dataKey="value" paddingAngle={2}>
+                                                {rightPie.map((d, i) => <Cell key={i} fill={d.color} stroke="#fff" strokeWidth={2} />)}
+                                            </Pie>
+                                            <RTooltip
+                                                formatter={(v) => baht(Number(v ?? 0))}
+                                                contentStyle={{ fontSize: 12, borderRadius: 8, border: "1px solid #e5e7eb" }}
+                                            />
+                                        </PieChart>
+                                    </ResponsiveContainer>
+                                    <div className="flex flex-wrap justify-center gap-x-4 gap-y-1 mt-3">
+                                        {rightPie.map((d) => (
+                                            <span key={d.name} className="flex items-center gap-1.5 text-xs text-gray-600">
+                                                <span className="w-2.5 h-2.5 rounded-sm" style={{ background: d.color }} />
+                                                {d.name} <strong className="text-gray-800">{baht(d.value)}</strong>
+                                            </span>
+                                        ))}
                                     </div>
                                 </div>
-                            );
-                        })}
-                        {!staffDetail.length && <div className="empty">ไม่มีข้อมูล</div>}
+                            )}
+                        </SectionCard>
                     </div>
-                </div>
 
-                {/* pivot */}
-                <div className="card">
-                    <div className="card-hdr"><span className="dot" />Pivot รายได้ บุคลากร × สิทธิ์การรักษา</div>
-                    <div className="card-body">
-                        <div className="pivot-wrap">
-                            <table className="pivot">
+                    {/* patient list grouped by staff */}
+                    <SectionCard title="รายชื่อผู้ป่วย แยกรายเจ้าหน้าที่" icon={Users} titleColor={MINT[800]}>
+                        {/* search toolbar */}
+                        <div className="flex flex-wrap gap-2 mb-4 no-print">
+                            <div className="relative flex-1 min-w-[180px]">
+                                <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                                <input
+                                    type="text"
+                                    placeholder="ค้นหา HN / ชื่อ / หัตถการ..."
+                                    value={q}
+                                    onChange={(e) => setQ(e.target.value)}
+                                    className="w-full border-2 border-gray-200 rounded-full pl-9 pr-4 py-2 text-sm text-gray-800 bg-white focus:outline-none focus:border-[#7ec8a0] transition-colors"
+                                />
+                            </div>
+                            {[
+                                { val: fRight, set: setFRight, opts: [["", "สิทธิ์ทั้งหมด"], ["UC", "UC"], ["ข้าราชการ", "ข้าราชการ"], ["ประกันสังคม", "ประกันสังคม"], ["จ่ายเอง", "จ่ายเอง"]] },
+                                { val: fShift, set: setFShift, opts: [["", "เวรทั้งหมด"], ["morning", "เวรเช้า"], ["evening", "เวรเย็น"]] },
+                                { val: fRole, set: setFRole, opts: [["", "PT + PTA"], ["pt", "PT เท่านั้น"], ["pta", "PTA เท่านั้น"]] },
+                            ].map((sel, si) => (
+                                <select
+                                    key={si}
+                                    value={sel.val}
+                                    onChange={(e) => sel.set(e.target.value)}
+                                    className="border-2 border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-700 bg-white focus:outline-none focus:border-[#7ec8a0] transition-colors"
+                                >
+                                    {sel.opts.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+                                </select>
+                            ))}
+                        </div>
+
+                        {patientGroups.grandV ? (
+                            <>
+                                <div className="flex justify-end gap-4 mb-3 text-sm text-gray-500">
+                                    <span>รวม <strong className="text-gray-800">{patientGroups.grandV} visits</strong></span>
+                                    <span>รายได้รวม <strong style={{ color: MINT[800] }}>{baht(patientGroups.grandI)}</strong></span>
+                                </div>
+
+                                <div className="space-y-3">
+                                    {patientGroups.groups.map(({ sid, grp, filtered, grpI }) => {
+                                        const collapsed = !!collapsedGrp[sid];
+                                        return (
+                                            <div key={sid} className="border border-gray-200 rounded-xl overflow-hidden">
+                                                <button
+                                                    onClick={() => setCollapsedGrp((s) => ({ ...s, [sid]: !s[sid] }))}
+                                                    className="w-full flex items-center gap-2.5 px-4 py-2.5 text-left transition-colors hover:bg-gray-50"
+                                                    style={{ backgroundColor: MINT[50] }}
+                                                >
+                                                    <RoleBadge role={grp.role} />
+                                                    <span className="font-semibold text-gray-800 text-sm">{grp.name}</span>
+                                                    <span className="text-xs text-gray-500 ml-auto">
+                                                        {filtered.length} visits · <strong style={{ color: MINT[800] }}>{baht(grpI)}</strong>
+                                                    </span>
+                                                    <motion.span animate={{ rotate: collapsed ? 0 : 90 }} transition={{ duration: 0.15 }}>
+                                                        <ChevronRight size={15} className="text-gray-400" />
+                                                    </motion.span>
+                                                </button>
+
+                                                <AnimatePresence initial={false}>
+                                                    {!collapsed && (
+                                                        <motion.div
+                                                            initial={{ height: 0, opacity: 0 }}
+                                                            animate={{ height: "auto", opacity: 1 }}
+                                                            exit={{ height: 0, opacity: 0 }}
+                                                            transition={{ duration: 0.2, ease: "easeOut" }}
+                                                            className="overflow-hidden"
+                                                        >
+                                                            <div className="overflow-x-auto">
+                                                                <table className="min-w-full text-xs border-collapse">
+                                                                    <thead>
+                                                                        <tr>
+                                                                            <Th>วันที่</Th><Th>HN</Th><Th>ชื่อผู้ป่วย</Th>
+                                                                            <Th className="text-center">หัตถการ</Th><Th>เวร</Th><Th>สิทธิ์</Th>
+                                                                            <Th className="text-right">รายได้</Th>
+                                                                        </tr>
+                                                                    </thead>
+                                                                    <tbody>
+                                                                        {filtered.map((r, i) => (
+                                                                            <Tr key={i} index={i}>
+                                                                                <td className="px-3 py-2 text-gray-600 whitespace-nowrap">{formatThaiDate(r.date)}</td>
+                                                                                <td className="px-3 py-2 font-mono text-gray-500">{r.hn}</td>
+                                                                                <td className="px-3 py-2 text-gray-800">{r.patient_name}</td>
+                                                                                <td className="px-3 py-2 text-center">
+                                                                                    <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold" title={r.procedure_name}
+                                                                                        style={{ backgroundColor: MINT[50], color: MINT[800] }}>
+                                                                                        {r.procedure}
+                                                                                    </span>
+                                                                                </td>
+                                                                                <td className="px-3 py-2"><ShiftBadge shift={r.shift} /></td>
+                                                                                <td className="px-3 py-2 font-semibold" style={{ color: RIGHT_COLOR[r.right] ?? "#374151" }}>{r.right}</td>
+                                                                                <td className="px-3 py-2 text-right font-semibold" style={{ color: MINT[800] }}>{baht(r.income)}</td>
+                                                                            </Tr>
+                                                                        ))}
+                                                                    </tbody>
+                                                                    <tfoot>
+                                                                        <tr style={{ backgroundColor: MINT[50] }}>
+                                                                            <td colSpan={6} className="px-3 py-2 text-xs font-semibold text-gray-500">รวม {filtered.length} visits</td>
+                                                                            <td className="px-3 py-2 text-right font-bold" style={{ color: MINT[800] }}>{baht(grpI)}</td>
+                                                                        </tr>
+                                                                    </tfoot>
+                                                                </table>
+                                                            </div>
+                                                        </motion.div>
+                                                    )}
+                                                </AnimatePresence>
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            </>
+                        ) : (
+                            <EmptyState variant="noResult" onClear={() => { setQ(""); setFRight(""); setFShift(""); setFRole(""); }} />
+                        )}
+                    </SectionCard>
+
+                    {/* staff detail */}
+                    <SectionCard title="สรุปรายเจ้าหน้าที่ (เวร / สิทธิ์ / หัตถการ)" icon={Stethoscope} titleColor={MINT[800]}>
+                        {staffDetail.length ? (
+                            <div className="space-y-3">
+                                {staffDetail.map(([sid, s]) => {
+                                    const vis = Object.values(s.shifts).reduce((a, v) => a + v.vis, 0);
+                                    const inc = Object.values(s.shifts).reduce((a, v) => a + v.inc, 0);
+                                    const open = !!openSD[sid];
+                                    const topProcs = Object.entries(s.procs).sort((a, b) => b[1] - a[1]).slice(0, 5);
+                                    return (
+                                        <div key={sid} className="border border-gray-200 rounded-xl overflow-hidden">
+                                            <button
+                                                onClick={() => setOpenSD((o) => ({ ...o, [sid]: !o[sid] }))}
+                                                className="w-full flex items-center gap-2.5 px-4 py-2.5 text-left transition-colors hover:bg-gray-50"
+                                                style={{ backgroundColor: MINT[50] }}
+                                            >
+                                                <RoleBadge role={s.role} />
+                                                <span className="font-semibold text-gray-800 text-sm">{s.name}</span>
+                                                <span className="text-xs text-gray-500 ml-auto flex gap-3">
+                                                    <span>Visits <strong className="text-gray-800">{vis}</strong></span>
+                                                    <span>รายได้ <strong style={{ color: MINT[800] }}>{baht(inc)}</strong></span>
+                                                </span>
+                                                <motion.span animate={{ rotate: open ? 90 : 0 }} transition={{ duration: 0.15 }}>
+                                                    <ChevronRight size={15} className="text-gray-400" />
+                                                </motion.span>
+                                            </button>
+
+                                            <AnimatePresence initial={false}>
+                                                {open && (
+                                                    <motion.div
+                                                        initial={{ height: 0, opacity: 0 }}
+                                                        animate={{ height: "auto", opacity: 1 }}
+                                                        exit={{ height: 0, opacity: 0 }}
+                                                        transition={{ duration: 0.2, ease: "easeOut" }}
+                                                        className="overflow-hidden border-t border-gray-100"
+                                                    >
+                                                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 p-4">
+                                                            {/* by shift */}
+                                                            <div>
+                                                                <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400 mb-2">แยกตามเวร</p>
+                                                                <div className="space-y-1.5">
+                                                                    {Object.entries(s.shifts).map(([sh, v]) => (
+                                                                        <div key={sh} className="flex items-center justify-between text-xs">
+                                                                            <ShiftBadge shift={sh} />
+                                                                            <span className="text-gray-500">{v.vis} · <strong style={{ color: MINT[800] }}>{baht(v.inc)}</strong></span>
+                                                                        </div>
+                                                                    ))}
+                                                                </div>
+                                                            </div>
+                                                            {/* by right */}
+                                                            <div>
+                                                                <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400 mb-2">แยกตามสิทธิ์</p>
+                                                                <div className="space-y-1.5">
+                                                                    {Object.entries(s.rights).map(([rt, v]) => (
+                                                                        <div key={rt} className="flex items-center justify-between text-xs">
+                                                                            <span className="text-gray-600">{rt}</span>
+                                                                            <span className="text-gray-500">{v.vis} · <strong style={{ color: MINT[800] }}>{baht(v.inc)}</strong></span>
+                                                                        </div>
+                                                                    ))}
+                                                                </div>
+                                                            </div>
+                                                            {/* top procs */}
+                                                            <div>
+                                                                <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400 mb-2">หัตถการ Top 5</p>
+                                                                <div className="flex flex-wrap gap-1.5">
+                                                                    {topProcs.length ? topProcs.map(([c, n]) => (
+                                                                        <span key={c} className="px-2 py-0.5 rounded-full text-[11px] font-medium"
+                                                                            style={{ backgroundColor: MINT[50], color: MINT[800] }}>
+                                                                            {c} <b>({n})</b>
+                                                                        </span>
+                                                                    )) : <span className="text-xs text-gray-400">—</span>}
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                    </motion.div>
+                                                )}
+                                            </AnimatePresence>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        ) : (
+                            <p className="text-center text-gray-400 py-8 text-sm">ไม่มีข้อมูล</p>
+                        )}
+                    </SectionCard>
+
+                    {/* pivot */}
+                    <SectionCard title="Pivot รายได้ บุคลากร × สิทธิ์การรักษา" icon={Table2} titleColor={MINT[800]}>
+                        <div className="overflow-x-auto rounded-xl border border-gray-200">
+                            <table className="min-w-full text-sm border-collapse">
                                 <thead>
-                                    <tr><th>บุคลากร</th>{pivot.rights.map((r) => <th key={r}>{r}</th>)}<th>รวม</th></tr>
+                                    <tr>
+                                        <Th>บุคลากร</Th>
+                                        {pivot.rights.map((r) => <Th key={r} className="text-right">{r}</Th>)}
+                                        <Th className="text-right">รวม</Th>
+                                    </tr>
                                 </thead>
                                 <tbody>
-                                    {pivot.rows.map(({ sn, rm, tot }) => (
-                                        <tr key={sn}>
-                                            <td>{sn}</td>
-                                            {pivot.rights.map((rr) => <td className="inc" key={rr}>{baht(rm[rr] || 0)}</td>)}
-                                            <td className="pivot-tot inc">{baht(tot)}</td>
-                                        </tr>
+                                    {pivot.rows.map(({ sn, rm, tot }, i) => (
+                                        <Tr key={sn} index={i}>
+                                            <td className="px-3 py-2 text-gray-800 font-medium">{sn}</td>
+                                            {pivot.rights.map((rr) => (
+                                                <td key={rr} className="px-3 py-2 text-right text-gray-700">{baht(rm[rr] || 0)}</td>
+                                            ))}
+                                            <td className="px-3 py-2 text-right font-bold" style={{ color: MINT[800], backgroundColor: MINT[50] }}>{baht(tot)}</td>
+                                        </Tr>
                                     ))}
-                                    <tr style={{ background: "var(--pt-primary-light)", fontWeight: 700 }}>
-                                        <td>รวมทั้งหมด</td>
-                                        {pivot.rights.map((rr) => <td className="pivot-tot inc" key={rr}>{baht(pivot.totals[rr] || 0)}</td>)}
-                                        <td className="pivot-tot inc">{baht(pivot.grand)}</td>
+                                    <tr style={{ backgroundColor: MINT[100] }}>
+                                        <td className="px-3 py-2 font-bold text-gray-800">รวมทั้งหมด</td>
+                                        {pivot.rights.map((rr) => (
+                                            <td key={rr} className="px-3 py-2 text-right font-bold" style={{ color: MINT[800] }}>{baht(pivot.totals[rr] || 0)}</td>
+                                        ))}
+                                        <td className="px-3 py-2 text-right font-extrabold" style={{ color: MINT[800] }}>{baht(pivot.grand)}</td>
                                     </tr>
                                 </tbody>
                             </table>
                         </div>
-                    </div>
-                </div>
+                    </SectionCard>
 
-                {/* proc chart */}
-                <div className="card">
-                    <div className="card-hdr"><span className="dot" style={{ background: "#4CAF50" }} />หัตถการที่ใช้มากที่สุด</div>
-                    <div className="card-body">
-                        <div className="chart-w" style={{ height: 240 }}><canvas ref={procChartRef} /></div>
-                    </div>
-                </div>
-            </main>
+                    {/* proc chart */}
+                    <SectionCard title="หัตถการที่ใช้มากที่สุด" icon={Activity} titleColor={MINT[800]}>
+                        {procTop.length ? (
+                            <HBarList data={procTop} colors={[MINT[500]]} labelWidth={130} />
+                        ) : (
+                            <p className="text-center text-gray-400 py-8 text-sm">ยังไม่มีข้อมูล</p>
+                        )}
+                    </SectionCard>
+                </>
+            )}
         </div>
     );
 }
-
-// ─── Scoped CSS (พอร์ตจาก DASHBO_1.HTM, prefix .pt-dash กันชนกับ layout หลัก) ──
-const CSS = `
-.pt-dash{--pt-primary:#1a6fa8;--pt-primary-light:#e8f4fd;--pt-bg:#f0f4f8;--pt-card:#fff;--pt-text:#1e293b;--pt-muted:#64748b;--pt-border:#e2e8f0;--pt-morning:#ff9800;--pt-evening:#7c3aed;color:var(--pt-text);font-size:14px}
-.pt-dash *{box-sizing:border-box}
-.pt-header{background:linear-gradient(135deg,#1a6fa8,#0d4f7a);color:#fff;padding:14px 24px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;border-radius:10px}
-.pt-header h1{font-size:1.1rem;font-weight:600}
-.pt-header .sub{font-size:.78rem;opacity:.85}
-.pt-dash .controls{background:#fff;border:1px solid var(--pt-border);border-radius:10px;margin-top:12px;padding:10px 16px;display:flex;flex-wrap:wrap;gap:10px;align-items:center}
-.pt-dash .sc-btns{display:flex;gap:5px;flex-wrap:wrap}
-.pt-dash .sc-btns button{padding:4px 10px;border:1px solid var(--pt-border);background:var(--pt-bg);border-radius:6px;cursor:pointer;font-size:.78rem;color:var(--pt-muted)}
-.pt-dash .sc-btns button.active,.pt-dash .sc-btns button:hover{background:var(--pt-primary-light);color:var(--pt-primary);border-color:var(--pt-primary)}
-.pt-dash .export-bar{display:flex;gap:7px;align-items:center;margin-left:auto}
-.pt-dash .btn{padding:5px 12px;border:none;border-radius:6px;cursor:pointer;font-size:.8rem;font-weight:600;color:#fff}
-.pt-dash .btn-green{background:#217346}.pt-dash .btn-gray{background:#555}
-.pt-dash main{padding:16px 0;display:flex;flex-direction:column;gap:16px}
-.pt-dash .kpi-row{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}
-.pt-dash .kpi{background:#fff;border-radius:10px;padding:14px;border:1px solid var(--pt-border);display:flex;flex-direction:column;gap:3px}
-.pt-dash .kpi .lbl{font-size:.7rem;color:var(--pt-muted);font-weight:600;text-transform:uppercase;letter-spacing:.04em}
-.pt-dash .kpi .val{font-size:1.5rem;font-weight:700;color:var(--pt-primary)}
-.pt-dash .kpi .sub{font-size:.7rem;color:var(--pt-muted)}
-.pt-dash .kpi.blue .val{color:#2196F3}.pt-dash .kpi.green .val{color:#4CAF50}
-.pt-dash .grid2{display:grid;grid-template-columns:1fr 1fr;gap:16px}
-@media(max-width:700px){.pt-dash .grid2{grid-template-columns:1fr}}
-.pt-dash .card{background:#fff;border-radius:10px;border:1px solid var(--pt-border);overflow:hidden}
-.pt-dash .card-hdr{padding:10px 14px;border-bottom:1px solid var(--pt-border);font-weight:600;font-size:.86rem;display:flex;align-items:center;gap:7px}
-.pt-dash .dot{width:7px;height:7px;border-radius:50%;background:var(--pt-primary)}
-.pt-dash .card-body{padding:14px}
-.pt-dash table{width:100%;border-collapse:collapse;font-size:.8rem}
-.pt-dash th{background:var(--pt-bg);padding:6px 8px;text-align:left;font-size:.7rem;font-weight:600;color:var(--pt-muted);border-bottom:1px solid var(--pt-border);text-transform:uppercase}
-.pt-dash td{padding:6px 8px;border-bottom:1px solid var(--pt-border)}
-.pt-dash tr:last-child td{border-bottom:none}
-.pt-dash tbody tr:hover td{background:var(--pt-primary-light)}
-.pt-dash .inc{text-align:right;font-weight:600;color:var(--pt-primary)}
-.pt-dash .num{text-align:right}
-.pt-dash .empty{color:var(--pt-muted);font-size:.85rem;text-align:center;padding:8px}
-.pt-dash .role-pt{background:#dbeafe;color:#1e40af;padding:1px 7px;border-radius:999px;font-size:.7rem;font-weight:600}
-.pt-dash .role-pta{background:#dcfce7;color:#166534;padding:1px 7px;border-radius:999px;font-size:.7rem;font-weight:600}
-.pt-dash .sh-m{background:#fff3cd;color:#92400e;padding:1px 6px;border-radius:999px;font-size:.68rem;font-weight:600}
-.pt-dash .sh-e{background:#ede9fe;color:#5b21b6;padding:1px 6px;border-radius:999px;font-size:.68rem;font-weight:600}
-.pt-dash .proc-pill{background:var(--pt-primary-light);color:var(--pt-primary);padding:1px 7px;border-radius:999px;font-size:.7rem;font-weight:600}
-.pt-dash .right-uc{color:#1565C0;font-size:.72rem;font-weight:600}
-.pt-dash .right-gov{color:#1B5E20;font-size:.72rem;font-weight:600}
-.pt-dash .right-sso{color:#BF360C;font-size:.72rem;font-weight:600}
-.pt-dash .right-self{color:#4A148C;font-size:.72rem;font-weight:600}
-.pt-dash .sc{border:1px solid var(--pt-border);border-radius:8px;overflow:hidden;margin-bottom:8px}
-.pt-dash .sc-hdr{display:flex;align-items:center;justify-content:space-between;padding:9px 12px;cursor:pointer;background:var(--pt-bg);flex-wrap:wrap;gap:8px}
-.pt-dash .sc-hdr:hover{background:var(--pt-primary-light)}
-.pt-dash .sc-minis{display:flex;gap:12px;flex-wrap:wrap}
-.pt-dash .mini{font-size:.72rem;color:var(--pt-muted)}
-.pt-dash .mini strong{color:var(--pt-text)}
-.pt-dash .sc-body{display:none;padding:12px;border-top:1px solid var(--pt-border)}
-.pt-dash .sc-body.open{display:block}
-.pt-dash .sc-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px}
-@media(max-width:600px){.pt-dash .sc-grid{grid-template-columns:1fr}}
-.pt-dash .dtitle{font-size:.68rem;font-weight:600;color:var(--pt-muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:5px}
-.pt-dash .mini-table{width:100%;border-collapse:collapse;font-size:.75rem}
-.pt-dash .mini-table th{background:var(--pt-bg);padding:4px 7px;font-size:.65rem;font-weight:600;color:var(--pt-muted);border-bottom:1px solid var(--pt-border)}
-.pt-dash .mini-table td{padding:4px 7px;border-bottom:1px solid var(--pt-border)}
-.pt-dash .mini-table tr:last-child td{border-bottom:none}
-.pt-dash .mini-table .nr{text-align:right}
-.pt-dash .proc-tag{display:inline-block;background:var(--pt-primary-light);color:var(--pt-primary);padding:1px 7px;border-radius:999px;font-size:.72rem;margin:2px}
-.pt-dash .pt-search{display:flex;gap:7px;flex-wrap:wrap;margin-bottom:10px}
-.pt-dash .pt-search input,.pt-dash .pt-search select{border:1px solid var(--pt-border);border-radius:6px;padding:5px 8px;font-size:.8rem;color:var(--pt-text);background:#fff}
-.pt-dash .pt-search input{flex:1;min-width:150px}
-.pt-dash .pt-grp{margin-bottom:14px}
-.pt-dash .pt-grp-hdr{display:flex;align-items:center;gap:7px;padding:7px 10px;background:var(--pt-bg);border-radius:6px;border:1px solid var(--pt-border);cursor:pointer;flex-wrap:wrap;margin-bottom:5px}
-.pt-dash .pt-grp-hdr:hover{background:var(--pt-primary-light)}
-.pt-dash .pt-grp-hdr .g-name{font-weight:600;font-size:.86rem}
-.pt-dash .pt-grp-hdr .g-meta{font-size:.72rem;color:var(--pt-muted);margin-left:auto}
-.pt-dash .pt-grp-body{display:block;overflow-x:auto}
-.pt-dash .pt-grp-body.collapsed{display:none}
-.pt-dash .pivot-wrap{overflow-x:auto}
-.pt-dash .pivot th{white-space:nowrap}
-.pt-dash .pivot td{text-align:right}
-.pt-dash .pivot td:first-child{text-align:left;font-weight:500}
-.pt-dash .pivot-tot{font-weight:700;background:var(--pt-primary-light)!important;color:var(--pt-primary)}
-.pt-dash .chart-w{position:relative;height:210px}
-.pt-dash .legend{display:flex;flex-wrap:wrap;gap:10px;margin-bottom:8px;font-size:.75rem;color:var(--pt-muted)}
-.pt-dash .leg-sq{width:10px;height:10px;border-radius:2px;display:inline-block;margin-right:3px}
-.pt-dash .q-item{display:flex;align-items:center;justify-content:space-between;padding:7px 10px;border-radius:6px;background:var(--pt-bg);border:1px solid var(--pt-border);font-size:.8rem;margin-bottom:5px}
-.pt-dash .q-wait{color:var(--pt-morning);font-weight:600;font-size:.7rem}
-.pt-dash .q-active{color:#4CAF50;font-weight:600;font-size:.7rem}
-.pt-dash .err-box{background:#fef2f2;border:1px solid #fecaca;color:#b91c1c;padding:10px 14px;border-radius:8px;font-size:.85rem}
-.pt-dash .loading{color:var(--pt-muted);font-size:.85rem;padding:4px 0}
-@media print{
-  .pt-dash .controls,.pt-dash .export-bar{display:none!important}
-  .pt-dash .card{box-shadow:none;border:1px solid #ccc;page-break-inside:avoid}
-  .pt-dash .kpi-row{grid-template-columns:repeat(5,1fr)}
-  @page{margin:1.5cm;size:A4 landscape}
-}
-`;
