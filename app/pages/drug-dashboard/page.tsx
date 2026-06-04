@@ -33,10 +33,41 @@ const REFERRAL_COLORS = [C.blue, C.green, C.amber, C.coral, C.teal, C.red, C.pur
 const REFRESH_INTERVAL_MS = 30_000;
 const fmt = (n: number) => n.toLocaleString("th-TH");
 
+// ─── Shared chart helpers (declared at module level — not re-created on render) ──
+const tip = { contentStyle: { fontSize: 12, borderRadius: 8, border: "1px solid #e5e7eb" } };
+
+function Legend({ items }: { items: { label: string; color: string }[] }) {
+  return (
+    <div className="flex flex-wrap gap-x-3 gap-y-1 mt-2">
+      {items.map((it) => (
+        <div key={it.label} className="flex items-center gap-1.5">
+          <div className="w-2.5 h-2.5 rounded-sm flex-shrink-0" style={{ background: it.color }} />
+          <span className="text-[10px] text-gray-500">{it.label}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function Donut({ data }: { data: { name: string; value: number; color: string }[] }) {
+  return (
+    <>
+      <div className="flex justify-center">
+        <PieChart width={160} height={160}>
+          <Pie data={data} cx={75} cy={75} innerRadius={45} outerRadius={70} dataKey="value"
+            paddingAngle={3} isAnimationActive={false}>
+            {data.map((d, i) => <Cell key={i} fill={d.color} stroke="none" />)}
+          </Pie>
+          <Tooltip formatter={(v) => [`${v ?? 0} ราย`]} {...tip} />
+        </PieChart>
+      </div>
+      <Legend items={data.map((d) => ({ label: `${d.name} ${d.value}`, color: d.color }))} />
+    </>
+  );
+}
+
 // ─── Charts ───────────────────────────────────────────────────────────────────
 const DashboardCharts = memo(function DashboardCharts({ s }: { s: DrugDashboardSummary }) {
-  const tip = { contentStyle: { fontSize: 12, borderRadius: 8, border: "1px solid #e5e7eb" } };
-
   const colorData = Object.entries(s.byColor).filter(([k]) => k !== "ไม่ระบุ")
     .map(([name, value]) => ({ name, value, color: COLOR_MAP[name] ?? C.gray }));
   const statusData = Object.entries(s.byDetailStatus).sort(([, a], [, b]) => b - a)
@@ -54,32 +85,6 @@ const DashboardCharts = memo(function DashboardCharts({ s }: { s: DrugDashboardS
     { name: `หญิง ${s.female}`, value: s.female, color: C.teal },
   ];
 
-  const Legend = ({ items }: { items: { label: string; color: string }[] }) => (
-    <div className="flex flex-wrap gap-x-3 gap-y-1 mt-2">
-      {items.map((it) => (
-        <div key={it.label} className="flex items-center gap-1.5">
-          <div className="w-2.5 h-2.5 rounded-sm flex-shrink-0" style={{ background: it.color }} />
-          <span className="text-[10px] text-gray-500">{it.label}</span>
-        </div>
-      ))}
-    </div>
-  );
-
-  const Donut = ({ data }: { data: { name: string; value: number; color: string }[] }) => (
-    <>
-      <div className="flex justify-center">
-        <PieChart width={160} height={160}>
-          <Pie data={data} cx={75} cy={75} innerRadius={45} outerRadius={70} dataKey="value"
-            paddingAngle={3} isAnimationActive={false}>
-            {data.map((d, i) => <Cell key={i} fill={d.color} stroke="none" />)}
-          </Pie>
-          <Tooltip formatter={(v: number) => [v + " ราย"]} {...tip} />
-        </PieChart>
-      </div>
-      <Legend items={data.map((d) => ({ label: `${d.name} ${d.value}`, color: d.color }))} />
-    </>
-  );
-
   return (
     <div className="space-y-4">
       <SectionCard title="แนวโน้มผู้ป่วยรายเดือน (วันที่รับเข้าบำบัด)" icon={TrendingUp}>
@@ -94,7 +99,7 @@ const DashboardCharts = memo(function DashboardCharts({ s }: { s: DrugDashboardS
             <CartesianGrid vertical={false} stroke="#f0f0f0" />
             <XAxis dataKey="month" tick={{ fontSize: 11, fill: "#6b7280" }} axisLine={false} tickLine={false} />
             <YAxis tick={{ fontSize: 11, fill: "#6b7280" }} axisLine={false} tickLine={false} />
-            <Tooltip {...tip} formatter={(v: number) => [v + " ราย", "จำนวน"]} />
+            <Tooltip {...tip} formatter={(v) => [`${v ?? 0} ราย`, "จำนวน"]} />
             <Area type="monotone" dataKey="count" stroke={C.green} strokeWidth={2.5}
               fill="url(#drugGrad)" dot={{ r: 3, fill: C.green }} activeDot={{ r: 5 }}
               isAnimationActive={false} />
@@ -115,7 +120,7 @@ const DashboardCharts = memo(function DashboardCharts({ s }: { s: DrugDashboardS
               <CartesianGrid horizontal={false} stroke="#f0f0f0" />
               <XAxis type="number" tick={{ fontSize: 11, fill: "#6b7280" }} axisLine={false} tickLine={false} />
               <YAxis type="category" dataKey="name" tick={{ fontSize: 11, fill: "#6b7280" }} axisLine={false} tickLine={false} width={60} />
-              <Tooltip formatter={(v: number) => [v + " ราย"]} {...tip} />
+              <Tooltip formatter={(v) => [`${v ?? 0} ราย`]} {...tip} />
               <Bar dataKey="value" radius={[0, 4, 4, 0]} isAnimationActive={false}>
                 {programData.map((d, i) => <Cell key={i} fill={d.color} />)}
               </Bar>
@@ -132,7 +137,7 @@ const DashboardCharts = memo(function DashboardCharts({ s }: { s: DrugDashboardS
               <CartesianGrid vertical={false} stroke="#f0f0f0" />
               <XAxis dataKey="name" tick={{ fontSize: 10, fill: "#6b7280" }} axisLine={false} tickLine={false} />
               <YAxis tick={{ fontSize: 11, fill: "#6b7280" }} axisLine={false} tickLine={false} />
-              <Tooltip formatter={(v: number) => [v + " ราย"]} {...tip} />
+              <Tooltip formatter={(v) => [`${v ?? 0} ราย`]} {...tip} />
               <Bar dataKey="value" radius={[4, 4, 0, 0]} isAnimationActive={false}>
                 {v2Data.map((d, i) => <Cell key={i} fill={d.color} />)}
               </Bar>
@@ -148,7 +153,7 @@ const DashboardCharts = memo(function DashboardCharts({ s }: { s: DrugDashboardS
               <CartesianGrid vertical={false} stroke="#f0f0f0" />
               <XAxis dataKey="name" tick={{ fontSize: 9, fill: "#6b7280" }} axisLine={false} tickLine={false} />
               <YAxis tick={{ fontSize: 11, fill: "#6b7280" }} axisLine={false} tickLine={false} />
-              <Tooltip formatter={(v: number) => [v + " ราย"]} {...tip} />
+              <Tooltip formatter={(v) => [`${v ?? 0} ราย`]} {...tip} />
               <Bar dataKey="value" fill={C.blue} radius={[4, 4, 0, 0]} isAnimationActive={false} />
             </BarChart>
           </ResponsiveContainer>

@@ -133,8 +133,8 @@ export default function IpHomeWardDashboardPage() {
                                     key={t.key}
                                     onClick={() => setTab(t.key)}
                                     className={`flex items-center gap-1.5 px-4 py-1.5 rounded-lg text-sm font-semibold border transition-all ${tab === t.key
-                                            ? "bg-[#d6f0e0] border-[#7ec8a0] text-[#1a5233]"
-                                            : "bg-white border-gray-200 text-gray-500 hover:border-[#7ec8a0]"
+                                        ? "bg-[#d6f0e0] border-[#7ec8a0] text-[#1a5233]"
+                                        : "bg-white border-gray-200 text-gray-500 hover:border-[#7ec8a0]"
                                         }`}
                                 >
                                     <I size={15} />
@@ -175,7 +175,7 @@ function OverviewTab({ data }: { data: IpHomeWardData }) {
                             <CartesianGrid vertical={false} stroke="#e5e7eb" />
                             <XAxis dataKey="label" tick={{ fontSize: 10, fill: "#6b7280" }} axisLine={false} tickLine={false} />
                             <YAxis tick={{ fontSize: 10, fill: "#6b7280" }} axisLine={false} tickLine={false} />
-                            <Tooltip formatter={(v: number) => [v + " ราย", "D/C"]} contentStyle={chartTip} />
+                            <Tooltip formatter={(v) => [`${v ?? 0} ราย`, "D/C"]} contentStyle={chartTip} />
                             <Bar dataKey="dc" fill="#2f80c8" radius={[4, 4, 0, 0]} />
                         </BarChart>
                     </ResponsiveContainer>
@@ -207,7 +207,7 @@ function OverviewTab({ data }: { data: IpHomeWardData }) {
                             <CartesianGrid vertical={false} stroke="#e5e7eb" />
                             <XAxis dataKey="label" tick={{ fontSize: 10, fill: "#6b7280" }} axisLine={false} tickLine={false} />
                             <YAxis domain={[0.6, 0.85]} tick={{ fontSize: 10, fill: "#6b7280" }} axisLine={false} tickLine={false} tickFormatter={(v) => v.toFixed(2)} />
-                            <Tooltip formatter={(v: number) => [v.toFixed(4), "CMI"]} contentStyle={chartTip} />
+                            <Tooltip formatter={(v) => [Number(v ?? 0).toFixed(4), "CMI"]} contentStyle={chartTip} />
                             <Line type="monotone" dataKey="cmi" stroke="#9b59d0" strokeWidth={2.5} dot={{ r: 4, fill: "#9b59d0" }} />
                         </LineChart>
                     </ResponsiveContainer>
@@ -235,8 +235,10 @@ function OverviewTab({ data }: { data: IpHomeWardData }) {
 // ─── Financial ──────────────────────────────────────────────────────────────────
 function FinancialTab({ data }: { data: IpHomeWardData }) {
     const finData = data.statement.map((s) => ({ label: s.label, pay: s.pay, deduct: s.deduct, net: s.net }));
-    let cum = 0;
-    const cumData = data.statement.map((s) => { cum += s.net; return { label: s.label, cum: Math.round(cum) }; });
+    const cumData = data.statement.map((s, i) => {
+        const running = data.statement.slice(0, i + 1).reduce((a, x) => a + x.net, 0);
+        return { label: s.label, cum: Math.round(running) };
+    });
 
     return (
         <>
@@ -246,7 +248,7 @@ function FinancialTab({ data }: { data: IpHomeWardData }) {
                         <CartesianGrid vertical={false} stroke="#e5e7eb" />
                         <XAxis dataKey="label" tick={{ fontSize: 11, fill: "#6b7280" }} axisLine={false} tickLine={false} />
                         <YAxis tick={{ fontSize: 10, fill: "#6b7280" }} axisLine={false} tickLine={false} tickFormatter={(v) => fmtM(v)} />
-                        <Tooltip formatter={(v: number) => fmtB(v) + " บาท"} contentStyle={chartTip} />
+                        <Tooltip formatter={(v) => fmtB(Number(v ?? 0)) + " บาท"} contentStyle={chartTip} />
                         <Legend wrapperStyle={{ fontSize: 11 }} />
                         <Bar dataKey="pay" name="จ่ายชดเชย" fill="#2f80c8" radius={[3, 3, 0, 0]} />
                         <Bar dataKey="deduct" name="หัก สป." fill="#e24b4a" radius={[3, 3, 0, 0]} />
@@ -261,7 +263,7 @@ function FinancialTab({ data }: { data: IpHomeWardData }) {
                         <CartesianGrid vertical={false} stroke="#e5e7eb" />
                         <XAxis dataKey="label" tick={{ fontSize: 11, fill: "#6b7280" }} axisLine={false} tickLine={false} />
                         <YAxis tick={{ fontSize: 10, fill: "#6b7280" }} axisLine={false} tickLine={false} tickFormatter={(v) => fmtM(v)} />
-                        <Tooltip formatter={(v: number) => fmtB(v) + " บาท"} contentStyle={chartTip} />
+                        <Tooltip formatter={(v) => fmtB(Number(v ?? 0)) + " บาท"} contentStyle={chartTip} />
                         <Line type="monotone" dataKey="cum" stroke="#27ae60" strokeWidth={2.5} dot={{ r: 4, fill: "#27ae60" }} />
                     </LineChart>
                 </ResponsiveContainer>
@@ -331,7 +333,7 @@ function DoctorTab({ data }: { data: IpHomeWardData }) {
                             <CartesianGrid horizontal={false} stroke="#e5e7eb" />
                             <XAxis type="number" tick={{ fontSize: 10, fill: "#6b7280" }} axisLine={false} tickLine={false} />
                             <YAxis type="category" dataKey="name" width={120} tick={{ fontSize: 10, fill: "#6b7280" }} axisLine={false} tickLine={false} />
-                            <Tooltip formatter={(v: number) => [v + " ราย", "Cases"]} contentStyle={chartTip} />
+                            <Tooltip formatter={(v) => [`${v ?? 0} ราย`, "Cases"]} contentStyle={chartTip} />
                             <Bar dataKey="cases" radius={[0, 4, 4, 0]}>
                                 {cmp.map((_, i) => <Cell key={i} fill={DR_COLORS[i % DR_COLORS.length]} />)}
                             </Bar>
@@ -491,7 +493,7 @@ function HomeWardTab({ data }: { data: IpHomeWardData }) {
                                 <Pie data={status} cx="50%" cy="50%" innerRadius={55} outerRadius={85} dataKey="value" paddingAngle={2}>
                                     {status.map((_, i) => <Cell key={i} fill={statusColor[i]} />)}
                                 </Pie>
-                                <Tooltip formatter={(v: number, n: string) => [v + " ราย", n]} contentStyle={chartTip} />
+                                <Tooltip formatter={(v, n) => [`${v ?? 0} ราย`, n]} contentStyle={chartTip} />
                             </PieChart>
                         </ResponsiveContainer>
                         <div className="flex flex-wrap justify-center gap-3 mt-2 text-xs text-gray-600">
@@ -562,8 +564,8 @@ function MonthlyTab({ data }: { data: IpHomeWardData }) {
                 <button
                     onClick={() => setSel("all")}
                     className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all ${sel === "all"
-                            ? "bg-[#d6f0e0] border-[#7ec8a0] text-[#1a5233]"
-                            : "bg-white border-gray-200 text-gray-500 hover:border-[#7ec8a0]"
+                        ? "bg-[#d6f0e0] border-[#7ec8a0] text-[#1a5233]"
+                        : "bg-white border-gray-200 text-gray-500 hover:border-[#7ec8a0]"
                         }`}
                 >
                     ทั้งหมด
@@ -573,8 +575,8 @@ function MonthlyTab({ data }: { data: IpHomeWardData }) {
                         key={m.sheet}
                         onClick={() => setSel(i)}
                         className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all ${sel === i
-                                ? "bg-[#d6f0e0] border-[#7ec8a0] text-[#1a5233]"
-                                : "bg-white border-gray-200 text-gray-500 hover:border-[#7ec8a0]"
+                            ? "bg-[#d6f0e0] border-[#7ec8a0] text-[#1a5233]"
+                            : "bg-white border-gray-200 text-gray-500 hover:border-[#7ec8a0]"
                             }`}
                     >
                         {m.label}
@@ -600,7 +602,7 @@ function MonthlyTab({ data }: { data: IpHomeWardData }) {
                                 <CartesianGrid vertical={false} stroke="#e5e7eb" />
                                 <XAxis dataKey="label" tick={{ fontSize: 10, fill: "#6b7280" }} axisLine={false} tickLine={false} />
                                 <YAxis tick={{ fontSize: 10, fill: "#6b7280" }} axisLine={false} tickLine={false} />
-                                <Tooltip formatter={(v: number) => [v + " ราย", "D/C"]} contentStyle={chartTip} />
+                                <Tooltip formatter={(v) => [`${v ?? 0} ราย`, "D/C"]} contentStyle={chartTip} />
                                 <Bar dataKey="dc" fill="#2f80c8" radius={[4, 4, 0, 0]} />
                             </BarChart>
                         </ResponsiveContainer>
@@ -615,7 +617,7 @@ function MonthlyTab({ data }: { data: IpHomeWardData }) {
                             <CartesianGrid vertical={false} stroke="#e5e7eb" />
                             <XAxis dataKey="label" tick={{ fontSize: 10, fill: "#6b7280" }} axisLine={false} tickLine={false} />
                             <YAxis tick={{ fontSize: 10, fill: "#6b7280" }} axisLine={false} tickLine={false} />
-                            <Tooltip formatter={(v: number) => [v + " วัน", "เฉลี่ยส่ง"]} contentStyle={chartTip} />
+                            <Tooltip formatter={(v) => [`${v ?? 0} วัน`, "เฉลี่ยส่ง"]} contentStyle={chartTip} />
                             <Line type="monotone" dataKey="days" stroke="#e08a3c" strokeWidth={2.5} dot={{ r: 4, fill: "#e08a3c" }} />
                         </LineChart>
                     </ResponsiveContainer>
@@ -682,7 +684,7 @@ function FundDonut({ data }: { data: { name: string; value: number }[] }) {
                     <Pie data={data} cx="50%" cy="50%" innerRadius={55} outerRadius={85} dataKey="value" paddingAngle={2}>
                         {data.map((d) => <Cell key={d.name} fill={FUND_COLOR[d.name as FundKey] ?? "#94a3b8"} />)}
                     </Pie>
-                    <Tooltip formatter={(v: number, n: string) => [v + " ราย", n]} contentStyle={chartTip} />
+                    <Tooltip formatter={(v, n) => [`${v ?? 0} ราย`, n]} contentStyle={chartTip} />
                 </PieChart>
             </ResponsiveContainer>
             <div className="flex flex-wrap justify-center gap-3 mt-2 text-xs text-gray-600">

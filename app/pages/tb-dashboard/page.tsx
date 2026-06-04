@@ -436,7 +436,7 @@ function DashboardCharts({ rows, yd }: { rows: TBRow[]; yd: TBByYear }) {
                             <Pie data={outcomeData} cx={85} cy={85} innerRadius={50} outerRadius={80} dataKey="value" paddingAngle={3}>
                                 {outcomeData.map((d, i) => <Cell key={i} fill={d.color} stroke="none" />)}
                             </Pie>
-                            <Tooltip formatter={(v: number) => [v + " ราย"]} {...tip} />
+                            <Tooltip formatter={(v) => [`${v ?? 0} ราย`]} {...tip} />
                         </PieChart>
                     </div>
                     <Legend items={outcomeData.map((d) => ({ label: `${d.name} (${d.value})`, color: d.color }))} />
@@ -454,7 +454,7 @@ function DashboardCharts({ rows, yd }: { rows: TBRow[]; yd: TBByYear }) {
                             <CartesianGrid vertical={false} stroke="#f0f0f0" />
                             <XAxis dataKey="month" tick={{ fontSize: 9, fill: "#6b7280" }} axisLine={false} tickLine={false} />
                             <YAxis tick={{ fontSize: 11, fill: "#6b7280" }} axisLine={false} tickLine={false} />
-                            <Tooltip formatter={(v: number) => [v + " ราย", "จำนวน"]} {...tip} />
+                            <Tooltip formatter={(v) => [`${v ?? 0} ราย`, "จำนวน"]} {...tip} />
                             <Area type="monotone" dataKey="count" stroke={C.teal} strokeWidth={2.5}
                                 fill="url(#tbGrad)" dot={{ r: 4, fill: C.teal }} activeDot={{ r: 6 }} />
                         </AreaChart>
@@ -483,7 +483,7 @@ function DashboardCharts({ rows, yd }: { rows: TBRow[]; yd: TBByYear }) {
                             <Pie data={afbData} cx={75} cy={75} innerRadius={45} outerRadius={70} dataKey="value" paddingAngle={4}>
                                 {afbData.map((d, i) => <Cell key={i} fill={d.color} stroke="none" />)}
                             </Pie>
-                            <Tooltip formatter={(v: number) => [v + " ราย"]} {...tip} />
+                            <Tooltip formatter={(v) => [`${v ?? 0} ราย`]} {...tip} />
                         </PieChart>
                     </div>
                     <Legend items={afbData.map((d) => ({ label: `${d.name} (${d.value})`, color: d.color }))} />
@@ -495,7 +495,7 @@ function DashboardCharts({ rows, yd }: { rows: TBRow[]; yd: TBByYear }) {
                             <Pie data={hivData} cx={75} cy={75} innerRadius={45} outerRadius={70} dataKey="value" paddingAngle={4}>
                                 {hivData.map((d, i) => <Cell key={i} fill={d.color} stroke="none" />)}
                             </Pie>
-                            <Tooltip formatter={(v: number) => [v + " ราย"]} {...tip} />
+                            <Tooltip formatter={(v) => [`${v ?? 0} ราย`]} {...tip} />
                         </PieChart>
                     </div>
                     <Legend items={hivData.map((d) => ({ label: `${d.name} (${d.value})`, color: d.color }))} />
@@ -507,7 +507,7 @@ function DashboardCharts({ rows, yd }: { rows: TBRow[]; yd: TBByYear }) {
                             <Pie data={gxData} cx={75} cy={75} innerRadius={45} outerRadius={70} dataKey="value" paddingAngle={4}>
                                 {gxData.map((d, i) => <Cell key={i} fill={d.color} stroke="none" />)}
                             </Pie>
-                            <Tooltip formatter={(v: number) => [v + " ราย"]} {...tip} />
+                            <Tooltip formatter={(v) => [`${v ?? 0} ราย`]} {...tip} />
                         </PieChart>
                     </div>
                     <Legend items={gxData.map((d) => ({ label: d.name, color: d.color, value: d.value }))} />
@@ -530,7 +530,7 @@ function DashboardCharts({ rows, yd }: { rows: TBRow[]; yd: TBByYear }) {
                             <CartesianGrid vertical={false} stroke="#f0f0f0" />
                             <XAxis dataKey="name" tick={{ fontSize: 9, fill: "#6b7280" }} axisLine={false} tickLine={false} />
                             <YAxis tick={{ fontSize: 11, fill: "#6b7280" }} axisLine={false} tickLine={false} />
-                            <Tooltip formatter={(v: number) => [v + " ราย"]} {...tip} />
+                            <Tooltip formatter={(v) => [`${v ?? 0} ราย`]} {...tip} />
                             <Bar dataKey="value" fill={C.teal} radius={[4, 4, 0, 0]} />
                         </BarChart>
                     </ResponsiveContainer>
@@ -561,7 +561,7 @@ function YearCompareChart({ data }: { data: { year: string; total: number; cured
                     <XAxis dataKey="year" tick={{ fontSize: 11, fill: "#6b7280" }} axisLine={false} tickLine={false} tickFormatter={(v) => `ปีงบ ${v}`} />
                     <YAxis yAxisId="left" tick={{ fontSize: 11, fill: "#6b7280" }} axisLine={false} tickLine={false} />
                     <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 11, fill: C.green }} axisLine={false} tickLine={false} tickFormatter={(v) => v + "%"} />
-                    <Tooltip {...tip} formatter={(v: number, name: string) => name.includes("%") ? [`${v}%`, name] : [v + " ราย", name]} />
+                    <Tooltip {...tip} formatter={(v, name) => typeof name === "string" && name.includes("%") ? [`${v ?? 0}%`, name] : [`${v ?? 0} ราย`, name]} />
                     <Bar yAxisId="left" dataKey="total" name="ทั้งหมด" fill={C.blue} radius={[4, 4, 0, 0]} />
                     <Bar yAxisId="left" dataKey="cured" name="Cured" fill={C.teal} radius={[4, 4, 0, 0]} />
                     <Bar yAxisId="left" dataKey="died" name="Died" fill={C.red} radius={[4, 4, 0, 0]} />

@@ -36,6 +36,7 @@ import {
     Legend,
 } from "chart.js";
 import { Line, Bar } from "react-chartjs-2";
+import type { ChartData, ChartOptions, ChartDataset } from "chart.js";
 
 ChartJS.register(
     CategoryScale,
@@ -89,6 +90,24 @@ interface DashboardData {
     vitals: VitalsData;
     lipid: LipidData;
     history: HistoryData;
+}
+
+interface VitalCardConfig {
+    label: string;
+    icon: React.ElementType;
+    value: string | number;
+    unit: string;
+    status: StatusLevel;
+    statusLabel?: string;
+    chart: string;
+    type?: "bar" | "line";
+    datasets: ChartDataset<"line">[];
+}
+
+interface TrendChartConfig {
+    title: string;
+    type?: "bar" | "line";
+    data: { labels: string[]; datasets: ChartDataset<"line">[] };
 }
 
 // ─── Default data ──────────────────────────────────────────────────────────────
@@ -200,12 +219,12 @@ function TrafficLight({ status }: { status: StatusLevel }) {
                     <div
                         key={s}
                         className={`w-5 h-5 rounded-full transition-all duration-300 ${status === s
-                                ? s === "normal"
-                                    ? "bg-green-400 shadow-[0_0_8px_#4ade80]"
-                                    : s === "warning"
-                                        ? "bg-yellow-400 shadow-[0_0_8px_#facc15]"
-                                        : "bg-red-500 shadow-[0_0_8px_#ef4444]"
-                                : "bg-slate-600 opacity-30"
+                            ? s === "normal"
+                                ? "bg-green-400 shadow-[0_0_8px_#4ade80]"
+                                : s === "warning"
+                                    ? "bg-yellow-400 shadow-[0_0_8px_#facc15]"
+                                    : "bg-red-500 shadow-[0_0_8px_#ef4444]"
+                            : "bg-slate-600 opacity-30"
                             }`}
                     />
                 ))}
@@ -213,10 +232,10 @@ function TrafficLight({ status }: { status: StatusLevel }) {
             <div>
                 <div
                     className={`text-lg font-bold ${status === "normal"
-                            ? "text-green-500"
-                            : status === "warning"
-                                ? "text-amber-500"
-                                : "text-red-500"
+                        ? "text-green-500"
+                        : status === "warning"
+                            ? "text-amber-500"
+                            : "text-red-500"
                         }`}
                 >
                     {STATUS_LABEL[status]}
@@ -317,6 +336,32 @@ function LabTable({ rows }: { rows: { name: string; val: string; unit: string; r
 
 // ─── Import Modal ──────────────────────────────────────────────────────────────
 
+interface ImportFormState {
+    name: string;
+    id: string;
+    age: number;
+    sex: string;
+    date: string;
+    next: string;
+    sys: number;
+    dia: number;
+    fbs: number;
+    bmi: number;
+    egfr: number;
+    chol: number;
+    ldl: number;
+    hdl: number;
+    tg: number;
+}
+
+interface FormField {
+    label: string;
+    key: keyof ImportFormState;
+    type: "text" | "number" | "select";
+    opts?: string[];
+    step?: string;
+}
+
 function ImportModal({
     onClose,
     onSave,
@@ -328,7 +373,7 @@ function ImportModal({
     const [dragging, setDragging] = useState(false);
     const [previewed, setPreviewed] = useState(false);
 
-    const [form, setForm] = useState({
+    const [form, setForm] = useState<ImportFormState>({
         name: "นายสมชาย รักดี", id: "12345/69", age: 52, sex: "ชาย",
         date: "25 มี.ค. 2569", next: "25 มี.ค. 2570",
         sys: 120, dia: 80, fbs: 92, bmi: 26.5, egfr: 88,
@@ -343,6 +388,34 @@ function ImportModal({
         });
         onClose();
     };
+
+    const sections: { title: string; fields: FormField[] }[] = [
+        {
+            title: "ข้อมูลผู้ป่วย",
+            fields: [
+                { label: "ชื่อ-สกุล", key: "name", type: "text" },
+                { label: "เลขที่ผู้ป่วย", key: "id", type: "text" },
+                { label: "อายุ", key: "age", type: "number" },
+                { label: "เพศ", key: "sex", type: "select", opts: ["ชาย", "หญิง"] },
+                { label: "วันที่ตรวจ", key: "date", type: "text" },
+                { label: "นัดครั้งถัดไป", key: "next", type: "text" },
+            ],
+        },
+        {
+            title: "สัญญาณชีพ & ไขมัน",
+            fields: [
+                { label: "Systolic (mmHg)", key: "sys", type: "number" },
+                { label: "Diastolic (mmHg)", key: "dia", type: "number" },
+                { label: "FBS (mg/dL)", key: "fbs", type: "number" },
+                { label: "BMI (kg/m²)", key: "bmi", type: "number", step: "0.1" },
+                { label: "eGFR", key: "egfr", type: "number" },
+                { label: "Total Cholesterol", key: "chol", type: "number" },
+                { label: "LDL", key: "ldl", type: "number" },
+                { label: "HDL", key: "hdl", type: "number" },
+                { label: "Triglyceride", key: "tg", type: "number" },
+            ],
+        },
+    ];
 
     return (
         <motion.div
@@ -375,8 +448,8 @@ function ImportModal({
                                 key={key}
                                 onClick={() => setTab(key)}
                                 className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${tab === key
-                                        ? "bg-green-700 text-white"
-                                        : "text-gray-500 hover:bg-gray-100"
+                                    ? "bg-green-700 text-white"
+                                    : "text-gray-500 hover:bg-gray-100"
                                     }`}
                             >
                                 <Icon size={13} />
@@ -439,33 +512,7 @@ function ImportModal({
                         </>
                     ) : (
                         <div className="space-y-4">
-                            {[
-                                {
-                                    title: "ข้อมูลผู้ป่วย",
-                                    fields: [
-                                        { label: "ชื่อ-สกุล", key: "name", type: "text" },
-                                        { label: "เลขที่ผู้ป่วย", key: "id", type: "text" },
-                                        { label: "อายุ", key: "age", type: "number" },
-                                        { label: "เพศ", key: "sex", type: "select", opts: ["ชาย", "หญิง"] },
-                                        { label: "วันที่ตรวจ", key: "date", type: "text" },
-                                        { label: "นัดครั้งถัดไป", key: "next", type: "text" },
-                                    ],
-                                },
-                                {
-                                    title: "สัญญาณชีพ & ไขมัน",
-                                    fields: [
-                                        { label: "Systolic (mmHg)", key: "sys", type: "number" },
-                                        { label: "Diastolic (mmHg)", key: "dia", type: "number" },
-                                        { label: "FBS (mg/dL)", key: "fbs", type: "number" },
-                                        { label: "BMI (kg/m²)", key: "bmi", type: "number", step: "0.1" },
-                                        { label: "eGFR", key: "egfr", type: "number" },
-                                        { label: "Total Cholesterol", key: "chol", type: "number" },
-                                        { label: "LDL", key: "ldl", type: "number" },
-                                        { label: "HDL", key: "hdl", type: "number" },
-                                        { label: "Triglyceride", key: "tg", type: "number" },
-                                    ],
-                                },
-                            ].map((section) => (
+                            {sections.map((section) => (
                                 <div key={section.title}>
                                     <div className="text-xs font-bold text-green-800 mb-2 pb-1 border-b border-green-100">
                                         {section.title}
@@ -476,22 +523,22 @@ function ImportModal({
                                                 <label className="block text-[11px] font-semibold text-gray-500 mb-1">{f.label}</label>
                                                 {f.type === "select" ? (
                                                     <select
-                                                        value={(form as any)[f.key]}
-                                                        onChange={(e) => setForm((p) => ({ ...p, [f.key]: e.target.value }))}
+                                                        value={form[f.key]}
+                                                        onChange={(e) => setForm((p) => ({ ...p, [f.key]: e.target.value }) as ImportFormState)}
                                                         className="w-full px-2.5 py-1.5 text-xs border border-gray-300 rounded-lg bg-white text-gray-800 focus:outline-none focus:border-green-500"
                                                     >
-                                                        {f.opts!.map((o) => <option key={o}>{o}</option>)}
+                                                        {f.opts?.map((o) => <option key={o}>{o}</option>)}
                                                     </select>
                                                 ) : (
                                                     <input
                                                         type={f.type}
                                                         step={f.step}
-                                                        value={(form as any)[f.key]}
+                                                        value={form[f.key]}
                                                         onChange={(e) =>
                                                             setForm((p) => ({
                                                                 ...p,
                                                                 [f.key]: f.type === "number" ? parseFloat(e.target.value) || 0 : e.target.value,
-                                                            }))
+                                                            }) as ImportFormState)
                                                         }
                                                         className="w-full px-2.5 py-1.5 text-xs border border-gray-300 rounded-lg bg-white text-gray-800 focus:outline-none focus:border-green-500 focus:ring-1 focus:ring-green-200"
                                                     />
@@ -571,6 +618,80 @@ export default function HealthCheckupPage() {
     })();
 
     const yearLabels = history.years.map(String);
+
+    const vitalsCards: VitalCardConfig[] = [
+        {
+            label: "ความดันโลหิต",
+            icon: Activity,
+            value: `${vitals.sys}/${vitals.dia}`,
+            unit: "mmHg",
+            status: bpStatus,
+            chart: "bp",
+            datasets: [
+                { label: "SYS", data: history.sys, borderColor: "#1a5233", backgroundColor: "rgba(26,82,51,.08)", tension: 0.3 },
+                { label: "DIA", data: history.dia, borderColor: "#7ec8a0", backgroundColor: "rgba(126,200,160,.08)", tension: 0.3 },
+            ],
+        },
+        {
+            label: "น้ำตาลในเลือด (FBS)",
+            icon: Droplet,
+            value: vitals.fbs,
+            unit: "mg/dL",
+            status: fbsStatus,
+            chart: "fbs",
+            datasets: [{ label: "FBS", data: history.fbs, backgroundColor: "#3aa36a55", borderColor: "#3aa36a", borderWidth: 1 }],
+            type: "bar",
+        },
+        {
+            label: "ดัชนีมวลกาย (BMI)",
+            icon: Scale,
+            value: vitals.bmi,
+            unit: "kg/m²",
+            status: bmiStatus,
+            statusLabel: bmiStatus === "normal" ? "ปกติ" : bmiStatus === "warning" ? "น้ำหนักเกิน" : "อ้วน",
+            chart: "bmi",
+            datasets: [{ label: "BMI", data: history.bmi, borderColor: "#f59e0b", backgroundColor: "rgba(245,158,11,.12)", fill: true, tension: 0.3 }],
+        },
+        {
+            label: "การทำงานไต (eGFR)",
+            icon: Activity,
+            value: vitals.egfr,
+            unit: "mL/min",
+            status: egfrStatus,
+            chart: "egfr",
+            datasets: [{ label: "eGFR", data: [95, 93.5, 92, 90, vitals.egfr], borderColor: "#3aa36a", backgroundColor: "rgba(58,163,106,.1)", fill: true, tension: 0.3 }],
+        },
+    ];
+
+    const trendCharts: TrendChartConfig[] = [
+        {
+            title: "น้ำตาลในเลือด (FBS)",
+            data: { labels: yearLabels, datasets: [{ label: "FBS", data: history.fbs, borderColor: "#3aa36a", backgroundColor: "rgba(58,163,106,.12)", fill: true, tension: 0.3 }] },
+        },
+        {
+            title: "ไขมันในเลือด",
+            data: {
+                labels: yearLabels, datasets: [
+                    { label: "Total Chol", data: history.chol, borderColor: "#185FA5", tension: 0.3 },
+                    { label: "LDL", data: history.ldl, borderColor: "#ef4444", tension: 0.3 },
+                ],
+            },
+        },
+        {
+            title: "ความดันโลหิต",
+            data: {
+                labels: yearLabels, datasets: [
+                    { label: "Systolic", data: history.sys, borderColor: "#1a5233", tension: 0.3 },
+                    { label: "Diastolic", data: history.dia, borderColor: "#7ec8a0", tension: 0.3 },
+                ],
+            },
+        },
+        {
+            title: "ดัชนีมวลกาย (BMI)",
+            data: { labels: yearLabels, datasets: [{ label: "BMI", data: history.bmi, backgroundColor: "#f59e0b55", borderColor: "#f59e0b", borderWidth: 1 }] },
+            type: "bar",
+        },
+    ];
 
     return (
         <>
@@ -666,49 +787,7 @@ export default function HealthCheckupPage() {
 
                 {/* Vitals */}
                 <div className="grid grid-cols-4 gap-3">
-                    {[
-                        {
-                            label: "ความดันโลหิต",
-                            icon: Activity,
-                            value: `${vitals.sys}/${vitals.dia}`,
-                            unit: "mmHg",
-                            status: bpStatus,
-                            chart: "bp",
-                            datasets: [
-                                { label: "SYS", data: history.sys, borderColor: "#1a5233", backgroundColor: "rgba(26,82,51,.08)", tension: 0.3 },
-                                { label: "DIA", data: history.dia, borderColor: "#7ec8a0", backgroundColor: "rgba(126,200,160,.08)", tension: 0.3 },
-                            ],
-                        },
-                        {
-                            label: "น้ำตาลในเลือด (FBS)",
-                            icon: Droplet,
-                            value: vitals.fbs,
-                            unit: "mg/dL",
-                            status: fbsStatus,
-                            chart: "fbs",
-                            datasets: [{ label: "FBS", data: history.fbs, backgroundColor: "#3aa36a55", borderColor: "#3aa36a", borderWidth: 1 }],
-                            type: "bar" as const,
-                        },
-                        {
-                            label: "ดัชนีมวลกาย (BMI)",
-                            icon: Scale,
-                            value: vitals.bmi,
-                            unit: "kg/m²",
-                            status: bmiStatus,
-                            statusLabel: bmiStatus === "normal" ? "ปกติ" : bmiStatus === "warning" ? "น้ำหนักเกิน" : "อ้วน",
-                            chart: "bmi",
-                            datasets: [{ label: "BMI", data: history.bmi, borderColor: "#f59e0b", backgroundColor: "rgba(245,158,11,.12)", fill: true, tension: 0.3 }],
-                        },
-                        {
-                            label: "การทำงานไต (eGFR)",
-                            icon: Activity,
-                            value: vitals.egfr,
-                            unit: "mL/min",
-                            status: egfrStatus,
-                            chart: "egfr",
-                            datasets: [{ label: "eGFR", data: [95, 93.5, 92, 90, vitals.egfr], borderColor: "#3aa36a", backgroundColor: "rgba(58,163,106,.1)", fill: true, tension: 0.3 }],
-                        },
-                    ].map((v) => (
+                    {vitalsCards.map((v) => (
                         <Card key={v.chart}>
                             <div className="flex items-center justify-between mb-1.5">
                                 <div className="text-[11px] font-semibold text-gray-500">{v.label}</div>
@@ -719,9 +798,15 @@ export default function HealthCheckupPage() {
                             </div>
                             <div className="h-20 mt-2">
                                 {v.type === "bar" ? (
-                                    <Bar data={{ labels: yearLabels, datasets: v.datasets as any }} options={CHART_OPTS as any} />
+                                    <Bar
+                                        data={{ labels: yearLabels, datasets: v.datasets } as unknown as ChartData<"bar">}
+                                        options={CHART_OPTS as unknown as ChartOptions<"bar">}
+                                    />
                                 ) : (
-                                    <Line data={{ labels: yearLabels, datasets: v.datasets as any }} options={CHART_OPTS as any} />
+                                    <Line
+                                        data={{ labels: yearLabels, datasets: v.datasets } as ChartData<"line">}
+                                        options={CHART_OPTS as unknown as ChartOptions<"line">}
+                                    />
                                 )}
                             </div>
                         </Card>
@@ -762,8 +847,8 @@ export default function HealthCheckupPage() {
                                 key={key}
                                 onClick={() => setActiveTab(key)}
                                 className={`flex items-center gap-1.5 px-4 py-2.5 text-xs font-semibold whitespace-nowrap border-b-2 transition-all ${activeTab === key
-                                        ? "border-[#1a5233] text-[#1a5233] bg-white"
-                                        : "border-transparent text-gray-500 hover:text-[#1a5233] hover:bg-green-50/50"
+                                    ? "border-[#1a5233] text-[#1a5233] bg-white"
+                                    : "border-transparent text-gray-500 hover:text-[#1a5233] hover:bg-green-50/50"
                                     }`}
                             >
                                 <Icon size={13} />
@@ -808,42 +893,20 @@ export default function HealthCheckupPage() {
 
                                 {activeTab === "trend" && (
                                     <div className="grid grid-cols-2 gap-4">
-                                        {[
-                                            {
-                                                title: "น้ำตาลในเลือด (FBS)",
-                                                data: { labels: yearLabels, datasets: [{ label: "FBS", data: history.fbs, borderColor: "#3aa36a", backgroundColor: "rgba(58,163,106,.12)", fill: true, tension: 0.3 }] },
-                                            },
-                                            {
-                                                title: "ไขมันในเลือด",
-                                                data: {
-                                                    labels: yearLabels, datasets: [
-                                                        { label: "Total Chol", data: history.chol, borderColor: "#185FA5", tension: 0.3 },
-                                                        { label: "LDL", data: history.ldl, borderColor: "#ef4444", tension: 0.3 },
-                                                    ]
-                                                },
-                                            },
-                                            {
-                                                title: "ความดันโลหิต",
-                                                data: {
-                                                    labels: yearLabels, datasets: [
-                                                        { label: "Systolic", data: history.sys, borderColor: "#1a5233", tension: 0.3 },
-                                                        { label: "Diastolic", data: history.dia, borderColor: "#7ec8a0", tension: 0.3 },
-                                                    ]
-                                                },
-                                            },
-                                            {
-                                                title: "ดัชนีมวลกาย (BMI)",
-                                                data: { labels: yearLabels, datasets: [{ label: "BMI", data: history.bmi, backgroundColor: "#f59e0b55", borderColor: "#f59e0b", borderWidth: 1 }] },
-                                                type: "bar" as const,
-                                            },
-                                        ].map((c) => (
+                                        {trendCharts.map((c) => (
                                             <div key={c.title}>
                                                 <div className="text-[11px] font-bold text-[#1a5233] mb-2">{c.title}</div>
                                                 <div className="h-44">
                                                     {c.type === "bar" ? (
-                                                        <Bar data={c.data as any} options={TREND_OPTS as any} />
+                                                        <Bar
+                                                            data={c.data as unknown as ChartData<"bar">}
+                                                            options={TREND_OPTS as unknown as ChartOptions<"bar">}
+                                                        />
                                                     ) : (
-                                                        <Line data={c.data as any} options={TREND_OPTS as any} />
+                                                        <Line
+                                                            data={c.data as ChartData<"line">}
+                                                            options={TREND_OPTS as unknown as ChartOptions<"line">}
+                                                        />
                                                     )}
                                                 </div>
                                             </div>

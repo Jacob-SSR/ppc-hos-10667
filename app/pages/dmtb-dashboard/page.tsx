@@ -103,6 +103,82 @@ const ALL_SERVICES = [
 ] as const;
 type ServiceKey = typeof ALL_SERVICES[number];
 
+// ─── Chart Tooltip (declared outside TbBarChart to avoid re-creating on render) ──
+interface ServiceBreakdownItem {
+    name: string;
+    label: string;
+    claim: number;
+    comp: number;
+    pending: number;
+}
+
+interface ChartRow {
+    name: string;
+    เรียกเก็บ: number;
+    ชดเชย: number;
+    ไม่ชดเชย: number;
+    serviceBreakdown?: ServiceBreakdownItem[];
+    serviceCount?: number;
+    isHospital: boolean;
+}
+
+interface ChartTooltipProps {
+    active?: boolean;
+    payload?: { payload: ChartRow }[];
+    label?: string;
+    selectedService: ServiceKey;
+}
+
+function CustomTooltip({ active, payload, label, selectedService }: ChartTooltipProps) {
+    if (!active || !payload?.length) return null;
+    const d = payload[0]?.payload;
+    if (!d) return null;
+
+    const fields: { k: "เรียกเก็บ" | "ชดเชย" | "ไม่ชดเชย"; c: string }[] = [
+        { k: "เรียกเก็บ", c: "text-blue-700" },
+        { k: "ชดเชย", c: "text-green-700" },
+        { k: "ไม่ชดเชย", c: "text-red-500" },
+    ];
+
+    return (
+        <div className="bg-white border border-gray-200 rounded-xl shadow-xl p-4 text-xs min-w-[240px]">
+            <p className="font-bold text-gray-800 text-sm mb-2 pb-1.5 border-b border-gray-100">{label}</p>
+            {selectedService === "รวมทั้งหมด" && (d.serviceBreakdown?.length ?? 0) > 0 ? (
+                <div className="space-y-2">
+                    {d.serviceBreakdown!.map((s) => (
+                        <div key={s.name} className="flex justify-between items-center">
+                            <span className="text-gray-600 flex items-center gap-1.5">
+                                <span className="w-2 h-2 rounded-full inline-block" style={{ background: SERVICE_COLORS[s.name]?.claim ?? "#94a3b8" }} />
+                                {s.label}
+                            </span>
+                            <span className="font-bold text-gray-800 tabular-nums">{fmtB(s.comp)} ฿</span>
+                        </div>
+                    ))}
+                    <div className="pt-1.5 border-t border-gray-100 grid grid-cols-3 gap-1 text-[10px]">
+                        <span className="text-blue-700 font-bold tabular-nums">{fmtB(d.เรียกเก็บ ?? 0)}</span>
+                        <span className="text-green-700 font-bold tabular-nums">{fmtB(d.ชดเชย ?? 0)}</span>
+                        <span className="text-red-500 font-bold tabular-nums">{fmtB(d.ไม่ชดเชย ?? 0)}</span>
+                    </div>
+                </div>
+            ) : (
+                <div className="space-y-1.5">
+                    {fields.map(({ k, c }) => (
+                        <div key={k} className="flex justify-between">
+                            <span className="text-gray-500">{k}</span>
+                            <span className={`font-bold tabular-nums ${c}`}>{fmtB(d[k] ?? 0)} ฿</span>
+                        </div>
+                    ))}
+                    {d.serviceCount != null && (
+                        <div className="pt-1.5 border-t border-gray-100 text-gray-500">
+                            จำนวน: <span className="font-bold text-gray-700">{fmt(d.serviceCount)} รายการ</span>
+                        </div>
+                    )}
+                </div>
+            )}
+        </div>
+    );
+}
+
 // ─── KpiCard ──────────────────────────────────────────────────────────────────
 function KpiCard({
     icon: Icon,
@@ -199,52 +275,6 @@ function TbBarChart({ units }: { units: TbUnitSummary[] }) {
 
     const colors = SERVICE_COLORS[selectedService] ?? SERVICE_COLORS["รวมทั้งหมด"];
 
-    const CustomTooltip = ({ active, payload, label }: any) => {
-        if (!active || !payload?.length) return null;
-        const d = payload[0]?.payload;
-        return (
-            <div className="bg-white border border-gray-200 rounded-xl shadow-xl p-4 text-xs min-w-[240px]">
-                <p className="font-bold text-gray-800 text-sm mb-2 pb-1.5 border-b border-gray-100">{label}</p>
-                {selectedService === "รวมทั้งหมด" && d?.serviceBreakdown?.length > 0 ? (
-                    <div className="space-y-2">
-                        {d.serviceBreakdown.map((s: any) => (
-                            <div key={s.name} className="flex justify-between items-center">
-                                <span className="text-gray-600 flex items-center gap-1.5">
-                                    <span className="w-2 h-2 rounded-full inline-block" style={{ background: SERVICE_COLORS[s.name]?.claim ?? "#94a3b8" }} />
-                                    {s.label}
-                                </span>
-                                <span className="font-bold text-gray-800 tabular-nums">{fmtB(s.comp)} ฿</span>
-                            </div>
-                        ))}
-                        <div className="pt-1.5 border-t border-gray-100 grid grid-cols-3 gap-1 text-[10px]">
-                            <span className="text-blue-700 font-bold tabular-nums">{fmtB(d.เรียกเก็บ ?? 0)}</span>
-                            <span className="text-green-700 font-bold tabular-nums">{fmtB(d.ชดเชย ?? 0)}</span>
-                            <span className="text-red-500 font-bold tabular-nums">{fmtB(d.ไม่ชดเชย ?? 0)}</span>
-                        </div>
-                    </div>
-                ) : (
-                    <div className="space-y-1.5">
-                        {[
-                            { k: "เรียกเก็บ", c: "text-blue-700" },
-                            { k: "ชดเชย", c: "text-green-700" },
-                            { k: "ไม่ชดเชย", c: "text-red-500" },
-                        ].map(({ k, c }) => (
-                            <div key={k} className="flex justify-between">
-                                <span className="text-gray-500">{k}</span>
-                                <span className={`font-bold tabular-nums ${c}`}>{fmtB((d as any)?.[k] ?? 0)} ฿</span>
-                            </div>
-                        ))}
-                        {d.serviceCount != null && (
-                            <div className="pt-1.5 border-t border-gray-100 text-gray-500">
-                                จำนวน: <span className="font-bold text-gray-700">{fmt(d.serviceCount)} รายการ</span>
-                            </div>
-                        )}
-                    </div>
-                )}
-            </div>
-        );
-    };
-
     return (
         <div className="bg-white border border-gray-200 rounded-2xl shadow-sm p-5">
             <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
@@ -298,7 +328,7 @@ function TbBarChart({ units }: { units: TbUnitSummary[] }) {
                         tickLine={false}
                         tickFormatter={(v: number) => v >= 1000 ? `${(v / 1000).toFixed(0)}k` : String(v)}
                     />
-                    <Tooltip content={<CustomTooltip />} cursor={{ fill: "rgba(0,0,0,0.04)" }} />
+                    <Tooltip content={<CustomTooltip selectedService={selectedService} />} cursor={{ fill: "rgba(0,0,0,0.04)" }} />
                     <Bar dataKey="เรียกเก็บ" fill={colors.claim} radius={[3, 3, 0, 0]} />
                     <Bar dataKey="ชดเชย" fill={colors.comp} radius={[3, 3, 0, 0]} />
                     <Bar dataKey="ไม่ชดเชย" fill={colors.pending} radius={[3, 3, 0, 0]} />
@@ -311,7 +341,7 @@ function TbBarChart({ units }: { units: TbUnitSummary[] }) {
                         claim: acc.claim + (row.เรียกเก็บ ?? 0),
                         comp: acc.comp + (row.ชดเชย ?? 0),
                         pending: acc.pending + (row.ไม่ชดเชย ?? 0),
-                        count: acc.count + ((row as any).serviceCount ?? 0),
+                        count: acc.count + ((row as { serviceCount?: number }).serviceCount ?? 0),
                     }),
                     { claim: 0, comp: 0, pending: 0, count: 0 }
                 );
@@ -772,8 +802,6 @@ export default function TbDashboardPage() {
     }, []);
 
     useEffect(() => { fetchData(); }, [fetchData]);
-
-    const totalPending = data ? data.totalClaim - data.totalComp - data.totalNoComp : 0;
 
     return (
         <div className="space-y-4">

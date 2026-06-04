@@ -62,6 +62,65 @@ const SVC_COLORS: Record<string, { claim: string; comp: string }> = {
 const ALL_SVCS = ["รวมทั้งหมด", "ตรวจตับอักเสบ C", "ตรวจตับอักเสบ B", "วัคซีนไข้หวัดใหญ่", "เก็บตัวอย่าง HPV"] as const;
 type SvcFilter = typeof ALL_SVCS[number];
 
+// ─── Chart Tooltip (declared outside KtbBarChart to avoid re-creating on render) ──
+interface KtbBreakdownItem { name: string; claim: number; comp: number; }
+interface KtbChartRow {
+  name: string;
+  เรียกเก็บ: number;
+  ชดเชย: number;
+  ไม่ชดเชย: number;
+  breakdown?: KtbBreakdownItem[];
+}
+interface KtbTooltipProps {
+  active?: boolean;
+  payload?: { payload: KtbChartRow }[];
+  label?: string;
+  selectedSvc: SvcFilter;
+}
+
+function CustomTooltip({ active, payload, label, selectedSvc }: KtbTooltipProps) {
+  if (!active || !payload?.length) return null;
+  const d = payload[0]?.payload;
+  if (!d) return null;
+
+  const fields: { k: "เรียกเก็บ" | "ชดเชย" | "ไม่ชดเชย"; c: string }[] = [
+    { k: "เรียกเก็บ", c: "text-blue-700" },
+    { k: "ชดเชย", c: "text-green-700" },
+    { k: "ไม่ชดเชย", c: "text-orange-600" },
+  ];
+
+  return (
+    <div className="bg-white border border-gray-200 rounded-xl shadow-xl p-3 text-xs min-w-[210px]">
+      <p className="font-bold text-gray-800 text-sm mb-2 pb-1.5 border-b border-gray-100">{label}</p>
+      {selectedSvc === "รวมทั้งหมด" && (d.breakdown?.length ?? 0) > 0 ? (
+        <div className="space-y-2">
+          {d.breakdown!.map((s) => (
+            <div key={s.name} className="flex justify-between items-center">
+              <span className="text-gray-600 flex items-center gap-1.5">
+                <span className="w-2 h-2 rounded-full inline-block" style={{ background: SVC_COLORS[s.name]?.claim ?? "#94a3b8" }} />{s.name}
+              </span>
+              <span className="font-bold text-gray-800 tabular-nums">{fmtB(s.comp)} ฿</span>
+            </div>
+          ))}
+          <div className="pt-1.5 border-t border-gray-100 flex justify-between font-bold">
+            <span className="text-orange-600">ไม่ชดเชย</span>
+            <span className="text-orange-600 tabular-nums">{fmtB(d.ไม่ชดเชย ?? 0)} ฿</span>
+          </div>
+        </div>
+      ) : (
+        <div className="space-y-1.5">
+          {fields.map(({ k, c }) => (
+            <div key={k} className="flex justify-between">
+              <span className="text-gray-500">{k}</span>
+              <span className={`font-bold tabular-nums ${c}`}>{fmtB(d[k] ?? 0)} ฿</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── KpiCard ──────────────────────────────────────────────────────────────────
 function KpiCard({ icon: Icon, label, value, sub, accent, bg }: {
   icon: React.ElementType; label: string; value: string; sub?: string; accent: string; bg: string;
@@ -106,41 +165,6 @@ function KtbBarChart({ units }: { units: KtbUnitSummary[] }) {
 
   const colors = SVC_COLORS[selectedSvc] ?? SVC_COLORS["รวมทั้งหมด"];
 
-  const CustomTooltip = ({ active, payload, label }: any) => {
-    if (!active || !payload?.length) return null;
-    const d = payload[0]?.payload;
-    return (
-      <div className="bg-white border border-gray-200 rounded-xl shadow-xl p-3 text-xs min-w-[210px]">
-        <p className="font-bold text-gray-800 text-sm mb-2 pb-1.5 border-b border-gray-100">{label}</p>
-        {selectedSvc === "รวมทั้งหมด" && d?.breakdown?.length > 0 ? (
-          <div className="space-y-2">
-            {d.breakdown.map((s: any) => (
-              <div key={s.name} className="flex justify-between items-center">
-                <span className="text-gray-600 flex items-center gap-1.5">
-                  <span className="w-2 h-2 rounded-full inline-block" style={{ background: SVC_COLORS[s.name]?.claim ?? "#94a3b8" }} />{s.name}
-                </span>
-                <span className="font-bold text-gray-800 tabular-nums">{fmtB(s.comp)} ฿</span>
-              </div>
-            ))}
-            <div className="pt-1.5 border-t border-gray-100 flex justify-between font-bold">
-              <span className="text-orange-600">ไม่ชดเชย</span>
-              <span className="text-orange-600 tabular-nums">{fmtB(d.ไม่ชดเชย ?? 0)} ฿</span>
-            </div>
-          </div>
-        ) : (
-          <div className="space-y-1.5">
-            {[{ k: "เรียกเก็บ", c: "text-blue-700" }, { k: "ชดเชย", c: "text-green-700" }, { k: "ไม่ชดเชย", c: "text-orange-600" }].map(({ k, c }) => (
-              <div key={k} className="flex justify-between">
-                <span className="text-gray-500">{k}</span>
-                <span className={`font-bold tabular-nums ${c}`}>{fmtB(d?.[k] ?? 0)} ฿</span>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-    );
-  };
-
   return (
     <div className="bg-white border border-gray-200 rounded-2xl shadow-sm p-5">
       <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
@@ -173,7 +197,7 @@ function KtbBarChart({ units }: { units: KtbUnitSummary[] }) {
           <XAxis dataKey="name" tick={{ fontSize: 11, fill: "#6b7280" }} axisLine={false} tickLine={false} />
           <YAxis tick={{ fontSize: 11, fill: "#6b7280" }} axisLine={false} tickLine={false}
             tickFormatter={(v: number) => v >= 1000 ? `${(v / 1000).toFixed(0)}k` : String(v)} />
-          <Tooltip content={<CustomTooltip />} cursor={{ fill: "rgba(0,0,0,0.04)" }} />
+          <Tooltip content={<CustomTooltip selectedSvc={selectedSvc} />} cursor={{ fill: "rgba(0,0,0,0.04)" }} />
           <Bar dataKey="เรียกเก็บ" fill={colors.claim} radius={[3, 3, 0, 0]} />
           <Bar dataKey="ชดเชย" fill={colors.comp} radius={[3, 3, 0, 0]} />
           <Bar dataKey="ไม่ชดเชย" fill="#fb923c" radius={[3, 3, 0, 0]} />

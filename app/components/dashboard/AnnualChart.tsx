@@ -32,7 +32,7 @@ export default function AnnualChart({ months, loading }: AnnualChartProps) {
             <XAxis dataKey="name" tick={{ fontSize: 12, fill: "#374151" }} />
             <YAxis tick={{ fontSize: 11, fill: "#374151" }} />
             <Tooltip
-              formatter={(val: number, name: string) => [val.toLocaleString(), name]}
+              formatter={(val, name) => [Number(val ?? 0).toLocaleString(), name]}
               contentStyle={{ fontSize: 12, borderRadius: 8, border: "1px solid #e5e7eb" }}
             />
             <Legend

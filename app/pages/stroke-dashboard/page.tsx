@@ -445,7 +445,7 @@ export default function StrokeDashboardPage() {
                             <ResponsiveContainer width="100%" height="100%">
                                 <PieChart>
                                     <Pie data={typeData} dataKey="value" cx="50%" cy="50%" outerRadius={65}
-                                        label={({ percent }) => `${Math.round(percent * 100)}%`} labelLine={false}>
+                                        label={({ percent }) => `${Math.round((percent ?? 0) * 100)}%`} labelLine={false}>
                                         {typeData.map((_, i) => <Cell key={i} fill={C_BLUE[i * 2]} />)}
                                     </Pie>
                                     <Tooltip contentStyle={TT_STYLE} />
@@ -460,7 +460,7 @@ export default function StrokeDashboardPage() {
                             <ResponsiveContainer width="100%" height="100%">
                                 <PieChart>
                                     <Pie data={outcomeData} dataKey="value" cx="50%" cy="50%" outerRadius={65}
-                                        label={({ percent }) => `${Math.round(percent * 100)}%`} labelLine={false}>
+                                        label={({ percent }) => `${Math.round((percent ?? 0) * 100)}%`} labelLine={false}>
                                         <Cell fill={C_GREEN} />
                                         <Cell fill={C_RED} />
                                         <Cell fill="#d1d5db" />
@@ -477,7 +477,7 @@ export default function StrokeDashboardPage() {
                             <ResponsiveContainer width="100%" height="100%">
                                 <PieChart>
                                     <Pie data={ekgData} dataKey="value" cx="50%" cy="50%" outerRadius={65}
-                                        label={({ percent }) => `${Math.round(percent * 100)}%`} labelLine={false}>
+                                        label={({ percent }) => `${Math.round((percent ?? 0) * 100)}%`} labelLine={false}>
                                         {ekgData.map((_, i) => <Cell key={i} fill={C_TEAL[i]} />)}
                                     </Pie>
                                     <Tooltip contentStyle={TT_STYLE} />

@@ -6,22 +6,29 @@ import { usePathname } from "next/navigation";
 
 export default function TopProgressBar() {
     const pathname = usePathname();
-    const [loading, setLoading] = useState(false);
+    const [loading, setLoading] = useState(true);
     const [progress, setProgress] = useState(0);
+    const [prevPath, setPrevPath] = useState(pathname);
 
-    useEffect(() => {
+    // เมื่อ path เปลี่ยน → เริ่มรอบใหม่ (ปรับ state ระหว่าง render ตามแนวทาง React
+    // แทนการ setState แบบ synchronous ใน effect body)
+    if (pathname !== prevPath) {
+        setPrevPath(pathname);
         setLoading(true);
         setProgress(0);
+    }
 
+    useEffect(() => {
         // เริ่ม animate จาก 0 → 85 เร็วๆ แล้วค้างรอ
         const t1 = setTimeout(() => setProgress(30), 50);
         const t2 = setTimeout(() => setProgress(60), 200);
         const t3 = setTimeout(() => setProgress(85), 500);
 
         // จบ
+        let t5: ReturnType<typeof setTimeout>;
         const t4 = setTimeout(() => {
             setProgress(100);
-            setTimeout(() => setLoading(false), 300);
+            t5 = setTimeout(() => setLoading(false), 300);
         }, 800);
 
         return () => {
@@ -29,6 +36,7 @@ export default function TopProgressBar() {
             clearTimeout(t2);
             clearTimeout(t3);
             clearTimeout(t4);
+            clearTimeout(t5);
         };
     }, [pathname]);
 

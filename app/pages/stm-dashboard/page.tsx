@@ -42,25 +42,25 @@ interface StmDashboardData {
 
 // ─── Constants ─────────────────────────────────────────────────────────────────
 
-const fmt  = (n: number) => n.toLocaleString("th-TH");
+const fmt = (n: number) => n.toLocaleString("th-TH");
 const fmtB = (n: number) =>
   n.toLocaleString("th-TH", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 const SUB_FUND_COLS: { key: keyof StmRow; label: string; color: string }[] = [
-  { key: "พึงรับ",    label: "OP พึงรับ",        color: "#60a5fa" },
-  { key: "hc",       label: "HC",               color: "#34d399" },
-  { key: "hcDrug",   label: "HC Drug",           color: "#6ee7b7" },
-  { key: "ae",       label: "AE",               color: "#f59e0b" },
-  { key: "aeDrug",   label: "AE Drug",           color: "#fcd34d" },
-  { key: "inst",     label: "INST",             color: "#a78bfa" },
-  { key: "dmisCalc", label: "DMIS (คำนวณ)",     color: "#818cf8" },
-  { key: "dmisReal", label: "DMIS (จ่ายจริง)",  color: "#6366f1" },
-  { key: "dmisDrug", label: "DMIS Drug",         color: "#c4b5fd" },
-  { key: "palliative",label:"Palliative Care",   color: "#f472b6" },
-  { key: "dmishd",   label: "DMISHD",           color: "#fb7185" },
-  { key: "pp",       label: "PP",               color: "#4ade80" },
-  { key: "fs",       label: "FS",               color: "#2dd4bf" },
-  { key: "opbkk",   label: "OPBKK",            color: "#38bdf8" },
+  { key: "พึงรับ", label: "OP พึงรับ", color: "#60a5fa" },
+  { key: "hc", label: "HC", color: "#34d399" },
+  { key: "hcDrug", label: "HC Drug", color: "#6ee7b7" },
+  { key: "ae", label: "AE", color: "#f59e0b" },
+  { key: "aeDrug", label: "AE Drug", color: "#fcd34d" },
+  { key: "inst", label: "INST", color: "#a78bfa" },
+  { key: "dmisCalc", label: "DMIS (คำนวณ)", color: "#818cf8" },
+  { key: "dmisReal", label: "DMIS (จ่ายจริง)", color: "#6366f1" },
+  { key: "dmisDrug", label: "DMIS Drug", color: "#c4b5fd" },
+  { key: "palliative", label: "Palliative Care", color: "#f472b6" },
+  { key: "dmishd", label: "DMISHD", color: "#fb7185" },
+  { key: "pp", label: "PP", color: "#4ade80" },
+  { key: "fs", label: "FS", color: "#2dd4bf" },
+  { key: "opbkk", label: "OPBKK", color: "#38bdf8" },
 ];
 
 // ─── KpiCard ───────────────────────────────────────────────────────────────────
@@ -121,11 +121,11 @@ function StmBarChart({ data }: { data: StmDashboardData }) {
           <YAxis tick={{ fontSize: 11, fill: "#6b7280" }} axisLine={false} tickLine={false}
             tickFormatter={(v: number) => v >= 1000 ? `${(v / 1000).toFixed(0)}k` : String(v)} />
           <Tooltip
-            formatter={(v: number, name: string) => [fmtB(v) + " ฿", name]}
+            formatter={(v, name) => [fmtB(Number(v ?? 0)) + " ฿", name]}
             contentStyle={{ fontSize: 12, borderRadius: 8, border: "1px solid #e5e7eb" }}
           />
           <Bar dataKey="เรียกเก็บ" fill="#85B7EB" radius={[3, 3, 0, 0]} />
-          <Bar dataKey="ชดเชย"    fill="#97C459" radius={[3, 3, 0, 0]} />
+          <Bar dataKey="ชดเชย" fill="#97C459" radius={[3, 3, 0, 0]} />
           <Bar dataKey="ไม่ชดเชย" fill="#F09595" radius={[3, 3, 0, 0]} />
         </BarChart>
       </ResponsiveContainer>
@@ -246,9 +246,8 @@ function StmCrossTab({ data }: { data: StmDashboardData }) {
                     const v = repData[col.key as string] ?? 0;
                     return (
                       <td key={col.key as string}
-                        className={`px-2 py-2 text-right tabular-nums text-xs border-r border-gray-200 ${
-                          v === 0 ? "text-gray-300" : "text-[#236b43] font-medium"
-                        }`}>
+                        className={`px-2 py-2 text-right tabular-nums text-xs border-r border-gray-200 ${v === 0 ? "text-gray-300" : "text-[#236b43] font-medium"
+                          }`}>
                         {v === 0 ? "—" : fmtB(v)}
                       </td>
                     );
@@ -353,8 +352,8 @@ function Pagination({ page, totalPages, onChange }: {
 // ─── REP Card (คล้าย UnitCard ใน billing) ──────────────────────────────────────
 
 function RepCard({ rep, rows }: { rep: StmRepSummary; rows: StmRow[] }) {
-  const [open, setOpen]   = useState(false);
-  const [page, setPage]   = useState(1);
+  const [open, setOpen] = useState(false);
+  const [page, setPage] = useState(1);
   const [search, setSearch] = useState("");
 
   const rate = rep.เรียกเก็บ > 0
@@ -379,7 +378,7 @@ function RepCard({ rep, rows }: { rep: StmRepSummary; rows: StmRow[] }) {
   }, [repRows, search]);
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
-  const paginated  = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+  const paginated = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
   // reset หน้าเมื่อ search เปลี่ยน
   const handleSearch = (v: string) => { setSearch(v); setPage(1); };
@@ -473,7 +472,7 @@ function RepCard({ rep, rows }: { rep: StmRepSummary; rows: StmRow[] }) {
                 <table className="min-w-full text-xs border-collapse">
                   <thead>
                     <tr className="bg-green-700 sticky top-0">
-                      {["#","HN","ชื่อ-สกุล","วันเข้ารักษา","วันจำหน่าย","MAININSCL","เรียกเก็บ","OP พึงรับ","HC","AE","PP","ยอดชดเชย","แหล่งข้อมูล"].map(h => (
+                      {["#", "HN", "ชื่อ-สกุล", "วันเข้ารักษา", "วันจำหน่าย", "MAININSCL", "เรียกเก็บ", "OP พึงรับ", "HC", "AE", "PP", "ยอดชดเชย", "แหล่งข้อมูล"].map(h => (
                         <th key={h} className="px-3 py-2.5 text-left text-white font-semibold whitespace-nowrap border-r border-green-600">
                           {h}
                         </th>
@@ -628,7 +627,8 @@ function UploadDropzone({ onSuccess }: { onSuccess: () => void }) {
     } catch {
       setResult({ ok: false, msg: "เชื่อมต่อ server ไม่ได้" });
     } finally {
-      setUploading(false); }
+      setUploading(false);
+    }
   }, [onSuccess]);
 
   return (
@@ -683,9 +683,9 @@ function UploadDropzone({ onSuccess }: { onSuccess: () => void }) {
 // ─── Page ───────────────────────────────────────────────────────────────────────
 
 export default function StmDashboardPage() {
-  const [data, setData]     = useState<StmDashboardData | null>(null);
+  const [data, setData] = useState<StmDashboardData | null>(null);
   const [loading, setLoading] = useState(true);
-  const [error, setError]   = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
   const [noFile, setNoFile] = useState(false);
 
   const fetchData = useCallback(async () => {
@@ -752,25 +752,25 @@ export default function StmDashboardPage() {
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
           {loading
             ? Array.from({ length: 4 }).map((_, i) => (
-                <div key={i} className="h-[130px] rounded-2xl bg-gray-100 animate-pulse" />
-              ))
+              <div key={i} className="h-[130px] rounded-2xl bg-gray-100 animate-pulse" />
+            ))
             : data && (
-                <>
-                  <KpiCard icon={TrendingUp} label="รายการทั้งหมด"
-                    value={fmt(data.totalRows)} sub="รายการขอเบิก OPD-UCS"
-                    accent="#0369A1" bg="#E0F2FE" />
-                  <KpiCard icon={TrendingUp} label="เรียกเก็บรวม"
-                    value={fmtB(data.totalClaim)} sub="บาท"
-                    accent="#854D0E" bg="#FEF9C3" />
-                  <KpiCard icon={BadgeCheck} label="ชดเชยแล้ว"
-                    value={fmtB(data.totalComp)}
-                    sub={`${compRate}% ของที่เรียกเก็บ`}
-                    accent="#3B6D11" bg="#EAF3DE" />
-                  <KpiCard icon={AlertTriangle} label="ไม่ชดเชย"
-                    value={fmtB(data.totalNoComp)} sub="บาท"
-                    accent="#991B1B" bg="#FEE2E2" />
-                </>
-              )}
+              <>
+                <KpiCard icon={TrendingUp} label="รายการทั้งหมด"
+                  value={fmt(data.totalRows)} sub="รายการขอเบิก OPD-UCS"
+                  accent="#0369A1" bg="#E0F2FE" />
+                <KpiCard icon={TrendingUp} label="เรียกเก็บรวม"
+                  value={fmtB(data.totalClaim)} sub="บาท"
+                  accent="#854D0E" bg="#FEF9C3" />
+                <KpiCard icon={BadgeCheck} label="ชดเชยแล้ว"
+                  value={fmtB(data.totalComp)}
+                  sub={`${compRate}% ของที่เรียกเก็บ`}
+                  accent="#3B6D11" bg="#EAF3DE" />
+                <KpiCard icon={AlertTriangle} label="ไม่ชดเชย"
+                  value={fmtB(data.totalNoComp)} sub="บาท"
+                  accent="#991B1B" bg="#FEE2E2" />
+              </>
+            )}
         </div>
       )}
 

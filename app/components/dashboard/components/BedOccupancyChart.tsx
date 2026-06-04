@@ -18,9 +18,15 @@ import type { OccupancyRow } from "../types/dashboard.types";
 
 // ─── Custom Tooltip ───────────────────────────────────────────────────────────
 
-function OccupancyTooltip({ active, payload, label }: any) {
+interface OccupancyTooltipProps {
+  active?: boolean;
+  payload?: { payload: OccupancyRow }[];
+  label?: string;
+}
+
+function OccupancyTooltip({ active, payload, label }: OccupancyTooltipProps) {
   if (!active || !payload?.length) return null;
-  const d = payload[0].payload as OccupancyRow;
+  const d = payload[0].payload;
   return (
     <div className="bg-white border border-gray-200 rounded-lg px-3 py-2 shadow-md text-xs">
       <p className="font-semibold text-gray-700 mb-1">{label}</p>

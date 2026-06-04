@@ -38,6 +38,7 @@ interface ApiResp {
     updatedAt: string;
 }
 
+
 type Preset = "today" | "7days" | "30days" | "thismonth";
 
 const PRESETS: { key: Preset; label: string }[] = [
@@ -316,7 +317,7 @@ export default function PtDashboardPage() {
                 สิทธิ์: r.right,
                 รายได้: r.income,
             })),
-            { fileName: "รายงานกายภาพบำบัด", sheetName: "PT" },
+            { filePrefix: "รายงานกายภาพบำบัด", sheetName: "PT" },
         );
     };
 

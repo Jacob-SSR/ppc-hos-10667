@@ -10,11 +10,14 @@ import Sidebar from "@/app/components/sidebar/Sidebar";
 export default function MobileSidebarToggle() {
     const [open, setOpen] = useState(false);
     const pathname = usePathname();
+    const [prevPath, setPrevPath] = useState(pathname);
 
-    // ปิด drawer เมื่อเปลี่ยนหน้า
-    useEffect(() => {
+    // ปิด drawer เมื่อเปลี่ยนหน้า — ปรับ state ระหว่าง render ตามแนวทาง React
+    // แทนการ setState แบบ synchronous ใน effect body
+    if (pathname !== prevPath) {
+        setPrevPath(pathname);
         setOpen(false);
-    }, [pathname]);
+    }
 
     // ล็อก scroll body เมื่อ drawer เปิด
     useEffect(() => {

@@ -375,7 +375,7 @@ function DashboardCharts({ rows, summary }: { rows: HomeWardSheetRow[]; summary:
                         <CartesianGrid vertical={false} stroke="#e8f5ee" />
                         <XAxis dataKey="month" tick={{ fontSize: 10, fill: "#6b7280" }} axisLine={false} tickLine={false} />
                         <YAxis tick={{ fontSize: 11, fill: "#6b7280" }} axisLine={false} tickLine={false} />
-                        <Tooltip contentStyle={TT_STYLE} formatter={(v: number) => [v + " ราย", "จำนวน"]} />
+                        <Tooltip contentStyle={TT_STYLE} formatter={(v) => [`${v ?? 0} ราย`, "จำนวน"]} />
                         <Area type="monotone" dataKey="count" stroke={C.green} strokeWidth={2.5}
                             fill="url(#areaGrad)" dot={{ r: 4, fill: C.green }} activeDot={{ r: 6 }} />
                     </AreaChart>
@@ -390,7 +390,7 @@ function DashboardCharts({ rows, summary }: { rows: HomeWardSheetRow[]; summary:
                                 dataKey="value" paddingAngle={4}>
                                 {statusData.map((d, i) => <Cell key={i} fill={d.color} stroke="none" />)}
                             </Pie>
-                            <Tooltip contentStyle={TT_STYLE} formatter={(v: number) => [v + " ราย"]} />
+                            <Tooltip contentStyle={TT_STYLE} formatter={(v) => [`${v ?? 0} ราย`]} />
                         </PieChart>
                     </div>
                     <Legend items={statusData.map((d) => ({ label: d.name, color: d.color }))} />
@@ -403,7 +403,7 @@ function DashboardCharts({ rows, summary }: { rows: HomeWardSheetRow[]; summary:
                                 dataKey="value" paddingAngle={3}>
                                 {byDrug.map((d, i) => <Cell key={i} fill={d.color} stroke="none" />)}
                             </Pie>
-                            <Tooltip contentStyle={TT_STYLE} formatter={(v: number) => [v + " ราย"]} />
+                            <Tooltip contentStyle={TT_STYLE} formatter={(v) => [`${v ?? 0} ราย`]} />
                         </PieChart>
                     </div>
                     <Legend items={byDrug.map((d) => ({ label: `${d.name.split(" ")[0]} ${d.value}`, color: d.color }))} />

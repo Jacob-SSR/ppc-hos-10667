@@ -18,6 +18,7 @@ export interface ExportOptions {
   sheetName?: string;
   filePrefix: string;
   dateKeys?: string[];
+  fileName?: string;
 }
 
 export interface ReportRow {

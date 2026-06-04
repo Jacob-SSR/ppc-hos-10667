@@ -12,6 +12,7 @@ import {
     Tooltip,
     Legend,
 } from "chart.js";
+import type { ChartOptions, TooltipItem } from "chart.js";
 import { Bar } from "react-chartjs-2";
 import { motion } from "framer-motion";
 import ThaiDateInput from "@/app/components/ThaiDateInput";
@@ -125,7 +126,7 @@ function ShiftGroupedBarCard({
     const c = SHIFT_COLORS[shiftName] ?? SHIFT_COLORS["รวมทั้งหมด"];
     const labels = slots.map((s) => s.slotLabel);
 
-    const options = {
+    const options: ChartOptions<"bar"> = {
         responsive: true,
         plugins: {
             legend: {
@@ -139,7 +140,7 @@ function ShiftGroupedBarCard({
             },
             tooltip: {
                 callbacks: {
-                    label: (item: any) =>
+                    label: (item: TooltipItem<"bar">) =>
                         ` ${item.dataset.label}: ${item.formattedValue}`,
                 },
             },
@@ -187,7 +188,7 @@ function ShiftGroupedBarCard({
                         },
                     ],
                 }}
-                options={options as any}
+                options={options}
             />
         </motion.div>
     );

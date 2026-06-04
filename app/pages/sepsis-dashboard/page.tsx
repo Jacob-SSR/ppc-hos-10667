@@ -129,7 +129,7 @@ function YearTab({ years, selected, onSelect }: {
 
 // ─── Patient Table ────────────────────────────────────────────────────────────
 function PatientTable({ rows }: { rows: SepsisRow[] }) {
-    const { page, setPage, totalPages, paged, pageSize } = usePagination(rows, 20);
+    const { page, setPage, totalPages, paged } = usePagination(rows, 20);
 
     return (
         <div className="bg-white border border-gray-200 rounded-2xl shadow-sm overflow-hidden">
@@ -201,6 +201,23 @@ function PatientTable({ rows }: { rows: SepsisRow[] }) {
             <MiniPagination page={page} totalPages={totalPages} onChange={setPage} />
         </div>
     );
+}
+
+// ─── Comorbidity normalization ──────────────────────────────────────────────────
+type Comorbidity = "DM" | "HT" | "CKD/ESRD" | "Cancer" | "COPD" | "CVA";
+
+function normComorbidity(raw: string): Comorbidity[] {
+    if (!raw) return [];
+    return raw.split(/[,\/;]/).map((s): Comorbidity | null => {
+        const v = s.trim().toUpperCase();
+        if (v.includes("DM")) return "DM";
+        if (v.includes("HT")) return "HT";
+        if (v.includes("CKD")) return "CKD/ESRD";
+        if (v.includes("CANCER") || v.startsWith("CA")) return "Cancer";
+        if (v.includes("COPD")) return "COPD";
+        if (v.includes("CVA")) return "CVA";
+        return null;
+    }).filter((v): v is Comorbidity => v !== null);
 }
 
 // ─── Main Page ────────────────────────────────────────────────────────────────
@@ -296,19 +313,6 @@ export default function SepsisDashboardPage() {
 
     const comorbData = useMemo(() => {
         const m: Record<string, number> = {};
-        const normComorbidity = (raw: string) => {
-            if (!raw) return [];
-            return raw.split(/[,\/;]/).map((s) => {
-                const v = s.trim().toUpperCase();
-                if (v.includes("DM")) return "DM";
-                if (v.includes("HT")) return "HT";
-                if (v.includes("CKD")) return "CKD/ESRD";
-                if (v.includes("CANCER") || v.startsWith("CA")) return "Cancer";
-                if (v.includes("COPD")) return "COPD";
-                if (v.includes("CVA")) return "CVA";
-                return null;
-            }).filter((v): v is string => v !== null);
-        };
         activeRows.forEach((r) => normComorbidity(r.comorbidity).forEach((c) => { m[c] = (m[c] || 0) + 1; }));
         return Object.entries(m).sort(([, a], [, b]) => b - a).map(([name, value], i) => ({
             name, value, fill: PALETTE[i % PALETTE.length],
@@ -426,8 +430,8 @@ export default function SepsisDashboardPage() {
                             <YAxis yAxisId="left" tick={{ fontSize: 11, fill: "#6b7280" }} axisLine={false} tickLine={false} />
                             <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 11, fill: "#E24B4A" }}
                                 axisLine={false} tickLine={false} tickFormatter={(v) => v + "%"} />
-                            <Tooltip {...tip} formatter={(v: number, name: string) =>
-                                name === "อัตราเสียชีวิต (%)" ? [`${v}%`, name] : [v + " ราย", name]} />
+                            <Tooltip {...tip} formatter={(v, name) =>
+                                name === "อัตราเสียชีวิต (%)" ? [`${v ?? 0}%`, name] : [`${v ?? 0} ราย`, name]} />
                             <Bar yAxisId="left" dataKey="total" name="จำนวนทั้งหมด" fill="#378ADD" radius={[4, 4, 0, 0]} />
                             <Bar yAxisId="left" dataKey="dead" name="เสียชีวิต" fill="#E24B4A" radius={[4, 4, 0, 0]} />
                             <Line yAxisId="right" type="monotone" dataKey="mortalityRate" name="อัตราเสียชีวิต (%)"
@@ -448,7 +452,7 @@ export default function SepsisDashboardPage() {
                                     dataKey="value" paddingAngle={3}>
                                     {siteData.map((d, i) => <Cell key={i} fill={d.color} stroke="none" />)}
                                 </Pie>
-                                <Tooltip formatter={(v: number) => [v + " ราย"]} {...tip} />
+                                <Tooltip formatter={(v) => [`${v ?? 0} ราย`]} {...tip} />
                             </PieChart>
                         </div>
                         <div className="flex flex-wrap gap-x-3 gap-y-1 mt-1">
@@ -469,7 +473,7 @@ export default function SepsisDashboardPage() {
                                     dataKey="value" paddingAngle={4}>
                                     {typeData.map((d, i) => <Cell key={i} fill={d.color} stroke="none" />)}
                                 </Pie>
-                                <Tooltip formatter={(v: number) => [v + " ราย"]} {...tip} />
+                                <Tooltip formatter={(v) => [`${v ?? 0} ราย`]} {...tip} />
                             </PieChart>
                         </div>
                         <div className="flex flex-wrap gap-x-3 gap-y-1 mt-1">
@@ -506,7 +510,7 @@ export default function SepsisDashboardPage() {
                                 <CartesianGrid vertical={false} stroke="#f0f0f0" />
                                 <XAxis dataKey="name" tick={{ fontSize: 11, fill: "#6b7280" }} axisLine={false} tickLine={false} />
                                 <YAxis tick={{ fontSize: 11, fill: "#6b7280" }} axisLine={false} tickLine={false} />
-                                <Tooltip formatter={(v: number) => [v + " ราย"]} {...tip} />
+                                <Tooltip formatter={(v) => [`${v ?? 0} ราย`]} {...tip} />
                                 <Bar dataKey="value" radius={[4, 4, 0, 0]}>
                                     {comorbData.map((d, i) => <Cell key={i} fill={d.fill} />)}
                                 </Bar>
@@ -526,7 +530,7 @@ export default function SepsisDashboardPage() {
                                 <CartesianGrid vertical={false} stroke="#f0f0f0" />
                                 <XAxis dataKey="name" tick={{ fontSize: 11, fill: "#6b7280" }} axisLine={false} tickLine={false} />
                                 <YAxis tick={{ fontSize: 11, fill: "#6b7280" }} axisLine={false} tickLine={false} />
-                                <Tooltip formatter={(v: number) => [v + " ราย"]} {...tip} />
+                                <Tooltip formatter={(v) => [`${v ?? 0} ราย`]} {...tip} />
                                 <Bar dataKey="value" fill="#378ADD" radius={[4, 4, 0, 0]} />
                             </BarChart>
                         </ResponsiveContainer>
@@ -549,9 +553,6 @@ export default function SepsisDashboardPage() {
                     <p className="text-sm font-bold text-amber-800">ยังไม่มีข้อมูลใน Spreadsheet</p>
                     <p className="text-xs text-amber-700">
                         เพิ่มข้อมูลลงใน Google Sheets แล้ว Dashboard จะอัปเดตอัตโนมัติทุก 30 วินาที
-                    </p>
-                    <p className="text-[11px] text-gray-400 font-mono mt-1">
-                        ID: 13sNBF0oUkngCAS0Lxzs3fTYr2ywrDAYyU8b0-UMh08w
                     </p>
                     <p className="text-[11px] text-gray-400">
                         Sheets ที่ดึงข้อมูล: {data.sheetNames.join(", ") || "ไม่พบ sheet ปีงบประมาณ"}

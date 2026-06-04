@@ -179,7 +179,7 @@ export default function AccidentDashboardPage() {
                     <CartesianGrid vertical={false} stroke="#e5e7eb" />
                     <XAxis dataKey="label" tick={{ fontSize: 10, fill: "#6b7280" }} axisLine={false} tickLine={false} interval="preserveStartEnd" />
                     <YAxis tick={{ fontSize: 10, fill: "#6b7280" }} axisLine={false} tickLine={false} />
-                    <Tooltip formatter={(v: number) => [v + " ราย", "ผู้บาดเจ็บ"]}
+                    <Tooltip formatter={(v) => [`${v ?? 0} ราย`, "ผู้บาดเจ็บ"]}
                       contentStyle={{ fontSize: 12, borderRadius: 8, border: "1px solid #e5e7eb" }} />
                     <Bar dataKey="count" fill="#378ADD" radius={[3, 3, 0, 0]} />
                   </BarChart>
@@ -221,7 +221,7 @@ export default function AccidentDashboardPage() {
                           dataKey="count" paddingAngle={2}>
                           {severityData.map((d, i) => <Cell key={i} fill={d.color} />)}
                         </Pie>
-                        <Tooltip formatter={(v: number, n: string) => [v + " ราย", n]}
+                        <Tooltip formatter={(v, n) => [`${v ?? 0} ราย`, n]}
                           contentStyle={{ fontSize: 12, borderRadius: 8 }} />
                       </PieChart>
                     </ResponsiveContainer>

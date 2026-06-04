@@ -90,7 +90,7 @@ export async function queryDiseaseSummary(
       [start, end],
     );
 
-    const row = rows[0] as any;
+    const row = rows[0];
     const visits = Number(row?.total_visits ?? 0);
     const rxN = Number(row?.rx_visits ?? 0);
     const current = visits > 0 ? Math.round((rxN / visits) * 1000) / 10 : 0;
@@ -132,7 +132,7 @@ export async function queryTrend(
     [start, end],
   );
 
-  return (rows as any[]).map((r) => {
+  return rows.map((r) => {
     const [y, m] = String(r.month).split("-").map(Number);
     return {
       month: r.month,
@@ -193,7 +193,7 @@ export async function queryDoctors(
   const pct = (total: number, rx: number) =>
     total > 0 ? Math.round((rx / total) * 1000) / 10 : 0;
 
-  return (rows as any[]).map(
+  return rows.map(
     (r) =>
       ({
         doctor_code: String(r.doctor_code ?? ""),
@@ -243,7 +243,7 @@ export async function queryTopAtb(
     [start, end],
   );
 
-  return (rows as any[]).map((r) => ({
+  return rows.map((r) => ({
     drug_name: String(r.drug_name ?? "").trim(),
     rx_count: Number(r.rx_count),
     disease_key: "all",
@@ -287,7 +287,7 @@ export async function queryAtbByDisease(
       [start, end],
     );
 
-    result[key] = (rows as any[]).map((r) => ({
+    result[key] = rows.map((r) => ({
       drug_name: String(r.drug_name ?? "").trim(),
       rx_count: Number(r.rx_count),
       disease_key: key,
