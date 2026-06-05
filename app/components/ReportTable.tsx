@@ -44,8 +44,8 @@ export default function ReportTable({
     } = useReportTable({ apiPath, columnFilterKeys });
 
     useEffect(() => {
-        onData?.(data);
-    }, [data, onData]);
+        onData?.(sortedData);   // เดิมเป็น data
+    }, [sortedData, onData]);
 
     const colCount = paginatedData[0] ? Object.keys(paginatedData[0]).length : 6;
     const activeFilterKeys = Object.keys(columnFilters).filter((k) => columnFilters[k]);
