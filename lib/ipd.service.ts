@@ -40,9 +40,9 @@ const WARD_CONFIG: Record<string, WardConfigItem> = {
   "04": { label: "ห้องพิเศษ", totalBeds: 11 },
   "05": {
     label: "ห้องแยกโรค",
-    totalBeds: 3, // ย3/1, ย3/2, แยก2 — ปรับเลขตามเตียงจริง
+    totalBeds: 2, // ย3/1, ย3/2
     realWard: "01",
-    bednoPrefix: ["ย", "แยก"],
+    bednoPrefix: ["ย"],
   },
   "11": {
     label: "เตียงเสริม",
@@ -54,7 +54,7 @@ const WARD_CONFIG: Record<string, WardConfigItem> = {
     label: "ห้องNegative",
     totalBeds: 2,
     realWard: "01",
-    bednoPrefix: ["NEG"],
+    bednoPrefix: ["NEG", "แยก"],
   },
   "15": { label: "พลับพลารักษ์", totalBeds: 10 },
   "17": {

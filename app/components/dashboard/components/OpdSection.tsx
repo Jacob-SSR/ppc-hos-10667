@@ -23,91 +23,91 @@ const OPD_CARDS = [
   {
     label: "OPD ในเวลา",
     bg: "#FCE7F3", accent: "#9D174D",
-    visitKey: "opdOnTime", patKey: null,
+    visitKey: "opdOnTime", patKey: "opdOnTimePat",
     maleKey: "opdOnTimeMale", femaleKey: "opdOnTimeFemale",
     Icon: UserCheck, cardType: "opdOnTime",
   },
   {
     label: "OPD นอกเวลา",
     bg: "#D1FAE5", accent: "#065F46",
-    visitKey: "opdOffTime", patKey: null,
+    visitKey: "opdOffTime", patKey: "opdOffTimePat",
     maleKey: "opdOffTimeMale", femaleKey: "opdOffTimeFemale",
     Icon: UserCheck, cardType: "opdOffTime",
   },
   {
     label: "Admit",
     bg: "#EDE9FE", accent: "#5B21B6",
-    visitKey: "admitToday", patKey: null,
+    visitKey: "admitToday", patKey: "admitPat",
     maleKey: "admitMale", femaleKey: "admitFemale",
     Icon: BedDouble, cardType: "admitToday",
   },
   {
     label: "สิทธิ์บัตรทอง UC",
     bg: "#FEF9C3", accent: "#854D0E",
-    visitKey: "opdUc", patKey: null,
+    visitKey: "opdUc", patKey: "opdUcPat",
     maleKey: "opdUcMale", femaleKey: "opdUcFemale",
     Icon: UserCheck, cardType: "opdUc",
   },
   {
     label: "สิทธิ์ราชการ",
     bg: "#DBEAFE", accent: "#1E40AF",
-    visitKey: "opdGov", patKey: null,
+    visitKey: "opdGov", patKey: "opdGovPat",
     maleKey: "opdGovMale", femaleKey: "opdGovFemale",
     Icon: Shield, cardType: "opdGov",
   },
   {
     label: "ประกันสังคม",
     bg: "#CCFBF1", accent: "#134E4A",
-    visitKey: "opdSso", patKey: null,
+    visitKey: "opdSso", patKey: "opdSsoPat",
     maleKey: "opdSsoMale", femaleKey: "opdSsoFemale",
     Icon: UserCog, cardType: "opdSso",
   },
   {
     label: "ชำระเงิน / พรบ.",
     bg: "#FEE2E2", accent: "#991B1B",
-    visitKey: "opdCash", patKey: null,
+    visitKey: "opdCash", patKey: "opdCashPat",
     maleKey: "opdCashMale", femaleKey: "opdCashFemale",
     Icon: UserCheck, cardType: "opdCash",
   },
   {
     label: "แรงงานต่างด้าว",
     bg: "#F3E8FF", accent: "#6B21A8",
-    visitKey: "opdForeign", patKey: null,
+    visitKey: "opdForeign", patKey: "opdForeignPat",
     maleKey: "opdForeignMale", femaleKey: "opdForeignFemale",
     Icon: Globe, cardType: "opdForeign",
   },
   {
     label: "Refer In",
     bg: "#E0F2FE", accent: "#164E63",
-    visitKey: "referIn", patKey: null,
+    visitKey: "referIn", patKey: "referInPat",
     maleKey: "referInMale", femaleKey: "referInFemale",
     Icon: PhoneIncoming, cardType: "referIn",
   },
   {
     label: "Refer Out",
     bg: "#FFF7ED", accent: "#9A3412",
-    visitKey: "referOut", patKey: null,
+    visitKey: "referOut", patKey: "referOutPat",
     maleKey: "referOutMale", femaleKey: "referOutFemale",
     Icon: PhoneOutgoing, cardType: "referOut",
   },
   {
     label: "ผู้ป่วยฉุกเฉิน (ER)",
     bg: "#FFE4E6", accent: "#9F1239",
-    visitKey: "erEmergency", patKey: null,
+    visitKey: "erEmergency", patKey: "erEmergencyPat",
     maleKey: "erEmergencyMale", femaleKey: "erEmergencyFemale",
     Icon: Siren, cardType: "erEmergency",
   },
   {
     label: "อุบัติเหตุขนส่ง",
     bg: "#FEF9C3", accent: "#854D0E",
-    visitKey: "erTransport", patKey: null,
+    visitKey: "erTransport", patKey: "erTransportPat",
     maleKey: "erTransportMale", femaleKey: "erTransportFemale",
     Icon: Car, cardType: "erTransport",
   },
   {
     label: "อุบัติเหตุอื่นๆ",
     bg: "#FEF3C7", accent: "#92400E",
-    visitKey: "erOtherAccident", patKey: null,
+    visitKey: "erOtherAccident", patKey: "erOtherAccidentPat",
     maleKey: "erOtherAccidentMale", femaleKey: "erOtherAccidentFemale",
     Icon: AlertTriangle, cardType: "erOtherAccident",
   },
@@ -229,17 +229,17 @@ export default function OpdSection() {
 
   const getDisplay = (card: (typeof OPD_CARDS)[0]) => {
     if (!summary) return { main: "—", male: null, female: null };
-    const visits  = summary[card.visitKey];
+    const visits = summary[card.visitKey];
     const patients = card.patKey ? summary[card.patKey] : null;
-    const male    = card.maleKey   ? summary[card.maleKey]   ?? null : null;
-    const female  = card.femaleKey ? summary[card.femaleKey] ?? null : null;
+    const male = card.maleKey ? summary[card.maleKey] ?? null : null;
+    const female = card.femaleKey ? summary[card.femaleKey] ?? null : null;
     if (visits == null) return { main: "—", male: null, female: null };
     const main = patients != null
       ? `${Number(patients).toLocaleString()} คน (${Number(visits).toLocaleString()} ครั้ง)`
       : `${Number(visits).toLocaleString()} ราย`;
     return {
       main,
-      male:   male   != null ? Number(male)   : null,
+      male: male != null ? Number(male) : null,
       female: female != null ? Number(female) : null,
     };
   };
@@ -307,53 +307,47 @@ export default function OpdSection() {
           {loading
             ? Array.from({ length: 14 }).map((_, i) => <Shimmer key={i} />)
             : OPD_CARDS.map((card, i) => {
-                const { Icon } = card;
-                const { main, male, female } = getDisplay(card);
-                const hasData = summary && summary[card.visitKey] != null;
+              const { Icon } = card;
+              const { main } = getDisplay(card);
+              const hasData = summary && summary[card.visitKey] != null;
 
-                return (
+              return (
+                <div
+                  key={i}
+                  className="rounded-2xl p-5 flex flex-col items-center gap-2 transition-all duration-200 hover:scale-[1.02] hover:shadow-lg"
+                  style={{ backgroundColor: card.bg }}
+                >
                   <div
-                    key={i}
-                    className="rounded-2xl p-5 flex flex-col items-center gap-2 transition-all duration-200 hover:scale-[1.02] hover:shadow-lg"
-                    style={{ backgroundColor: card.bg }}
+                    className="w-12 h-12 rounded-2xl flex items-center justify-center"
+                    style={{ backgroundColor: card.accent + "22" }}
                   >
-                    {/* Icon */}
-                    <div
-                      className="w-12 h-12 rounded-2xl flex items-center justify-center"
-                      style={{ backgroundColor: card.accent + "22" }}
-                    >
-                      <Icon size={24} style={{ color: card.accent }} strokeWidth={1.8} />
-                    </div>
-
-                    {/* Label */}
-                    <p className="text-sm font-bold text-center leading-snug text-black">
-                      {card.label}
-                    </p>
-
-                    {/* Value */}
-                    <p className="text-xl font-extrabold text-center tabular-nums text-black">
-                      {main}
-                    </p>
-
-
-
-                    {/* Detail button */}
-                    <button
-                      onClick={() => hasData && openModal(card)}
-                      disabled={!hasData}
-                      className="flex items-center gap-1 text-sm font-semibold px-4 py-1.5 rounded-full transition-all text-black mt-1"
-                      style={{
-                        backgroundColor: card.accent + "18",
-                        border: `1.5px solid ${card.accent}40`,
-                        cursor: hasData ? "pointer" : "not-allowed",
-                        opacity: hasData ? 1 : 0.4,
-                      }}
-                    >
-                      รายละเอียด <ArrowRight size={12} />
-                    </button>
+                    <Icon size={24} style={{ color: card.accent }} strokeWidth={1.8} />
                   </div>
-                );
-              })}
+
+                  <p className="text-sm font-bold text-center leading-snug text-black">
+                    {card.label}
+                  </p>
+
+                  <p className="text-xl font-extrabold text-center tabular-nums text-black">
+                    {main}
+                  </p>
+
+                  <button
+                    onClick={() => hasData && openModal(card)}
+                    disabled={!hasData}
+                    className="flex items-center gap-1 text-sm font-semibold px-4 py-1.5 rounded-full transition-all text-black mt-1"
+                    style={{
+                      backgroundColor: card.accent + "18",
+                      border: `1.5px solid ${card.accent}40`,
+                      cursor: hasData ? "pointer" : "not-allowed",
+                      opacity: hasData ? 1 : 0.4,
+                    }}
+                  >
+                    รายละเอียด <ArrowRight size={12} />
+                  </button>
+                </div>
+              );
+            })}
         </div>
       </div>
 
