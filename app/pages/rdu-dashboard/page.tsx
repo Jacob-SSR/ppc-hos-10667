@@ -3,6 +3,10 @@
 import { useEffect, useState, useCallback } from "react";
 import { Download, RefreshCw, CheckCircle2, AlertCircle } from "lucide-react";
 import { Wind, Droplets, Scissors, Baby } from "lucide-react";
+import DatePicker from "react-datepicker";
+import { th } from "date-fns/locale";
+import "react-datepicker/dist/react-datepicker.css";
+import ThaiDateInput from "@/app/components/ThaiDateInput";
 import { RDU_DEPARTMENTS, TARGETS, DISEASE_META } from "@/lib/rdu.constants";
 import type { RduDashboardData, RduDoctorRow } from "@/lib/rdu.types";
 import { Dropdown } from "./_components/Dropdown";
@@ -14,20 +18,18 @@ import { resetDeptColors, getDeptColor } from "./_utils/deptColor";
 
 const DISEASE_ICONS = { uri: Wind, dia: Droplets, wound: Scissors, peri: Baby } as const;
 
-type Preset = "30d" | "q2" | "6m" | "fiscal";
+type Preset = "6m" | "fiscal" | "custom";
 const PRESETS: { key: Preset; label: string }[] = [
-    { key: "30d", label: "30 วันล่าสุด" },
-    { key: "q2", label: "ไตรมาสนี้ (Q2/2569)" },
     { key: "6m", label: "6 เดือน" },
     { key: "fiscal", label: "ปีงบประมาณ 2569" },
+    { key: "custom", label: "กำหนดเอง" },
 ];
 
 function getPresetRange(preset: Preset): { start: Date; end: Date } {
     const now = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Bangkok" }));
     const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-    if (preset === "30d") { const s = new Date(today); s.setDate(s.getDate() - 29); return { start: s, end: today }; }
-    if (preset === "q2") { const fy = now.getMonth() >= 9 ? now.getFullYear() + 1 : now.getFullYear(); return { start: new Date(fy - 1, 0, 1), end: new Date(fy - 1, 2, 31) }; }
     if (preset === "6m") { const s = new Date(today); s.setMonth(s.getMonth() - 6); s.setDate(1); return { start: s, end: today }; }
+    // fiscal (และ fallback)
     const fy = now.getMonth() >= 9 ? now.getFullYear() : now.getFullYear() - 1;
     return { start: new Date(fy, 9, 1), end: today };
 }
@@ -36,13 +38,20 @@ function fmtDate(d: Date) {
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
+function getToday(): Date {
+    const now = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Bangkok" }));
+    return new Date(now.getFullYear(), now.getMonth(), now.getDate());
+}
+
 const TREND_TABS = [
     { key: "all", label: "ทุกโรค" }, { key: "uri", label: "URI" },
     { key: "dia", label: "Diarrhea" }, { key: "wound", label: "แผลสด" }, { key: "peri", label: "แผลฝีเย็บ" },
 ];
 
 export default function RduDashboardPage() {
-    const [preset, setPreset] = useState<Preset>("fiscal");
+    const [preset, setPreset] = useState<Preset>("custom");
+    const [customStart, setCustomStart] = useState<Date>(() => getToday());
+    const [customEnd, setCustomEnd] = useState<Date>(() => getToday());
     const [depcode, setDepcode] = useState("");
     const [data, setData] = useState<RduDashboardData | null>(null);
     const [loading, setLoading] = useState(false);
@@ -55,7 +64,10 @@ export default function RduDashboardPage() {
     const { trendRef, gaugeRef, pieRef, atbRef, topAtbRef, bubbleRef } = useRduCharts(data, disTab, trendView);
 
     const fetchData = useCallback(async () => {
-        const { start, end } = getPresetRange(preset);
+        const { start, end } =
+            preset === "custom"
+                ? { start: customStart, end: customEnd }
+                : getPresetRange(preset);
         setLoading(true); setError(null);
         try {
             const params = new URLSearchParams({ start: fmtDate(start), end: fmtDate(end) });
@@ -69,7 +81,7 @@ export default function RduDashboardPage() {
             if (json.doctors.length > 0) { setSelectedDr(json.doctors[0]); setActiveDr(json.doctors[0].doctor_code); }
         } catch (e) { setError((e as Error).message); }
         finally { setLoading(false); }
-    }, [preset, depcode]);
+    }, [preset, depcode, customStart, customEnd]);
 
     useEffect(() => { fetchData(); }, [fetchData]);
 
@@ -133,6 +145,24 @@ export default function RduDashboardPage() {
                         )}
                         <Dropdown<string> value={depcode} options={RDU_DEPARTMENTS.map(d => ({ key: d.depcode, label: d.label }))} onChange={setDepcode} />
                         <Dropdown<Preset> value={preset} options={PRESETS} onChange={setPreset} />
+                        {preset === "custom" && (
+                            <>
+                                <DatePicker
+                                    selected={customStart}
+                                    onChange={(d: Date | null) => { if (d) setCustomStart(d); }}
+                                    dateFormat="dd/MM/yyyy" locale={th}
+                                    showMonthDropdown showYearDropdown dropdownMode="select"
+                                    customInput={<ThaiDateInput />}
+                                />
+                                <DatePicker
+                                    selected={customEnd}
+                                    onChange={(d: Date | null) => { if (d) setCustomEnd(d); }}
+                                    dateFormat="dd/MM/yyyy" locale={th}
+                                    showMonthDropdown showYearDropdown dropdownMode="select"
+                                    customInput={<ThaiDateInput />}
+                                />
+                            </>
+                        )}
                         <button onClick={() => alert("Export รายงาน RDU")}
                             className="flex items-center gap-1.5 bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold px-4 py-1.5 rounded-lg transition-colors">
                             <Download size={14} />ส่งออกรายงาน

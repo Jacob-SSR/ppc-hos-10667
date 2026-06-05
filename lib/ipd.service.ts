@@ -35,10 +35,15 @@ const WARD_CONFIG: Record<string, WardConfigItem> = {
   "01": {
     label: "Ward",
     totalBeds: 26,
-    bednoPrefixExclude: ["นช", "นญ"],
+    bednoPrefixExclude: ["นช", "นญ", "ย", "แยก", "IMC", "NEG"],
   },
   "04": { label: "ห้องพิเศษ", totalBeds: 11 },
-  "05": { label: "ห้องแยกโรค", totalBeds: 2 },
+  "05": {
+    label: "ห้องแยกโรค",
+    totalBeds: 3, // ย3/1, ย3/2, แยก2 — ปรับเลขตามเตียงจริง
+    realWard: "01",
+    bednoPrefix: ["ย", "แยก"],
+  },
   "11": {
     label: "เตียงเสริม",
     totalBeds: 16,
@@ -48,10 +53,16 @@ const WARD_CONFIG: Record<string, WardConfigItem> = {
   __neg__: {
     label: "ห้องNegative",
     totalBeds: 2,
-    forceZero: true, // ยังหา bedno ไม่ได้ ใช้ 0 ไปก่อน
+    realWard: "01",
+    bednoPrefix: ["NEG"],
   },
   "15": { label: "พลับพลารักษ์", totalBeds: 10 },
-  "17": { label: "เตียงIMC", totalBeds: 2 },
+  "17": {
+    label: "เตียงIMC",
+    totalBeds: 2,
+    realWard: "01",
+    bednoPrefix: ["IMC"],
+  },
   "14": { label: "HW ยาเสพติด", totalBeds: 5, isHomeWard: true },
   "16": { label: "HW Palliative", totalBeds: 5, isHomeWard: true },
 };
@@ -79,35 +90,54 @@ async function getActiveWards(): Promise<WardInfoRow[]> {
   return merged;
 }
 
-async function countAdmitLive(
+// นับจำนวน admit ของแต่ละหน่วย โดยกรองจาก bedno (prefix / exclude) ให้ตรงตาม config
+// - ไม่ส่ง range  → live (คนที่ยังไม่ d/c ณ ปัจจุบัน)
+// - ส่ง range    → คนที่ยัง admit อยู่ ณ ช่วงวันที่เลือก (regdate <= end และยังไม่ d/c ก่อน start)
+async function countAdmit(
   wardCode: string,
   cfg: WardConfigItem,
+  range?: { start: string; end: string },
 ): Promise<number> {
   if (cfg.forceZero) return 0;
 
   const realWard = cfg.realWard ?? wardCode;
-  const conditions: string[] = [];
-  const params: string[] = [realWard];
+
+  // ── เงื่อนไข bedno (param ชุดนี้ต้องต่อท้ายสุดในลำดับ ?) ──
+  const bednoConditions: string[] = [];
+  const bednoParams: string[] = [];
 
   if (cfg.bednoPrefix?.length) {
-    const likes = cfg.bednoPrefix.map(() => "ia.bedno LIKE ?").join(" OR ");
-    conditions.push(`(${likes})`);
-    cfg.bednoPrefix.forEach((p) => params.push(`${p}%`));
+    bednoConditions.push(
+      `(${cfg.bednoPrefix.map(() => "ia.bedno LIKE ?").join(" OR ")})`,
+    );
+    cfg.bednoPrefix.forEach((p) => bednoParams.push(`${p}%`));
   }
 
   if (cfg.bednoPrefixExclude?.length) {
-    const likes = cfg.bednoPrefixExclude
-      .map(() => "ia.bedno NOT LIKE ?")
-      .join(" AND ");
-    conditions.push(`(${likes})`);
-    cfg.bednoPrefixExclude.forEach((p) => params.push(`${p}%`));
+    bednoConditions.push(
+      `(${cfg.bednoPrefixExclude.map(() => "ia.bedno NOT LIKE ?").join(" AND ")})`,
+    );
+    cfg.bednoPrefixExclude.forEach((p) => bednoParams.push(`${p}%`));
   }
 
   // กรอง bedno ว่างออกเสมอ
-  conditions.push("(ia.bedno IS NOT NULL AND ia.bedno != '')");
+  bednoConditions.push("(ia.bedno IS NOT NULL AND ia.bedno != '')");
 
-  const bednoWhere =
-    conditions.length > 0 ? `AND ${conditions.join(" AND ")}` : "";
+  // ── เงื่อนไขวันที่ vs live ──
+  let dateClause: string;
+  const dateParams: string[] = [];
+  if (range) {
+    // ยัง admit อยู่ ณ ช่วงวันที่เลือก: เข้าก่อน/ในวันสุดท้าย และยังไม่ d/c ก่อนวันแรก
+    dateClause = `AND a.regdate <= ?
+      AND (ip.dchdate IS NULL OR ip.dchdate = '0000-00-00' OR ip.dchdate = '' OR ip.dchdate >= ?)`;
+    dateParams.push(range.end, range.start);
+  } else {
+    dateClause = `AND (ip.dchdate IS NULL OR ip.dchdate = '0000-00-00' OR ip.dchdate = '')
+      AND (a.dchdate IS NULL OR a.dchdate = '0000-00-00' OR a.dchdate = '')`;
+  }
+
+  // ลำดับ ? ใน SQL: ward → date → bedno
+  const params = [realWard, ...dateParams, ...bednoParams];
 
   const [rows] = await db.query<RowDataPacket[]>(
     `SELECT COUNT(DISTINCT ia.an) AS cnt
@@ -119,10 +149,9 @@ async function countAdmitLive(
        FROM iptadm ia2
        WHERE ia2.an = ia.an
      )
-     AND (ip.dchdate IS NULL OR ip.dchdate = '0000-00-00' OR ip.dchdate = '')
-     AND (a.dchdate IS NULL OR a.dchdate = '0000-00-00' OR a.dchdate = '')
      AND ip.ward = ?
-     ${bednoWhere}`,
+     ${dateClause}
+     AND ${bednoConditions.join(" AND ")}`,
     params,
   );
   return Number((rows[0] as { cnt: number })?.cnt ?? 0);
@@ -273,23 +302,11 @@ export async function getBedOccupancy(
   let homeWardTotal = 0;
   let homeWardAdmit = 0;
 
+  const range = start && end ? { start, end } : undefined;
+
   for (const w of wards) {
     const cfg = WARD_CONFIG[w.ward_code];
-    let admit = 0;
-
-    if (cfg.forceZero) {
-      admit = 0;
-    } else if (start && end) {
-      const realWard = cfg.realWard ?? w.ward_code;
-      const [rows2] = await db.query<RowDataPacket[]>(
-        `SELECT COUNT(*) AS cnt FROM an_stat
-         WHERE regdate BETWEEN ? AND ? AND ward = ?`,
-        [start, end, realWard],
-      );
-      admit = Number((rows2[0] as { cnt: number })?.cnt ?? 0);
-    } else {
-      admit = await countAdmitLive(w.ward_code, cfg);
-    }
+    const admit = await countAdmit(w.ward_code, cfg, range);
 
     if (cfg?.isHomeWard) {
       homeWardTotal += Number(w.total_beds);
