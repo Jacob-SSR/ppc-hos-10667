@@ -35,7 +35,7 @@ const WARD_CONFIG: Record<string, WardConfigItem> = {
   "01": {
     label: "Ward",
     totalBeds: 26,
-    bednoPrefixExclude: ["นช", "นญ", "ย", "แยก", "IMC", "NEG"],
+    bednoPrefixExclude: ["นช", "นญ", "ย", "แยก", "IMC", "NEG", "POST"],
   },
   "04": { label: "ห้องพิเศษ", totalBeds: 11 },
   "05": {
@@ -55,6 +55,12 @@ const WARD_CONFIG: Record<string, WardConfigItem> = {
     totalBeds: 2,
     realWard: "01",
     bednoPrefix: ["NEG", "แยก"],
+  },
+  __post__: {
+    label: "ห้อง Post",
+    totalBeds: 1, // ปรับเลขตามเตียงจริง
+    realWard: "01",
+    bednoPrefix: ["POST"],
   },
   "15": { label: "พลับพลารักษ์", totalBeds: 10 },
   "17": {
@@ -333,6 +339,9 @@ export async function getBedOccupancy(
       occupancy_rate: Math.round((homeWardAdmit / homeWardTotal) * 100),
     });
   }
+
+  // เรียงตาม % ครองเตียงมากไปน้อย (รวม Home Ward ด้วย, 0% ลงล่างสุด)
+  rows.sort((a, b) => b.occupancy_rate - a.occupancy_rate);
 
   return rows;
 }
