@@ -18,6 +18,7 @@ import { exportToExcel } from "@/lib/exportExcel";
 import { useReportTable } from "@/hooks/useReportTable";
 import { cardVariants, filterItemVariants, fadeSlide, pageVariants } from "@/lib/variants";
 import { ReportTableProps } from "@/types/allTypes";
+import { useEffect } from "react";
 
 export default function ReportTable({
     apiPath,
@@ -26,6 +27,8 @@ export default function ReportTable({
     sheetName = "Report",
     columnFilterKeys = [],
     columnFilterLabels = {},
+    onData,
+    afterFilter,
 }: ReportTableProps) {
     const {
         data, loading,
@@ -39,6 +42,10 @@ export default function ReportTable({
         setColumnFilter, clearAllFilters,
         activeFilterCount,
     } = useReportTable({ apiPath, columnFilterKeys });
+
+    useEffect(() => {
+        onData?.(data);
+    }, [data, onData]);
 
     const colCount = paginatedData[0] ? Object.keys(paginatedData[0]).length : 6;
     const activeFilterKeys = Object.keys(columnFilters).filter((k) => columnFilters[k]);
@@ -163,6 +170,7 @@ export default function ReportTable({
                     visible={data.length > 0}
                 />
             </motion.div>
+            {afterFilter}
 
             {/* ── TABLE CARD ── */}
             <motion.div variants={cardVariants} className="bg-white border border-gray-200 rounded-2xl shadow-sm px-6 py-6">

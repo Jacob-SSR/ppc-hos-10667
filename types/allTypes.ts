@@ -141,6 +141,8 @@ export interface ReportTableProps {
   sheetName?: string;
   columnFilterKeys?: string[];
   columnFilterLabels?: Record<string, string>;
+  onData?: (rows: Record<string, unknown>[]) => void;
+  afterFilter?: React.ReactNode;
 }
 
 export interface UseReportTableOptions {
