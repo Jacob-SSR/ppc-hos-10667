@@ -147,6 +147,12 @@ export const DASHBOARD_GROUPS: SidebarSubGroup[] = [
         group: "disease",
       },
       {
+        label: "หัตถการเสี่ยงสูง",
+        href: "/pages/high-risk-procedures",
+        icon: Activity,
+        group: "disease",
+      },
+      {
         label: "อุบัติเหตุ",
         href: "/pages/accident-dashboard",
         icon: AlertTriangle,

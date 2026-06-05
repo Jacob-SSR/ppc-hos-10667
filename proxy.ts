@@ -89,5 +89,6 @@ export const config = {
     "/api/ttm-dashboard/:path*",
     "/api/pt-dashboard/:path*",
     "/api/dental-dashboard/:path*",
+    "/api/high-risk-procedures/:path*",
   ],
 };
