@@ -247,3 +247,46 @@ export async function getDeathNotDischarged() {
     throw error;
   }
 }
+
+export async function getRabiesFollowupReport(start: string, end: string) {
+  const [rows] = await db.query(
+    `
+    SELECT
+      o.vstdate                                          AS "วันที่นัดล่าสุด",
+      o.nextdate                                         AS "วันที่นัด",
+      o.nexttime                                         AS "เวลานัด",
+      o.hn                                               AS "HN",
+      p.cid                                              AS "CID",
+      CONCAT(p.pname, p.fname, ' ', p.lname)             AS "ชื่อ-นามสกุล",
+      p.hometel                                          AS "เบอร์โทร",
+      o.note                                             AS "หมายเหตุ (วัคซีน)",
+      c.name                                             AS "คลินิก",
+      d.name                                             AS "แพทย์",
+      p.addrpart                                         AS "บ้านเลขที่",
+      p.moopart                                          AS "หมู่",
+      CONCAT(
+        'ต.', COALESCE(t3.name, ''),
+        ' อ.', COALESCE(t2.name, ''),
+        ' จ.', COALESCE(t1.name, '')
+      )                                                  AS "ที่อยู่"
+    FROM oapp o
+    LEFT JOIN patient p       ON p.hn = o.hn
+    LEFT JOIN clinic c        ON c.clinic = o.clinic
+    LEFT JOIN doctor d        ON d.code = o.doctor
+    LEFT JOIN kskdepartment k ON k.depcode = o.depcode
+    LEFT JOIN thaiaddress t1  ON t1.chwpart = p.chwpart AND t1.amppart = '00'      AND t1.tmbpart = '00'
+    LEFT JOIN thaiaddress t2  ON t2.chwpart = p.chwpart AND t2.amppart = p.amppart AND t2.tmbpart = '00'
+    LEFT JOIN thaiaddress t3  ON t3.chwpart = p.chwpart AND t3.amppart = p.amppart AND t3.tmbpart = p.tmbpart
+    WHERE o.nextdate BETWEEN ? AND ?
+      AND (o.note LIKE '%pvrv%' OR o.note LIKE '%pcec%')
+      AND NOT EXISTS (
+        SELECT 1 FROM ovst v
+        WHERE v.hn = o.hn AND v.vstdate = o.nextdate
+      )
+    ORDER BY o.nextdate ASC, p.amppart, p.tmbpart, p.moopart
+    `,
+    [start, end],
+  );
+
+  return rows;
+}

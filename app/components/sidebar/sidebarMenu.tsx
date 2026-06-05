@@ -19,6 +19,7 @@ import {
   UserSearch,
   Pill,
   Brain,
+  Syringe,
 } from "lucide-react";
 
 import { SidebarItem, SidebarGroup, SidebarSubGroup } from "./types";
@@ -243,6 +244,12 @@ export const PRIMARY_CARE_ITEMS: SidebarItem[] = [
     label: "ผลัดตกหกล้ม (W00–W09)",
     href: "/pages/fall-report",
     icon: AlertTriangle,
+    group: "primarycare",
+  },
+  {
+    label: "รายชื่อผู้ผิดนัดฉีดวัคซีนพิษสุนัขบ้า",
+    href: "/pages/rabies-followup",
+    icon: Syringe,
     group: "primarycare",
   },
 ];
