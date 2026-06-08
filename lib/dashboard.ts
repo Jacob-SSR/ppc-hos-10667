@@ -580,3 +580,86 @@ export async function getMonthlyDashboardData(monthsBack = 6) {
 
   return { months: result };
 }
+
+// ─── Top 10 Diagnoses ───────────────────────────────────────────────────────
+
+export interface Top10Row {
+  rank: number;
+  icd10: string;
+  name: string;
+  visits: number; // จำนวนครั้ง
+  patients: number; // จำนวนผู้ป่วย (distinct HN)
+}
+
+export async function getTop10Diagnoses(start: string, end: string) {
+  // OPD: นับจาก pdx (diagnosis หลัก) ของ visit ที่เป็น OPD (an IS NULL)
+  const [opdRows] = await db.query<
+    (RowDataPacket & {
+      icd10: string;
+      name: string;
+      visits: number;
+      patients: number;
+    })[]
+  >(
+    `
+    SELECT
+      v.pdx                                  AS icd10,
+      COALESCE(ic.name, v.pdx)               AS name,
+      COUNT(DISTINCT v.vn)                   AS visits,
+      COUNT(DISTINCT v.hn)                   AS patients
+    FROM vn_stat v
+    INNER JOIN ovst o ON o.vn = v.vn
+    LEFT  JOIN icd101 ic ON ic.code = v.pdx
+    WHERE v.vstdate BETWEEN ? AND ?
+      AND o.an IS NULL
+      AND v.pdx IS NOT NULL AND v.pdx <> ''
+    GROUP BY v.pdx
+    ORDER BY visits DESC
+    LIMIT 10
+    `,
+    [start, end],
+  );
+
+  // IPD: นับจาก pdx ของ ipt ตามวันจำหน่าย (dchdate)
+  const [ipdRows] = await db.query<
+    (RowDataPacket & {
+      icd10: string;
+      name: string;
+      visits: number;
+      patients: number;
+    })[]
+  >(
+    `
+    SELECT
+      a.pdx                                  AS icd10,
+      COALESCE(ic.name, a.pdx)               AS name,
+      COUNT(DISTINCT ipt.an)                 AS visits,
+      COUNT(DISTINCT ipt.hn)                 AS patients
+    FROM ipt
+    INNER JOIN an_stat a ON a.an = ipt.an
+    LEFT  JOIN icd101 ic ON ic.code = a.pdx
+    WHERE ipt.dchdate BETWEEN ? AND ?
+      AND a.pdx IS NOT NULL AND a.pdx <> ''
+    GROUP BY a.pdx
+    ORDER BY visits DESC
+    LIMIT 10
+    `,
+    [start, end],
+  );
+
+  const toRanked = (
+    rows: { icd10: string; name: string; visits: number; patients: number }[],
+  ): Top10Row[] =>
+    rows.map((r, i) => ({
+      rank: i + 1,
+      icd10: r.icd10,
+      name: r.name,
+      visits: Number(r.visits),
+      patients: Number(r.patients),
+    }));
+
+  return {
+    opd: toRanked(opdRows),
+    ipd: toRanked(ipdRows),
+  };
+}

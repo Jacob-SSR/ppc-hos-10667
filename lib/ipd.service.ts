@@ -183,7 +183,7 @@ export async function getIpdDischarge(
       ipt.regtime,
       ipt.dchdate,
       ipt.dchtime,
-      ipt.rw           AS ward_code,
+      ipt.ward         AS ward_code,
       d.name           AS doctor_name,
       a.admdate,
       a.pdx,

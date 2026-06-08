@@ -1,45 +1,25 @@
 "use client";
 
-const OPD_MOCK = [
-  { rank: 1, icd10: "J00", name: "ไข้หวัด", count: 120 },
-  { rank: 2, icd10: "E11", name: "เบาหวาน", count: 98 },
-  { rank: 3, icd10: "I10", name: "ความดันโลหิตสูง", count: 87 },
-  { rank: 4, icd10: "K29", name: "กระเพาะอาหารอักเสบ", count: 65 },
-  { rank: 5, icd10: "J18", name: "ปอดอักเสบ", count: 54 },
-  { rank: 6, icd10: "M79", name: "ปวดกล้ามเนื้อ", count: 48 },
-  { rank: 7, icd10: "Z00", name: "ตรวจสุขภาพ", count: 42 },
-  { rank: 8, icd10: "A09", name: "ท้องเสีย", count: 38 },
-  { rank: 9, icd10: "L30", name: "โรคผิวหนัง", count: 30 },
-  { rank: 10, icd10: "N39", name: "ติดเชื้อทางเดินปัสสาวะ", count: 25 },
-];
+import { useEffect, useState } from "react";
 
-const IPD_MOCK = [
-  { rank: 1, icd10: "J18", name: "ปอดอักเสบ", count: 45 },
-  { rank: 2, icd10: "I50", name: "หัวใจล้มเหลว", count: 32 },
-  { rank: 3, icd10: "E11", name: "เบาหวาน (DM)", count: 28 },
-  { rank: 4, icd10: "A09", name: "ท้องเสียรุนแรง", count: 22 },
-  { rank: 5, icd10: "I63", name: "Stroke", count: 19 },
-  { rank: 6, icd10: "N18", name: "ไตวายเรื้อรัง", count: 15 },
-  { rank: 7, icd10: "K92", name: "เลือดออก GI", count: 12 },
-  { rank: 8, icd10: "J44", name: "COPD", count: 10 },
-  { rank: 9, icd10: "S72", name: "กระดูกสะโพกหัก", count: 8 },
-  { rank: 10, icd10: "O80", name: "คลอดปกติ", count: 6 },
-];
+interface Top10Row {
+  rank: number;
+  icd10: string;
+  name: string;
+  visits: number;
+  patients: number;
+}
 
 interface TableProps {
   title: string;
-  rows: typeof OPD_MOCK;
+  rows: Top10Row[];
+  loading: boolean;
 }
 
-function Top10Table({ title, rows }: TableProps) {
+function Top10Table({ title, rows, loading }: TableProps) {
   return (
     <div className="bg-white border border-gray-200 rounded-xl shadow-sm p-5 flex flex-col">
       <h2 className="text-sm font-bold text-gray-600 mb-3">{title}</h2>
-      <div className="flex gap-2 mb-3">
-        <span className="bg-green-100 text-green-800 text-[11px] font-semibold px-3 py-0.5 rounded-full">ICD10</span>
-        <span className="bg-blue-100 text-blue-800 text-[11px] font-semibold px-3 py-0.5 rounded-full">Diag</span>
-        <span className="bg-gray-100 text-gray-600 text-[11px] font-semibold px-3 py-0.5 rounded-full">อื่นๆ</span>
-      </div>
       <div className="overflow-x-auto">
         <table className="min-w-full text-xs border-collapse">
           <thead>
@@ -47,18 +27,38 @@ function Top10Table({ title, rows }: TableProps) {
               <th className="px-3 py-2 text-left text-white font-semibold border-r border-green-600">#</th>
               <th className="px-3 py-2 text-left text-white font-semibold border-r border-green-600">ICD10</th>
               <th className="px-3 py-2 text-left text-white font-semibold border-r border-green-600">การวินิจฉัย</th>
-              <th className="px-3 py-2 text-left text-white font-semibold">จำนวน</th>
+              <th className="px-3 py-2 text-left text-white font-semibold border-r border-green-600">ครั้ง</th>
+              <th className="px-3 py-2 text-left text-white font-semibold">ผู้ป่วย</th>
             </tr>
           </thead>
           <tbody>
-            {rows.map((r, i) => (
-              <tr key={i} className={`border-b border-gray-100 hover:bg-green-50/60 ${i % 2 === 0 ? "bg-white" : "bg-gray-50"}`}>
-                <td className="px-3 py-2 text-gray-500 font-medium">{r.rank}</td>
-                <td className="px-3 py-2 text-gray-700 font-mono">{r.icd10}</td>
-                <td className="px-3 py-2 text-gray-700">{r.name}</td>
-                <td className="px-3 py-2 text-gray-800 font-bold">{r.count.toLocaleString()}</td>
+            {loading ? (
+              Array.from({ length: 10 }).map((_, i) => (
+                <tr key={i} className="border-b border-gray-100">
+                  {Array.from({ length: 5 }).map((_, j) => (
+                    <td key={j} className="px-3 py-2.5 border-r border-gray-100">
+                      <div className="h-3 rounded bg-gray-100 animate-pulse" />
+                    </td>
+                  ))}
+                </tr>
+              ))
+            ) : rows.length === 0 ? (
+              <tr>
+                <td colSpan={5} className="px-3 py-8 text-center text-gray-400">
+                  ไม่พบข้อมูลในช่วงนี้
+                </td>
               </tr>
-            ))}
+            ) : (
+              rows.map((r, i) => (
+                <tr key={i} className={`border-b border-gray-100 hover:bg-green-50/60 ${i % 2 === 0 ? "bg-white" : "bg-gray-50"}`}>
+                  <td className="px-3 py-2 text-gray-500 font-medium">{r.rank}</td>
+                  <td className="px-3 py-2 text-gray-700 font-mono">{r.icd10}</td>
+                  <td className="px-3 py-2 text-gray-700">{r.name}</td>
+                  <td className="px-3 py-2 text-gray-800 font-bold">{r.visits.toLocaleString()}</td>
+                  <td className="px-3 py-2 text-gray-600">{r.patients.toLocaleString()}</td>
+                </tr>
+              ))
+            )}
           </tbody>
         </table>
       </div>
@@ -72,10 +72,42 @@ interface Top10TablesProps {
 }
 
 export default function Top10Tables({ start, end }: Top10TablesProps) {
+  const [opd, setOpd] = useState<Top10Row[]>([]);
+  const [ipd, setIpd] = useState<Top10Row[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const fetchData = async () => {
+      setLoading(true);
+      try {
+        const res = await fetch(
+          `/api/dashboard/top10?start=${start}&end=${end}`,
+          { credentials: "include" },
+        );
+        const data = await res.json();
+        if (cancelled) return;
+        setOpd(Array.isArray(data.opd) ? data.opd : []);
+        setIpd(Array.isArray(data.ipd) ? data.ipd : []);
+      } catch (err) {
+        console.error(err);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    };
+
+    fetchData();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [start, end]);
+
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-      <Top10Table title="10 อันดับผู้ป่วยนอก OPD" rows={OPD_MOCK} />
-      <Top10Table title="10 อันดับผู้ป่วยใน IPD" rows={IPD_MOCK} />
+      <Top10Table title="10 อันดับผู้ป่วยนอก OPD" rows={opd} loading={loading} />
+      <Top10Table title="10 อันดับผู้ป่วยใน IPD" rows={ipd} loading={loading} />
     </div>
   );
 }

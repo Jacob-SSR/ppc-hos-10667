@@ -24,8 +24,10 @@ const WARD_LABELS: Record<string, string> = {
   "15": "พลับพลารักษ์",
 };
 
-const HOME_WARDS = ["01", "04"];
-const NON_HOME_WARDS = ["14", "15"];
+// Home Ward จริง = ward ยาเสพติด (14) + พลับพลารักษ์ (15)
+const HOME_WARDS = ["14", "15"];
+// ผู้ป่วยในปกติ = Ward 01 + ห้องพิเศษ 04
+const GENERAL_WARDS = ["01", "04"];
 
 interface HomeWardTableProps {
   start: string;
@@ -94,15 +96,33 @@ export default function HomeWardTable({ start, end }: HomeWardTableProps) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    fetch(`/api/ipd/discharge?start=${start}&end=${end}`, { credentials: "include" })
-      .then((r) => r.json())
-      .then((data) => setRows(Array.isArray(data) ? data : []))
-      .catch(console.error)
-      .finally(() => setLoading(false));
+    let cancelled = false;
+
+    const fetchData = async () => {
+      setLoading(true);
+      try {
+        const res = await fetch(
+          `/api/ipd/discharge?start=${start}&end=${end}`,
+          { credentials: "include" },
+        );
+        const data = await res.json();
+        if (!cancelled) setRows(Array.isArray(data) ? data : []);
+      } catch (err) {
+        console.error(err);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    };
+
+    fetchData();
+
+    return () => {
+      cancelled = true;
+    };
   }, [start, end]);
 
-  const homeRows = rows.filter((r) => HOME_WARDS.includes(r.ward_code));
-  const nonHomeRows = rows.filter((r) => NON_HOME_WARDS.includes(r.ward_code));
+  const homeRows = rows.filter((r) => HOME_WARDS.includes(String(r.ward_code)));
+  const generalRows = rows.filter((r) => GENERAL_WARDS.includes(String(r.ward_code)));
 
   if (loading) {
     return (
@@ -115,8 +135,8 @@ export default function HomeWardTable({ start, end }: HomeWardTableProps) {
 
   return (
     <div className="space-y-4">
-      <WardTable rows={homeRows} title="รวม Home Ward (Ward 01 + 04)" />
-      <WardTable rows={nonHomeRows} title="ไม่รวม Home Ward (HW ยาเสพติด + พลับพลารักษ์)" />
+      <WardTable rows={generalRows} title="ผู้ป่วยในทั่วไป (Ward 01 + ห้องพิเศษ 04)" />
+      <WardTable rows={homeRows} title="Home Ward (HW ยาเสพติด + พลับพลารักษ์)" />
     </div>
   );
 }

@@ -2,12 +2,10 @@
 
 import { useEffect, useState } from "react";
 
-// ── New refactored components
 import OpdSection from "@/app/components/dashboard/components/OpdSection";
 import IpdSection from "@/app/components/dashboard/components/IpdSection";
 import BedOccupancyChart from "@/app/components/dashboard/components/BedOccupancyChart";
 
-// ── Unchanged components (ยังอยู่ที่เดิม)
 import AnnualChart from "@/app/components/dashboard/AnnualChart";
 import HomeWardTable from "@/app/components/dashboard/HomeWardTable";
 import Top10Tables from "@/app/components/dashboard/Top10Tables";
@@ -33,6 +31,9 @@ export default function DashboardPage() {
 
   const todayStr = getTodayBangkok();
 
+  // state วันที่ที่แชร์ระหว่าง OpdSection ↔ Top10Tables
+  const [range, setRange] = useState({ start: todayStr, end: todayStr });
+
   useEffect(() => {
     let cancelled = false;
     fetch("/api/dashboard/monthly?months=6", { credentials: "include" })
@@ -52,12 +53,12 @@ export default function DashboardPage() {
 
   return (
     <div className="space-y-4">
-      <OpdSection />
+      <OpdSection onRangeChange={(start, end) => setRange({ start, end })} />
       <IpdSection />
       <AnnualChart months={monthlyData?.months ?? []} loading={loading} />
       <BedOccupancyChart />
       <HomeWardTable start={todayStr} end={todayStr} />
-      <Top10Tables start={todayStr} end={todayStr} />
+      <Top10Tables start={range.start} end={range.end} />
       <PpaOverview />
     </div>
   );

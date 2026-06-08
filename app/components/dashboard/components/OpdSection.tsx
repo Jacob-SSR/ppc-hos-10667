@@ -165,7 +165,11 @@ interface ModalState {
   cardType: string;
 }
 
-export default function OpdSection() {
+interface OpdSectionProps {
+  onRangeChange?: (start: string, end: string) => void;
+}
+
+export default function OpdSection({ onRangeChange }: OpdSectionProps) {
   const [preset, setPreset] = useState("วันนี้");
   const [start, setStart] = useState<Date>(() => getPresetRange("วันนี้").start);
   const [end, setEnd] = useState<Date>(() => getPresetRange("วันนี้").end);
@@ -186,6 +190,7 @@ export default function OpdSection() {
         const eLabel = toThaiDate(fmt(e));
         setInfoLabel(sLabel === eLabel ? sLabel : `${sLabel} – ${eLabel}`);
         setTitleLabel(buildTitle(p, s, e));
+        onRangeChange?.(fmt(s), fmt(e));
       }
     } catch { }
     setLoading(false);
@@ -209,6 +214,7 @@ export default function OpdSection() {
           const eLabel = toThaiDate(fmt(e));
           setInfoLabel(sLabel === eLabel ? sLabel : `${sLabel} – ${eLabel}`);
           setTitleLabel(buildTitle("วันนี้", s, e));
+          onRangeChange?.(fmt(s), fmt(e));
         }
       } catch { }
       if (!cancelled) setLoading(false);
