@@ -102,9 +102,31 @@ export default function HighRiskProceduresPage() {
         [s],
     );
 
+    // จัดกลุ่มตามชนิดหัตถการ (icd9) แล้วเรียงวันที่ใหม่→เก่าในแต่ละกลุ่ม
+    const sortedOpd = useMemo(
+        () =>
+            [...(data?.opd ?? [])].sort(
+                (a, b) =>
+                    a.icd9.localeCompare(b.icd9) ||
+                    b.service_date.localeCompare(a.service_date) ||
+                    b.service_time.localeCompare(a.service_time),
+            ),
+        [data],
+    );
+
+    const sortedIpd = useMemo(
+        () =>
+            [...(data?.ipd ?? [])].sort(
+                (a, b) =>
+                    a.icd9.localeCompare(b.icd9) ||
+                    b.service_date.localeCompare(a.service_date),
+            ),
+        [data],
+    );
+
     const exportOpd = () => {
         if (!data?.opd.length) return;
-        const rows = data.opd.map((r: HrpOpdRow) => ({
+        const rows = sortedOpd.map((r: HrpOpdRow) => ({
             "วันที่รับบริการ": formatThaiDate(r.service_date),
             "เวลา": r.service_time,
             "ประเภท": r.visit_type,
@@ -119,7 +141,7 @@ export default function HighRiskProceduresPage() {
     };
     const exportIpd = () => {
         if (!data?.ipd.length) return;
-        const rows = data.ipd.map((r: HrpIpdRow) => ({
+        const rows = sortedIpd.map((r: HrpIpdRow) => ({
             "วันจำหน่าย": formatThaiDate(r.service_date),
             AN: r.an,
             HN: r.hn,
@@ -255,7 +277,7 @@ export default function HighRiskProceduresPage() {
                             <Download size={15} /> Export Excel
                         </button>
                     </div>
-                    {data.opd.length === 0
+                    {sortedOpd.length === 0
                         ? <p className="text-center text-gray-400 py-8 text-sm">ไม่พบข้อมูล</p>
                         : (
                             <div className="overflow-x-auto rounded-xl border border-gray-200 max-h-[520px]">
@@ -268,7 +290,7 @@ export default function HighRiskProceduresPage() {
                                         </tr>
                                     </thead>
                                     <tbody>
-                                        {data.opd.map((r, i) => (
+                                        {sortedOpd.map((r, i) => (
                                             <tr key={i} className={`border-b border-gray-100 ${i % 2 ? "bg-gray-50" : "bg-white"} hover:bg-[#f0faf4]`}>
                                                 <td className="px-3 py-2 whitespace-nowrap text-gray-700">{formatThaiDate(r.service_date)}</td>
                                                 <td className="px-3 py-2 text-gray-500">{r.service_time || "-"}</td>
@@ -306,7 +328,7 @@ export default function HighRiskProceduresPage() {
                             <Download size={15} /> Export Excel
                         </button>
                     </div>
-                    {data.ipd.length === 0
+                    {sortedIpd.length === 0
                         ? <p className="text-center text-gray-400 py-8 text-sm">ไม่พบข้อมูล</p>
                         : (
                             <div className="overflow-x-auto rounded-xl border border-gray-200 max-h-[520px]">
@@ -319,7 +341,7 @@ export default function HighRiskProceduresPage() {
                                         </tr>
                                     </thead>
                                     <tbody>
-                                        {data.ipd.map((r, i) => (
+                                        {sortedIpd.map((r, i) => (
                                             <tr key={i} className={`border-b border-gray-100 ${i % 2 ? "bg-gray-50" : "bg-white"} hover:bg-[#f0faf4]`}>
                                                 <td className="px-3 py-2 whitespace-nowrap text-gray-700">{formatThaiDate(r.service_date)}</td>
                                                 <td className="px-3 py-2 font-mono text-gray-500">{r.an}</td>
