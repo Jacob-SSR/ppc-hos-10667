@@ -1,7 +1,41 @@
+// app/api/dmtb-dashboard/route.ts
+// อ่านข้อมูลตรงจาก Google Sheets (เลิกอัปโหลดไฟล์ .xlsx)
+// หมายเหตุ: หัวตารางจริงแยก 2 แถว (แถวบนเป็นหัวกลุ่ม merge, แถวล่างเป็นหัวย่อย)
+//          จึง map ด้วย "ตำแหน่งคอลัมน์คงที่" ไม่ใช่ชื่อ header
 import { NextResponse } from "next/server";
-import { readFileSync, existsSync } from "fs";
-import path from "path";
-import * as XLSX from "xlsx";
+import {
+  getSheetClient,
+  getFirstSheetTitle,
+  getValues,
+  toStr,
+  parseDate,
+  sheetsError,
+} from "@/lib/sheets";
+
+const SPREADSHEET_ID = process.env.DMTB_SPREADSHEET_ID!;
+
+// ── ตำแหน่งคอลัมน์ (index เริ่ม 0) ตาม layout จริงของ DMTB ─────────────────────
+const C = {
+  repNo: 1,
+  transId: 2,
+  cid: 5, // VCTID,NAPNumber,PID
+  name: 6, // ชื่อ-สกุล
+  right: 7, // สิทธิการรักษาพยาบาล
+  hcode: 8,
+  regDate: 9, // วันที่ลงทะเบียน
+  servDate: 10, // วันที่เข้ารักษา/วันที่รับบริการ
+  item: 12, // รายการประเภทที่ขอเบิก
+  qty: 13, // จำนวน
+  unitPrice: 14, // ราคาต่อหน่วย
+  ceiling: 15, // ราคาเพดาน
+  total: 16, // รวมเงินที่ขอเบิก
+  comp: 19, // ชดเชย (หัวย่อยแถวล่าง)
+  noComp: 20, // ไม่ชดเชย
+  extra: 21, // จ่ายเพิ่ม
+  recall: 22, // เรียกคืน
+  status: 23, // สถานะ
+  remark: 24, // หมายเหตุ
+} as const;
 
 export interface TbRow {
   repNo: string;
@@ -60,6 +94,7 @@ export interface TbBatchSummary {
 
 export interface TbDashboardData {
   updatedAt: string;
+  sheetName: string;
   totalRows: number;
   totalClaim: number;
   totalComp: number;
@@ -86,71 +121,70 @@ const SHORT_LABELS: Record<string, string> = {
   ค่าบริการดูแลรักษาผู้ป่วยวัณโรคที่มารับการรักษาและติดตาม: "ดูแลรักษา TB",
 };
 
-function toNum(v: unknown): number {
-  const n = Number(v);
+// ── helpers ───────────────────────────────────────────────────────────────────
+// แปลงข้อความตัวเลข (อาจมี comma หลักพัน หรือ .0 ต่อท้าย) → number
+function money(v: unknown): number {
+  const n = Number(
+    String(v ?? "")
+      .replace(/,/g, "")
+      .trim(),
+  );
   return isNaN(n) ? 0 : n;
 }
 
-function parseDate(raw: unknown): string {
-  if (!raw) return "";
-  if (raw instanceof Date) {
-    const y = raw.getFullYear();
-    const ce = y > 2400 ? y - 543 : y;
-    const m = String(raw.getMonth() + 1).padStart(2, "0");
-    const d = String(raw.getDate()).padStart(2, "0");
-    return `${ce}-${m}-${d}`;
-  }
-  return String(raw).slice(0, 10);
-}
-
 function normalizeHcode(raw: unknown): string {
-  if (!raw) return "";
-  const n = Math.round(Number(raw));
-  if (isNaN(n)) return String(raw);
+  const s = toStr(raw);
+  if (!s) return "";
+  const n = Math.round(Number(s));
+  if (isNaN(n)) return s;
   return n < 10000 ? `0${n}` : String(n);
 }
 
-function parseXlsx(filePath: string): TbRow[] {
-  const buf = readFileSync(filePath);
-  const wb = XLSX.read(buf, { type: "buffer", cellDates: true });
-  const ws = wb.Sheets[wb.SheetNames[0]];
-  const raw = XLSX.utils.sheet_to_json<unknown[]>(ws, {
-    header: 1,
-    defval: "",
-  }) as unknown[][];
-
-  // Row 0-3 = headers, data เริ่ม row 4
+// ── parse จาก Google Sheets values (string[][]) ─────────────────────────────────
+function parseSheet(raw: string[][]): TbRow[] {
+  const get = (row: string[], idx: number) => toStr(row[idx]);
   const rows: TbRow[] = [];
-  for (let i = 4; i < raw.length; i++) {
-    const r = raw[i] as unknown[];
-    const repNo = r[1] ? String(r[1]).trim() : "";
-    if (!repNo || repNo === "Filter" || repNo === "Fillter") continue;
 
-    const hcodeKey = normalizeHcode(r[8]);
+  for (const r of raw) {
+    if (!r) continue;
+
+    const repNo = get(r, C.repNo);
+    // ข้ามหัวตาราง (2 แถว), แถวว่าง และแถว Filter
+    if (
+      !repNo ||
+      repNo === "REP No." ||
+      repNo === "Filter" ||
+      repNo === "Fillter"
+    )
+      continue;
+
+    const hcodeRaw = get(r, C.hcode);
+    const hcodeKey = normalizeHcode(hcodeRaw);
     const hcodeInfo = HCODE_MAP[hcodeKey];
-    const หมายเหตุRaw = r[24] ? String(r[24]).trim() : "";
-    const รายการขอเบิก = String(r[12] ?? "").trim();
+
+    const regRaw = get(r, C.regDate);
+    const servRaw = get(r, C.servDate);
 
     rows.push({
       repNo,
-      transId: String(r[2] ?? ""),
-      cid: String(r[5] ?? ""),
-      ชื่อสกุล: String(r[6] ?? ""),
-      สิทธิ: String(r[7] ?? ""),
-      hcode: String(r[8] ?? ""),
-      วันลงทะเบียน: parseDate(r[9]),
-      วันรับบริการ: parseDate(r[10]),
-      รายการขอเบิก,
-      จำนวน: toNum(r[13]),
-      ราคาต่อหน่วย: toNum(r[14]),
-      ราคาเพดาน: toNum(r[15]),
-      รวมขอเบิก: toNum(r[16]),
-      ชดเชย: toNum(r[19]),
-      ไม่ชดเชย: toNum(r[20]),
-      จ่ายเพิ่ม: toNum(r[21]),
-      เรียกคืน: toNum(r[22]),
-      สถานะ: String(r[23] ?? "").trim(),
-      หมายเหตุ: หมายเหตุRaw,
+      transId: get(r, C.transId),
+      cid: get(r, C.cid),
+      ชื่อสกุล: get(r, C.name),
+      สิทธิ: get(r, C.right),
+      hcode: hcodeRaw,
+      วันลงทะเบียน: parseDate(regRaw) || regRaw,
+      วันรับบริการ: parseDate(servRaw) || servRaw,
+      รายการขอเบิก: get(r, C.item),
+      จำนวน: money(get(r, C.qty)),
+      ราคาต่อหน่วย: money(get(r, C.unitPrice)),
+      ราคาเพดาน: money(get(r, C.ceiling)),
+      รวมขอเบิก: money(get(r, C.total)),
+      ชดเชย: money(get(r, C.comp)),
+      ไม่ชดเชย: money(get(r, C.noComp)),
+      จ่ายเพิ่ม: money(get(r, C.extra)),
+      เรียกคืน: money(get(r, C.recall)),
+      สถานะ: get(r, C.status),
+      หมายเหตุ: get(r, C.remark),
       หน่วยบริการ: hcodeInfo?.name ?? `หน่วยบริการ ${hcodeKey}`,
       hcodeKey,
     });
@@ -158,7 +192,8 @@ function parseXlsx(filePath: string): TbRow[] {
   return rows;
 }
 
-function buildDashboard(rows: TbRow[]): TbDashboardData {
+// ── build dashboard ─────────────────────────────────────────────────────────────
+function buildDashboard(rows: TbRow[], sheetName: string): TbDashboardData {
   // group by unit → item → status
   const unitMap = new Map<
     string,
@@ -272,6 +307,7 @@ function buildDashboard(rows: TbRow[]): TbDashboardData {
 
   return {
     updatedAt: new Date().toISOString(),
+    sheetName,
     totalRows: rows.length,
     totalClaim: rows.reduce((s, r) => s + r.รวมขอเบิก, 0),
     totalComp: rows.reduce((s, r) => s + r.ชดเชย, 0),
@@ -282,23 +318,29 @@ function buildDashboard(rows: TbRow[]): TbDashboardData {
   };
 }
 
-export async function GET() {
+export async function GET(req: Request) {
+  const debug = new URL(req.url).searchParams.get("debug") === "1";
+
   try {
-    const filePath = path.join(process.cwd(), "data", "tb.xlsx");
-    if (!existsSync(filePath)) {
-      return NextResponse.json(
-        { error: "ไม่พบไฟล์ data/tb.xlsx — กรุณาอัปโหลดข้อมูลก่อน" },
-        { status: 404 },
-      );
+    const sheets = await getSheetClient();
+    const firstSheet = await getFirstSheetTitle(sheets, SPREADSHEET_ID);
+    const raw = await getValues(sheets, SPREADSHEET_ID, `${firstSheet}!A:AC`);
+
+    const rows = parseSheet(raw);
+
+    if (debug) {
+      return NextResponse.json({
+        sheetName: firstSheet,
+        headerRow0: raw[0] ?? [],
+        headerRow1: raw[1] ?? [],
+        totalRows: rows.length,
+        firstRows: rows.slice(0, 3),
+      });
     }
-    const rows = parseXlsx(filePath);
-    const data = buildDashboard(rows);
+
+    const data = buildDashboard(rows, firstSheet);
     return NextResponse.json(data);
   } catch (err) {
-    console.error("TbDashboard error:", err);
-    return NextResponse.json(
-      { error: "Internal Server Error" },
-      { status: 500 },
-    );
+    return sheetsError(err, "DmtbDashboard");
   }
 }
