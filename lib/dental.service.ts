@@ -1,30 +1,90 @@
 // lib/dental.service.ts
-// SQL service สำหรับ Dashboard ทันตกรรม (Dental — ทันตแพทย์ / ทันตาภิบาล)
+// SQL service สำหรับ Dashboard ทันตกรรม (Dental — ทันตแพทย์ / ทันตาภิบาล / ผู้ช่วยทันตแพทย์)
 // คืนข้อมูลครบทั้ง 8 ชุดในคำขอเดียว ให้หน้าเพจ render ได้เลย
 //
-// แหล่งข้อมูล: ovst (visit + คิว oqueue) + vn_stat (รายได้/สิทธิ์) + patient
-//             + doctor + pttype (ชื่อสิทธิ์) + doctor_operation→icd9_sss (หัตถการจริง ICD-9)
-//             + opdscreen (อาการสำคัญ cc)
+// *** การ attribute เจ้าของงาน (สำคัญ) ***
+// ปัญหาเดิม: คนไข้ 1 VN อาจเข้าหลายคลินิก (เช่น ทันตกรรม + แผนไทย) ระบบลง o.doctor
+// เป็นหมอคนเดียว (อาจเป็นแผนไทย) ทำให้งานทันตกรรมไปโผล่ใต้ชื่อหมอแผนไทย
+// แก้: ยึด "หมอฝั่งทันตกรรม" ของ VN นั้นตามลำดับ
+//   (1) หมอที่ลงวินิจฉัยฝั่งทันตกรรมใน ovstdiag (ครอบคลุมทุก visit แม้ไม่มีหัตถการ)
+//   (2) หมอที่ทำหัตถการทันตกรรมใน doctor_operation
+//   (3) หมอหลัก o.doctor เฉพาะเมื่อตัวเองเป็นบุคลากรทันตกรรม
+//   - visit จะถูกนับเป็นทันตกรรมก็ต่อเมื่อหาหมอฝั่งทันตกรรมเจอ (ไม่งั้นตัดทิ้ง)
+//     → คนไข้ที่มาทั้งทันตกรรม + แผนไทย จะไปอยู่ใต้ทันตแพทย์ที่ตรวจ ไม่ใช่หมอแผนไทย
+//   - หัตถการแต่ละรายการ attribute ตามคนทำจริง (แยกงานนวดแผนไทยออกอัตโนมัติ)
+//
+// หมายเหตุรายได้: total_income = vn_stat.income เป็นยอด "ทั้ง VN" (รวมทุกคลินิก)
+//   กรณีคนไข้เข้าหลายคลินิกในวันเดียว ยอดนี้จะรวมงานคลินิกอื่นด้วย
+//   ถ้าต้องการแยกเฉพาะรายได้ทันตกรรมจริง ต้อง join opitemrece ตามแผนก (ทำเพิ่มได้)
 //
 // ปรับให้ตรงกับ master ของ รพ. ก่อนใช้จริง:
 //   - DENTAL_DEPCODE: รหัสแผนกทันตกรรม (kskdepartment) — รพ.พลับพลาชัย = '019'
-//   - แยกทันตแพทย์/ทันตาภิบาล: ชื่อขึ้นต้น "ทพ."/"ทพญ." หรือ position_id ใน DENTIST_POSITION_IDS = ทันตแพทย์
-//     ที่เหลือในแผนก = ทันตาภิบาล (เติม override ได้ที่ THERAPIST_DOCTOR_CODES / DENTIST_DOCTOR_CODES)
-//   - หัตถการ: ดึงจริงจาก doctor_operation.icd9 (รพ.พลับพลาชัยพบ 163 แถวในแผนกทันต)
-//     ชื่อหัตถการ join จาก DENTAL_ICD9_TABLE (default icd9_sss ตามที่ตรวจจริง)
-//     ตั้ง DENTAL_ICD9_TABLE=icd9cm ได้ถ้า รพ. อื่นใช้ชุดนั้น
+//   - position_id (ตาราง doctor_position): 2 = ทันตแพทย์, 6 = ผู้ช่วยทันตแพทย์ (กลุ่ม "ทันตาภิบาล")
+//   - เติม override รายคนได้ที่ DENTIST_DOCTOR_CODES / THERAPIST_DOCTOR_CODES
+//   - หัตถการชื่อ join จาก DENTAL_ICD9_TABLE (default icd9_sss)
 
 import { db } from "@/lib/db";
 import { RowDataPacket } from "mysql2";
 
 const DENTAL_DEPCODE = process.env.DENTAL_DEPCODE ?? "019";
 const DISCHARGED_STATUS = ["99", "98"];
-const DENTIST_POSITION_IDS = ["2"];
+
+// position_id จากตาราง doctor_position
+const DENTIST_POSITION_IDS = ["2"]; // ทันตแพทย์
+const THERAPIST_POSITION_IDS = ["6"]; // ผู้ช่วยทันตแพทย์ → กลุ่ม "ทันตาภิบาล"
+
+// override รายคน (ใส่ doctor.code ถ้าระบบบันทึกตำแหน่งไม่ตรง)
 const DENTIST_DOCTOR_CODES: string[] = [];
 const THERAPIST_DOCTOR_CODES: string[] = [];
 
-// ตารางชื่อหัตถการ ICD-9 — รพ.พลับพลาชัยตรวจจริงแล้วว่า doctor_operation.icd9 ผูกกับ 'icd9_sss'
-// (icd9cm ไม่มีรหัสพวกนี้) จึง default = icd9_sss ; whitelist กัน SQL injection (ใส่ใน SQL ตรง ๆ)
+const DENTAL_POSITION_IDS = [
+  ...DENTIST_POSITION_IDS,
+  ...THERAPIST_POSITION_IDS,
+];
+const OVERRIDE_CODES = [...DENTIST_DOCTOR_CODES, ...THERAPIST_DOCTOR_CODES];
+
+// ── predicate: doctor (alias) เป็นบุคลากรทันตกรรมหรือไม่ ───────────────────────
+function dentalPredicate(alias: string): string {
+  return `(
+    ${alias}.position_id IN (${DENTAL_POSITION_IDS.map((p) => `'${p}'`).join(",")})
+    OR ${alias}.name LIKE 'ทพ.%'
+    OR ${alias}.name LIKE 'ทพญ.%'
+    OR ${alias}.name LIKE 'ทภ.%'
+    OR ${alias}.name LIKE '%ทันตาภิบาล%'
+    OR ${alias}.name LIKE '%ผู้ช่วยทันต%'
+    ${OVERRIDE_CODES.length ? `OR ${alias}.code IN (${OVERRIDE_CODES.map((c) => `'${c}'`).join(",")})` : ""}
+  )`;
+}
+// predicate override บน .doctor ของแต่ละตาราง (เผื่อ override ที่ code)
+const OVERRIDE_OP_IN = OVERRIDE_CODES.length
+  ? `OR op.doctor IN (${OVERRIDE_CODES.map((c) => `'${c}'`).join(",")})`
+  : "";
+const OVERRIDE_OD_IN = OVERRIDE_CODES.length
+  ? `OR od.doctor IN (${OVERRIDE_CODES.map((c) => `'${c}'`).join(",")})`
+  : "";
+
+// subquery: หาหมอ "ฝั่งทันตกรรม" ของ VN หนึ่ง ๆ ตามลำดับความน่าเชื่อถือ
+//   (1) หมอที่ลงวินิจฉัย (ovstdiag) เป็นบุคลากรทันตกรรม — ครอบคลุมทุก visit แม้ไม่มีหัตถการ
+//   (2) หมอที่ทำหัตถการ (doctor_operation) เป็นบุคลากรทันตกรรม
+// ใช้ร่วมกับ fallback หมอหลัก (o.doctor) ที่ฝั่งเรียกใช้
+const DENTAL_DIAG_DOCTOR_SUBQ = `
+          (SELECT od.doctor
+             FROM ovstdiag od
+             JOIN doctor dd ON dd.code = od.doctor
+            WHERE od.vn = o.vn
+              AND od.doctor IS NOT NULL AND od.doctor <> ''
+              AND (${dentalPredicate("dd")} ${OVERRIDE_OD_IN})
+            LIMIT 1)`;
+const DENTAL_OPER_DOCTOR_SUBQ = `
+          (SELECT op.doctor
+             FROM doctor_operation op
+             JOIN doctor dd ON dd.code = op.doctor
+            WHERE op.vn = o.vn
+              AND op.doctor IS NOT NULL AND op.doctor <> ''
+              AND (${dentalPredicate("dd")} ${OVERRIDE_OP_IN})
+            LIMIT 1)`;
+
+// ตารางชื่อหัตถการ ICD-9 — default icd9_sss ; whitelist กัน SQL injection
 const ICD9_TABLE_WHITELIST = ["icd9cm", "icd9_sss"] as const;
 const DENTAL_ICD9_TABLE = ICD9_TABLE_WHITELIST.includes(
   (process.env.DENTAL_ICD9_TABLE ??
@@ -53,6 +113,9 @@ interface ProcRow extends RowDataPacket {
   vn: string;
   procedure_code: string;
   procedure_name: string;
+  doctor_code: string;
+  doctor_name: string;
+  position_id: string | null;
 }
 interface QueueRow extends RowDataPacket {
   vn: string;
@@ -155,18 +218,31 @@ function classifyRight(pcode: string): string {
   if (p === "A1" || p === "A9") return "จ่ายเอง";
   return "อื่นๆ";
 }
+
+// แยกประเภทบุคลากร — อิง position_id เป็นหลัก, fallback ชื่อ
 function classifyStaff(
   code: string,
   name: string,
   posId: string | null,
 ): StaffType {
+  const pid = posId ? String(posId).trim() : "";
+  const n = (name ?? "").trim();
+
   if (DENTIST_DOCTOR_CODES.includes(code)) return "ทันตแพทย์";
   if (THERAPIST_DOCTOR_CODES.includes(code)) return "ทันตาภิบาล";
-  const n = (name ?? "").trim();
-  if (n.startsWith("ทพ.") || n.startsWith("ทพญ.")) return "ทันตแพทย์";
-  if (posId && DENTIST_POSITION_IDS.includes(String(posId))) return "ทันตแพทย์";
-  if (n.startsWith("ทภ.") || n.includes("ทันตาภิบาล")) return "ทันตาภิบาล";
-  return "ทันตาภิบาล"; // คนในแผนกทันตกรรมที่ไม่ใช่ทันตแพทย์
+
+  if (DENTIST_POSITION_IDS.includes(pid)) return "ทันตแพทย์";
+  if (THERAPIST_POSITION_IDS.includes(pid)) return "ทันตาภิบาล";
+
+  if (n.startsWith("ทพญ.") || n.startsWith("ทพ.")) return "ทันตแพทย์";
+  if (
+    n.startsWith("ทภ.") ||
+    n.includes("ทันตาภิบาล") ||
+    n.includes("ผู้ช่วยทันต")
+  )
+    return "ทันตาภิบาล";
+
+  return "อื่นๆ";
 }
 function classifyShift(vstdate: string, vsttime: string): ShiftCode {
   const dow = new Date(vstdate + "T00:00:00").getDay(); // 0=Sun,6=Sat
@@ -185,70 +261,88 @@ export async function getDentalDashboard(
   start: string,
   end: string,
 ): Promise<DentalDashboardData> {
-  // 1) visits (1 แถว/visit)
+  // 1) visits (1 แถว/visit) — เจ้าของ = คนทำหัตถการทันตกรรม, fallback = หมอหลักถ้าเป็นทันตกรรม
+  //    ตัด VN ที่ไม่มีงานทันตกรรมจริง (doctor_code = NULL) ออกด้วย INNER JOIN ชั้นนอก
   const [visits] = await db.query<VisitRow[]>(
     `
-    SELECT
-      o.vn, o.hn, o.vstdate, o.vsttime,
-      CONCAT(pt.pname, pt.fname, ' ', pt.lname)        AS patient_name,
-      TIMESTAMPDIFF(YEAR, NULLIF(pt.birthday, '0000-00-00'), o.vstdate) AS age,
-      o.doctor                                         AS doctor_code,
-      COALESCE(d.name, o.doctor)                       AS doctor_name,
-      d.position_id                                    AS position_id,
-      COALESCE(v.income, 0)                            AS total_income,
-      COALESCE(ptt.name, '')                           AS pttype_name,
-      COALESCE(v.pcode, '')                            AS pcode,
-      (SELECT os.cc FROM opdscreen os WHERE os.vn = o.vn LIMIT 1) AS chief_complaint
-    FROM ovst o
-    INNER JOIN vn_stat v  ON v.vn  = o.vn
-    INNER JOIN patient pt ON pt.hn = o.hn
-    LEFT  JOIN doctor d   ON d.code = o.doctor
-    LEFT  JOIN pttype ptt ON ptt.pttype = v.pttype
-    WHERE o.vstdate BETWEEN ? AND ?
-      AND o.main_dep = ?
-      AND o.an IS NULL
-    ORDER BY o.vstdate, o.vsttime
+    SELECT x.*, d2.name AS doctor_name, d2.position_id AS position_id
+    FROM (
+      SELECT
+        o.vn, o.hn, o.vstdate, o.vsttime,
+        CONCAT(pt.pname, pt.fname, ' ', pt.lname)        AS patient_name,
+        TIMESTAMPDIFF(YEAR, NULLIF(pt.birthday, '0000-00-00'), o.vstdate) AS age,
+        COALESCE(
+          ${DENTAL_DIAG_DOCTOR_SUBQ},
+          ${DENTAL_OPER_DOCTOR_SUBQ},
+          CASE WHEN ${dentalPredicate("d")} THEN o.doctor END
+        )                                                AS doctor_code,
+        COALESCE(v.income, 0)                            AS total_income,
+        COALESCE(ptt.name, '')                           AS pttype_name,
+        COALESCE(v.pcode, '')                            AS pcode,
+        (SELECT os.cc FROM opdscreen os WHERE os.vn = o.vn LIMIT 1) AS chief_complaint
+      FROM ovst o
+      INNER JOIN vn_stat v  ON v.vn  = o.vn
+      INNER JOIN patient pt ON pt.hn = o.hn
+      LEFT  JOIN doctor d   ON d.code = o.doctor
+      LEFT  JOIN pttype ptt ON ptt.pttype = v.pttype
+      WHERE o.vstdate BETWEEN ? AND ?
+        AND o.main_dep = ?
+        AND o.an IS NULL
+    ) x
+    INNER JOIN doctor d2 ON d2.code = x.doctor_code
+    ORDER BY x.vstdate, x.vsttime
     `,
     [start, end, DENTAL_DEPCODE],
   );
 
-  // 2) procedures (หัตถการจริง ICD-9 ต่อ visit — จาก doctor_operation)
+  // 2) procedures (หัตถการจริง ICD-9) — attribute ตาม "คนทำ" จริง, เก็บเฉพาะบุคลากรทันตกรรม
+  //    งานนวด/แผนไทยที่ทำโดยหมอแผนไทยจะถูกตัดออกอัตโนมัติ
   const [procs] = await db.query<ProcRow[]>(
     `
     SELECT op.vn,
            op.icd9                                  AS procedure_code,
-           COALESCE(NULLIF(ic9.name, ''), op.icd9)  AS procedure_name
+           COALESCE(NULLIF(ic9.name, ''), op.icd9)  AS procedure_name,
+           op.doctor                                AS doctor_code,
+           d.name                                   AS doctor_name,
+           d.position_id                            AS position_id
     FROM doctor_operation op
     INNER JOIN ovst o ON o.vn = op.vn
+    LEFT  JOIN doctor d ON d.code = op.doctor
     LEFT  JOIN ${DENTAL_ICD9_TABLE} ic9 ON ic9.code = op.icd9
     WHERE o.vstdate BETWEEN ? AND ?
       AND o.main_dep = ?
       AND o.an IS NULL
       AND op.icd9 IS NOT NULL AND op.icd9 <> ''
+      AND (${dentalPredicate("d")} ${OVERRIDE_OP_IN})
     `,
     [start, end, DENTAL_DEPCODE],
   );
 
-  // 3) queue (วันนี้)
+  // 3) queue (วันนี้) — เจ้าของ = คนทำหัตถการทันตกรรม, fallback = หมอหลัก (คงผู้รอคิวไว้)
   const dischargedList = DISCHARGED_STATUS.map((s) => `'${s}'`).join(",");
   const [qrows] = await db.query<QueueRow[]>(
     `
-    SELECT
-      o.vn, o.hn,
-      CONCAT(pt.pname, pt.fname, ' ', pt.lname)        AS patient_name,
-      o.doctor                                         AS doctor_code,
-      COALESCE(d.name, o.doctor)                       AS doctor_name,
-      d.position_id                                    AS position_id,
-      o.vsttime                                        AS visit_time,
-      (SELECT os.cc FROM opdscreen os WHERE os.vn = o.vn LIMIT 1) AS chief_complaint
-    FROM ovst o
-    INNER JOIN patient pt ON pt.hn = o.hn
-    LEFT  JOIN doctor d   ON d.code = o.doctor
-    WHERE o.vstdate = CURDATE()
-      AND o.main_dep = ?
-      AND o.an IS NULL
-      AND (o.ovstost IS NULL OR o.ovstost = '' OR o.ovstost NOT IN (${dischargedList}))
-    ORDER BY CAST(o.oqueue AS UNSIGNED), o.vsttime
+    SELECT x.*, d2.name AS doctor_name, d2.position_id AS position_id
+    FROM (
+      SELECT
+        o.vn, o.hn,
+        CONCAT(pt.pname, pt.fname, ' ', pt.lname)        AS patient_name,
+        COALESCE(
+          ${DENTAL_DIAG_DOCTOR_SUBQ},
+          ${DENTAL_OPER_DOCTOR_SUBQ},
+          o.doctor
+        )                                                AS doctor_code,
+        o.vsttime                                        AS visit_time,
+        (SELECT os.cc FROM opdscreen os WHERE os.vn = o.vn LIMIT 1) AS chief_complaint
+      FROM ovst o
+      INNER JOIN patient pt ON pt.hn = o.hn
+      WHERE o.vstdate = CURDATE()
+        AND o.main_dep = ?
+        AND o.an IS NULL
+        AND (o.ovstost IS NULL OR o.ovstost = '' OR o.ovstost NOT IN (${dischargedList}))
+    ) x
+    LEFT JOIN doctor d2 ON d2.code = x.doctor_code
+    ORDER BY x.visit_time
     `,
     [DENTAL_DEPCODE],
   );
@@ -294,7 +388,7 @@ export async function getDentalDashboard(
     ),
   }));
 
-  // procedures by vn
+  // procedures by vn (เฉพาะหัตถการทันตกรรม → ใช้ใน patient_list)
   const procByVn = new Map<string, ProcRow[]>();
   procs.forEach((p) => {
     const arr = procByVn.get(p.vn) || [];
@@ -346,24 +440,16 @@ export async function getDentalDashboard(
     chief_complaint: (q.chief_complaint || "").trim(),
   }));
 
-  // ── procedures: by (doctor, staff, procedure) ──
-  // map vn → {doctor_name, staff_type}
-  const vnMeta = new Map<
-    string,
-    { doctor_name: string; staff_type: StaffType }
-  >();
-  V.forEach((r) =>
-    vnMeta.set(r.vn, { doctor_name: r.doctor_name, staff_type: r.staff_type }),
-  );
+  // ── procedures: by (performer, procedure) ──
   const procAgg = new Map<string, DentalProcRow>();
   procs.forEach((p) => {
-    const meta = vnMeta.get(p.vn);
-    if (!meta) return;
-    const k = `${meta.doctor_name}|${p.procedure_code}`;
+    const dname = (p.doctor_name || p.doctor_code || "ไม่ระบุ").trim();
+    const staff = classifyStaff(p.doctor_code, p.doctor_name, p.position_id);
+    const k = `${dname}|${p.procedure_code}`;
     if (!procAgg.has(k))
       procAgg.set(k, {
-        doctor_name: meta.doctor_name,
-        staff_type: meta.staff_type,
+        doctor_name: dname,
+        staff_type: staff,
         procedure_code: p.procedure_code,
         procedure_name: p.procedure_name,
         count: 0,
