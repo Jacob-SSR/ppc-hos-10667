@@ -150,6 +150,8 @@ export async function queryTrend(
 }
 
 // ─── Query 3: Doctor-level ─────────────────────────────────────────────────────
+// "dept" ตอนนี้เก็บ "ตำแหน่ง" (doctor_position.name) แทนแผนก
+// เรียงตามความสำคัญของตำแหน่ง: แพทย์ → พยาบาลวิชาชีพ → พยาบาลเทคนิค → ทันตแพทย์ → เภสัชกร → เทคนิคการแพทย์ → อื่นๆ → ไม่ระบุ (ท้ายสุด)
 export async function queryDoctors(
   start: string,
   end: string,
@@ -159,7 +161,16 @@ export async function queryDoctors(
     SELECT
       o.doctor                                      AS doctor_code,
       MAX(COALESCE(d.name, o.doctor))             AS doctor_name,
-      MAX(COALESCE(NULLIF(k.department, ''), '')) AS dept,
+      MAX(COALESCE(NULLIF(dp.name, ''), 'ไม่ระบุ')) AS dept,
+      MAX(CASE COALESCE(NULLIF(dp.name, ''), 'ไม่ระบุ')
+            WHEN 'แพทย์'          THEN 1
+            WHEN 'พยาบาลวิชาชีพ'  THEN 2
+            WHEN 'พยาบาลเทคนิค'   THEN 3
+            WHEN 'ทันตแพทย์'      THEN 4
+            WHEN 'เภสัชกร'        THEN 5
+            WHEN 'เทคนิคการแพทย์' THEN 6
+            WHEN 'ไม่ระบุ'        THEN 999
+            ELSE 99 END)                            AS pos_rank,
       COUNT(DISTINCT v.vn)                          AS visits,
       COUNT(DISTINCT CASE WHEN ${URI_COND}   THEN v.vn END) AS uri_total,
       COUNT(DISTINCT CASE WHEN ${URI_COND}   AND atb.vn IS NOT NULL THEN v.vn END) AS uri_rx,
@@ -175,7 +186,7 @@ export async function queryDoctors(
       ON od.vn = v.vn
       AND od.diagtype = '1'
     LEFT JOIN doctor d ON d.code = o.doctor
-    LEFT JOIN kskdepartment k ON k.depcode = o.main_dep
+    LEFT JOIN doctor_position dp ON dp.id = d.position_id
     LEFT JOIN (${atbSubquery(start, end)}) atb ON atb.vn = v.vn
     WHERE v.vstdate BETWEEN ? AND ?
       AND o.an IS NULL
@@ -184,8 +195,7 @@ export async function queryDoctors(
       AND (${URI_COND} OR ${DIA_COND} OR ${WOUND_COND} OR ${PERI_COND})
     GROUP BY o.doctor
     HAVING visits > 0
-    ORDER BY visits DESC
-    LIMIT 20
+    ORDER BY pos_rank ASC, visits DESC
   `,
     [start, end],
   );

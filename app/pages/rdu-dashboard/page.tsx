@@ -20,18 +20,37 @@ const DISEASE_ICONS = { uri: Wind, dia: Droplets, wound: Scissors, peri: Baby } 
 
 type Preset = "6m" | "fiscal" | "custom";
 const PRESETS: { key: Preset; label: string }[] = [
+    { key: "fiscal", label: "ปีงบประมาณ" },
     { key: "6m", label: "6 เดือน" },
-    { key: "fiscal", label: "ปีงบประมาณ 2569" },
     { key: "custom", label: "กำหนดเอง" },
 ];
 
-function getPresetRange(preset: Preset): { start: Date; end: Date } {
+// ปีงบประมาณ (พ.ศ.) ที่เลือกได้
+const FISCAL_YEARS = ["2569", "2568", "2567", "2566", "2565"];
+
+// ปีงบประมาณปัจจุบัน (พ.ศ.) — งบเริ่ม 1 ต.ค.
+function getCurrentFiscalYearBE(): string {
+    const now = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Bangkok" }));
+    const ceYear = now.getMonth() >= 9 ? now.getFullYear() + 1 : now.getFullYear();
+    return String(ceYear + 543);
+}
+
+// ช่วงวันของปีงบ พ.ศ. ที่ระบุ (1 ต.ค. ปีก่อน – 30 ก.ย.) ไม่เกินวันนี้
+function fiscalRange(fyBE: string): { start: Date; end: Date } {
+    const now = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Bangkok" }));
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const ceEnd = Number(fyBE) - 543;        // ปี ค.ศ. ที่ปีงบสิ้นสุด
+    const start = new Date(ceEnd - 1, 9, 1);  // 1 ต.ค. ปีก่อนหน้า
+    const fyEnd = new Date(ceEnd, 8, 30);     // 30 ก.ย.
+    return { start, end: fyEnd < today ? fyEnd : today };
+}
+
+function getPresetRange(preset: Preset, fyBE: string): { start: Date; end: Date } {
     const now = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Bangkok" }));
     const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
     if (preset === "6m") { const s = new Date(today); s.setMonth(s.getMonth() - 6); s.setDate(1); return { start: s, end: today }; }
     // fiscal (และ fallback)
-    const fy = now.getMonth() >= 9 ? now.getFullYear() : now.getFullYear() - 1;
-    return { start: new Date(fy, 9, 1), end: today };
+    return fiscalRange(fyBE);
 }
 
 function fmtDate(d: Date) {
@@ -49,7 +68,8 @@ const TREND_TABS = [
 ];
 
 export default function RduDashboardPage() {
-    const [preset, setPreset] = useState<Preset>("custom");
+    const [preset, setPreset] = useState<Preset>("fiscal");
+    const [fiscalYear, setFiscalYear] = useState<string>(() => getCurrentFiscalYearBE());
     const [customStart, setCustomStart] = useState<Date>(() => getToday());
     const [customEnd, setCustomEnd] = useState<Date>(() => getToday());
     const [depcode, setDepcode] = useState("");
@@ -67,7 +87,7 @@ export default function RduDashboardPage() {
         const { start, end } =
             preset === "custom"
                 ? { start: customStart, end: customEnd }
-                : getPresetRange(preset);
+                : getPresetRange(preset, fiscalYear);
         setLoading(true); setError(null);
         try {
             const params = new URLSearchParams({ start: fmtDate(start), end: fmtDate(end) });
@@ -81,7 +101,7 @@ export default function RduDashboardPage() {
             if (json.doctors.length > 0) { setSelectedDr(json.doctors[0]); setActiveDr(json.doctors[0].doctor_code); }
         } catch (e) { setError((e as Error).message); }
         finally { setLoading(false); }
-    }, [preset, depcode, customStart, customEnd]);
+    }, [preset, depcode, customStart, customEnd, fiscalYear]);
 
     useEffect(() => { fetchData(); }, [fetchData]);
 
@@ -140,11 +160,18 @@ export default function RduDashboardPage() {
                         {data && (
                             <span className="flex items-center gap-1.5 text-xs bg-green-50 border border-green-200 text-gray-500 px-3 py-1.5 rounded-full whitespace-nowrap">
                                 <span className="w-2 h-2 rounded-full bg-green-500 shadow-[0_0_0_3px_rgba(22,163,74,.2)]" />
-                                Live · {updatedAt}
+                                update ล่าสุด · {updatedAt}
                             </span>
                         )}
                         <Dropdown<string> value={depcode} options={RDU_DEPARTMENTS.map(d => ({ key: d.depcode, label: d.label }))} onChange={setDepcode} />
                         <Dropdown<Preset> value={preset} options={PRESETS} onChange={setPreset} />
+                        {preset === "fiscal" && (
+                            <Dropdown<string>
+                                value={fiscalYear}
+                                options={FISCAL_YEARS.map(y => ({ key: y, label: `ปีงบประมาณ ${y}` }))}
+                                onChange={setFiscalYear}
+                            />
+                        )}
                         {preset === "custom" && (
                             <>
                                 <DatePicker
@@ -163,10 +190,10 @@ export default function RduDashboardPage() {
                                 />
                             </>
                         )}
-                        <button onClick={() => alert("Export รายงาน RDU")}
+                        {/* <button onClick={() => alert("Export รายงาน RDU")}
                             className="flex items-center gap-1.5 bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold px-4 py-1.5 rounded-lg transition-colors">
                             <Download size={14} />ส่งออกรายงาน
-                        </button>
+                        </button> */}
                     </div>
                 </div>
                 {error && (

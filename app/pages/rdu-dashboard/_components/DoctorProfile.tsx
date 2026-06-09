@@ -61,7 +61,7 @@ export function DoctorProfile({ dr }: { dr: RduDoctorRow }) {
                 <StatCell label="ฝีเย็บ" total={dr.peri_total} rx={dr.peri_rx} target={TARGETS.peri} />
             </div>
             <div className="text-xs text-gray-500">
-                <strong>Visit:</strong> {dr.visits} ราย &nbsp;·&nbsp; <strong>หน่วย:</strong> {dr.dept || "—"}
+                <strong>Visit:</strong> {dr.visits} ราย &nbsp;·&nbsp; <strong>ตำแหน่ง:</strong> {dr.dept || "—"}
             </div>
         </div>
     );

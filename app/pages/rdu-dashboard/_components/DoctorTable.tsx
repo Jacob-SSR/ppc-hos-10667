@@ -41,7 +41,7 @@ export function DoctorTable({
                 <table className="w-full text-xs border-collapse">
                     <thead>
                         <tr className="bg-green-700 sticky top-0">
-                            {["แพทย์ / ผู้สั่งจ่าย", "หน่วย", "Visit", "URI %", "Diarrhea %", "แผลสด %", "ฝีเย็บ %", "สถานะ"].map(h => (
+                            {["แพทย์ / ผู้สั่งจ่าย", "ตำแหน่ง", "Visit", "URI %", "Diarrhea %", "แผลสด %", "ฝีเย็บ %", "สถานะ"].map(h => (
                                 <th key={h} className="px-3 py-2.5 text-left text-white font-semibold border-r border-green-600 whitespace-nowrap">{h}</th>
                             ))}
                         </tr>
