@@ -2,10 +2,25 @@
 // SQL service สำหรับ Dashboard แพทย์แผนไทย (Thai Traditional Medicine — TTM)
 // แหล่งข้อมูล: ovst (visit + คิว oqueue) + vn_stat (รายได้/สิทธิ์) + patient + doctor + icd101
 //
+// *** การ attribute เจ้าของงาน (สำคัญ) ***
+// ปัญหาเดิม: กรองด้วย o.main_dep = แผนกแผนไทย แล้วยึด o.doctor ตรง ๆ
+// แต่ o.doctor คือ "หมอหลักของ VN" ไม่ใช่คนที่ให้บริการแผนไทยเสมอ
+// เคสคนไข้เข้าหลายคลินิกใน VN เดียว (เช่น แผนไทย + ทันตกรรม) ทำให้งานไปโผล่ใต้หมอผิดคน
+// หรือมีหมอที่ไม่ใช่บุคลากรแผนไทยโผล่ในรายงาน
+// แก้: ยึด "หมอฝั่งแพทย์แผนไทย" ของ VN ตามลำดับ
+//   (1) หมอที่ลงวินิจฉัยใน ovstdiag เป็นบุคลากรแผนไทย (ครอบคลุมทุก visit)
+//   (2) หมอที่ทำหัตถการใน doctor_operation เป็นบุคลากรแผนไทย
+//   (3) หมอหลัก o.doctor เฉพาะเมื่อตัวเองเป็นบุคลากรแผนไทย
+//   - visit ถูกนับเป็นงานแผนไทยก็ต่อเมื่อหาหมอฝั่งแผนไทยเจอ (ไม่งั้นตัดทิ้ง)
+//
 // หมายเหตุ (ปรับให้ตรงกับ master ของ รพ. ก่อนใช้งานจริง):
 //   - TTM_DEPCODE: รหัสแผนกแพทย์แผนไทย (จาก kskdepartment) — รพ.พลับพลาชัย = '023'
-//   - คิว ณ ปัจจุบัน: ดึงจาก ovst.oqueue เฉพาะ visit วันนี้ของแผนก ที่ยังไม่จำหน่าย (ovstost)
-//   - รายได้: ใช้ vn_stat.income (เหมือน dashboard อื่นในระบบ)
+//   - position_id (ตาราง doctor_position): 11 = เจ้าหน้าที่แพทย์แผนไทย
+//   - เติม override รายคนได้ที่ TTM_DOCTOR_CODES ถ้าระบบบันทึกตำแหน่งไม่ตรง
+//   - คิว ณ ปัจจุบัน: ดึงจาก ovst.oqueue เฉพาะ visit วันนี้ของแผนก ที่ยังไม่จำหน่าย
+//     (ยังคงแสดงผู้รอคิวทุกคนตามเดิม ไม่กรองออก)
+//   - รายได้: ใช้ vn_stat.income (ยอดทั้ง VN — กรณีเข้าหลายคลินิกจะรวมคลินิกอื่นด้วย)
+//   - สมมติว่า ovstdiag มีคอลัมน์ doctor และงานแผนไทยลงวินิจฉัยใต้หมอแผนไทย (HOSxP ทั่วไป)
 
 import { db } from "@/lib/db";
 import { RowDataPacket } from "mysql2";
@@ -15,6 +30,48 @@ const TTM_DEPCODE = process.env.TTM_DEPCODE ?? "023";
 
 // สถานะ ovstost ที่ถือว่า "จำหน่าย/เสร็จสิ้น" แล้ว → ไม่เอามาแสดงในคิวรอ
 const DISCHARGED_STATUS = ["99", "98"];
+
+// position_id จากตาราง doctor_position: 11 = เจ้าหน้าที่แพทย์แผนไทย
+const TTM_POSITION_IDS = ["11"];
+// override รายคน (ใส่ doctor.code ถ้าระบบบันทึกตำแหน่งไม่ตรง)
+const TTM_DOCTOR_CODES: string[] = [];
+
+// ── predicate: doctor (alias) เป็นบุคลากรแพทย์แผนไทยหรือไม่ ────────────────────
+function ttmPredicate(alias: string): string {
+  return `(
+    ${alias}.position_id IN (${TTM_POSITION_IDS.map((p) => `'${p}'`).join(",")})
+    OR ${alias}.name LIKE 'พท.%'
+    OR ${alias}.name LIKE 'พทป.%'
+    OR ${alias}.name LIKE 'พ.ท.%'
+    OR ${alias}.name LIKE '%แพทย์แผนไทย%'
+    ${TTM_DOCTOR_CODES.length ? `OR ${alias}.code IN (${TTM_DOCTOR_CODES.map((c) => `'${c}'`).join(",")})` : ""}
+  )`;
+}
+// override บน .doctor ของแต่ละตาราง (เผื่อ override ที่ code)
+const OVERRIDE_OP_IN = TTM_DOCTOR_CODES.length
+  ? `OR op.doctor IN (${TTM_DOCTOR_CODES.map((c) => `'${c}'`).join(",")})`
+  : "";
+const OVERRIDE_OD_IN = TTM_DOCTOR_CODES.length
+  ? `OR od.doctor IN (${TTM_DOCTOR_CODES.map((c) => `'${c}'`).join(",")})`
+  : "";
+
+// subquery: หาหมอ "ฝั่งแพทย์แผนไทย" ของ VN ตามลำดับ (วินิจฉัย → หัตถการ)
+const TTM_DIAG_DOCTOR_SUBQ = `
+          (SELECT od.doctor
+             FROM ovstdiag od
+             JOIN doctor dd ON dd.code = od.doctor
+            WHERE od.vn = o.vn
+              AND od.doctor IS NOT NULL AND od.doctor <> ''
+              AND (${ttmPredicate("dd")} ${OVERRIDE_OD_IN})
+            LIMIT 1)`;
+const TTM_OPER_DOCTOR_SUBQ = `
+          (SELECT op.doctor
+             FROM doctor_operation op
+             JOIN doctor dd ON dd.code = op.doctor
+            WHERE op.vn = o.vn
+              AND op.doctor IS NOT NULL AND op.doctor <> ''
+              AND (${ttmPredicate("dd")} ${OVERRIDE_OP_IN})
+            LIMIT 1)`;
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 interface VisitRow extends RowDataPacket {
@@ -137,30 +194,38 @@ export async function getTtmDashboard(
   start: string,
   end: string,
 ): Promise<TtmDashboardData> {
-  // 1) ดึง visit ทั้งหมดของแผนกแพทย์แผนไทยในช่วงเวลา (OPD เท่านั้น)
+  // 1) ดึง visit ของแผนกแพทย์แผนไทย (OPD) — เจ้าของ = หมอฝั่งแผนไทยจริง
+  //    ตัด VN ที่ไม่มีบุคลากรแผนไทย (doctor_code = NULL) ออกด้วย INNER JOIN ชั้นนอก
   const [visits] = await db.query<VisitRow[]>(
     `
-    SELECT
-      o.vn,
-      o.hn,
-      o.vstdate,
-      o.vsttime,
-      o.doctor                                   AS doctor_code,
-      COALESCE(d.name, o.doctor)                 AS doctor_name,
-      CONCAT(pt.pname, pt.fname, ' ', pt.lname)  AS patient_name,
-      COALESCE(v.income, 0)                      AS revenue,
-      COALESCE(v.pcode, '')                      AS pcode,
-      COALESCE(v.pdx, '')                        AS icd10,
-      COALESCE(NULLIF(ic.tname, ''), ic.name, v.pdx, '') AS icd10_name
-    FROM ovst o
-    INNER JOIN vn_stat v   ON v.vn  = o.vn
-    INNER JOIN patient pt  ON pt.hn = o.hn
-    LEFT  JOIN doctor d    ON d.code = o.doctor
-    LEFT  JOIN icd101 ic   ON ic.code = v.pdx
-    WHERE o.vstdate BETWEEN ? AND ?
-      AND o.main_dep = ?
-      AND o.an IS NULL
-    ORDER BY o.vstdate, o.vsttime
+    SELECT x.*, d2.name AS doctor_name
+    FROM (
+      SELECT
+        o.vn,
+        o.hn,
+        o.vstdate,
+        o.vsttime,
+        COALESCE(
+          ${TTM_DIAG_DOCTOR_SUBQ},
+          ${TTM_OPER_DOCTOR_SUBQ},
+          CASE WHEN ${ttmPredicate("d")} THEN o.doctor END
+        )                                          AS doctor_code,
+        CONCAT(pt.pname, pt.fname, ' ', pt.lname)  AS patient_name,
+        COALESCE(v.income, 0)                      AS revenue,
+        COALESCE(v.pcode, '')                      AS pcode,
+        COALESCE(v.pdx, '')                        AS icd10,
+        COALESCE(NULLIF(ic.tname, ''), ic.name, v.pdx, '') AS icd10_name
+      FROM ovst o
+      INNER JOIN vn_stat v   ON v.vn  = o.vn
+      INNER JOIN patient pt  ON pt.hn = o.hn
+      LEFT  JOIN doctor d    ON d.code = o.doctor
+      LEFT  JOIN icd101 ic   ON ic.code = v.pdx
+      WHERE o.vstdate BETWEEN ? AND ?
+        AND o.main_dep = ?
+        AND o.an IS NULL
+    ) x
+    INNER JOIN doctor d2 ON d2.code = x.doctor_code
+    ORDER BY x.vstdate, x.vsttime
     `,
     [start, end, TTM_DEPCODE],
   );
@@ -270,6 +335,7 @@ export async function getTtmDashboard(
     .slice(0, 10);
 
   // 2) คิว ณ ปัจจุบัน — ดึงจาก ovst.oqueue เฉพาะวันนี้ของแผนก ที่ยังไม่จำหน่าย
+  //    (คงพฤติกรรมเดิม: แสดงผู้รอคิวทุกคน ไม่กรองตามบุคลากร)
   const dischargedList = DISCHARGED_STATUS.map((s) => `'${s}'`).join(",");
   const [queueRows] = await db.query<QueueRow[]>(
     `
