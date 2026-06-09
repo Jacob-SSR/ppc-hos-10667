@@ -248,7 +248,6 @@ export async function queryTopAtb(
       AND (${URI_COND} OR ${DIA_COND} OR ${WOUND_COND} OR ${PERI_COND})
     GROUP BY di.name, op.icode
     ORDER BY rx_count DESC
-    LIMIT 10
   `,
     [start, end],
   );
@@ -292,7 +291,6 @@ export async function queryAtbByDisease(
         AND ${cond}
       GROUP BY di.name, op.icode
       ORDER BY rx_count DESC
-      LIMIT 5
     `,
       [start, end],
     );
