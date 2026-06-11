@@ -1,30 +1,24 @@
 // lib/pt.service.ts
 // SQL service สำหรับ Dashboard กายภาพบำบัด (Physical Therapy — PT/PTA)
-// แหล่งข้อมูล: ovst (visit + คิว oqueue) + vn_stat (รายได้/สิทธิ์) + patient + doctor
-//             + doctor_operation (หัตถการ icd9) + icd9cm (ชื่อหัตถการ)
 //
-// *** การ attribute เจ้าของงาน (สำคัญ) ***
-// ปัญหาเดิม: กรองด้วย o.main_dep = แผนกกายภาพ แล้วยึด o.doctor ตรง ๆ
-// แต่ o.doctor คือ "หมอหลักของ VN" อาจไม่ใช่นักกายภาพที่ให้บริการ
-// เคสคนไข้เข้าหลายคลินิกใน VN เดียว ทำให้งานไปโผล่ใต้คนผิด หรือมีบุคลากรที่ไม่ใช่
-// กายภาพโผล่ในรายงาน
-// แก้: ยึด "บุคลากรกายภาพ" ของ VN ตามลำดับ
-//   (1) คนที่ลงวินิจฉัยใน ovstdiag เป็นบุคลากรกายภาพ
-//   (2) คนที่ทำหัตถการใน doctor_operation เป็นบุคลากรกายภาพ
-//   (3) หมอหลัก o.doctor เฉพาะเมื่อตัวเองเป็นบุคลากรกายภาพ
-//   - visit ถูกนับเป็นงานกายภาพก็ต่อเมื่อหาบุคลากรกายภาพเจอ (ไม่งั้นตัดทิ้ง)
-//     หมายเหตุ: กายภาพลง doctor_operation/ovstdiag น้อย เคสส่วนใหญ่จึงตกที่ข้อ (3)
-//     คือ o.doctor ที่เป็นบุคลากรกายภาพ — ถ้าบุคลากรไม่ได้ตั้ง position/ชื่อให้ตรง
-//     ให้เติม PTA_DOCTOR_CODES หรือ position_id=9 ใน doctor ก่อน ไม่งั้นข้อมูลจะหาย
+// *** เวอร์ชันนี้ยึดตรรกะ "ตามรายงานจริง" ของ HOSxP ***
+// รายงานต้นฉบับนับงานกายภาพแบบนี้:
+//   - ดึงจาก vn_stat โดยตรง (ไม่กรอง o.main_dep)
+//   - visit จะถูกนับก็ต่อเมื่อ "มีรายการใน opitemrece ที่ผู้ลงค่าบริการ position_id = 9"
+//   - attribute เจ้าของงาน = บุคลากรกายภาพที่ลงค่าบริการใน opitemrece (เลือกคนที่คิดเงินมากสุดของ VN)
+//   - รายได้แยกหมวดตาม income code (c13–c16)
+//   - group by vn → 1 แถวต่อ 1 visit
 //
-// หมายเหตุ (ปรับให้ตรงกับ master ของ รพ. ก่อนใช้งานจริง):
-//   - PT_DEPCODE: รหัสแผนกกายภาพบำบัด (จาก kskdepartment) — รพ.พลับพลาชัย = '033'
-//   - position_id (ตาราง doctor_position): 9 = เจ้าหน้าที่กายภาพ (ครอบคลุมทั้ง PT/PTA)
-//   - PT/PTA: แยกจากชื่อ ("กภ." = นักกายภาพ PT, มีคำว่า "ผู้ช่วย" = PTA)
-//     ถ้าต้องการแม่นกว่านี้ ใส่รหัส doctor ของ PTA ลงใน PTA_DOCTOR_CODES
-//   - หัตถการ: ดึงหัตถการแรกของแต่ละ visit จาก doctor_operation (กัน income ซ้ำ)
-//     ชื่อหัตถการ join จากตารางใน PT_ICD9_TABLE (default icd9_sss)
-//   - สมมติว่า ovstdiag มีคอลัมน์ doctor (HOSxP ทั่วไป)
+// ความต่างจากเวอร์ชันเดิม (ที่ทำให้ตัวเลขไม่ตรง 15 vs 11):
+//   เดิม: กรอง o.main_dep = '033' แล้วหาเจ้าของจาก diag/oper/o.doctor + เกณฑ์ position หรือชื่อ กภ.
+//   ใหม่: ยึด opitemrece + position_id = 9 ล้วน (เหมือนรายงาน) → ได้ชุด VN เดียวกับรายงาน
+//
+// หมายเหตุ (ปรับให้ตรง master ของ รพ. ก่อนใช้จริง):
+//   - PT_DEPCODE: ใช้เฉพาะใน query "คิว" (queue) เท่านั้น — query records ไม่ใช้แล้ว
+//   - position_id (ตาราง doctor_position): 9 = เจ้าหน้าที่กายภาพ (PT/PTA)
+//   - หมวดรายได้ (income code) จัดกลุ่มตามรายงานต้นฉบับ: '14' = หมวดกายภาพ/เวชกรรมฟื้นฟู,
+//     '03','04','17' = หมวดยา/เวชภัณฑ์ (ปรับโค้ด/ชื่อได้ตาม master)
+//   - ชื่อหัตถการ join จากตารางใน PT_ICD9_TABLE (default icd9_sss)
 
 import { db } from "@/lib/db";
 import { RowDataPacket } from "mysql2";
@@ -40,46 +34,40 @@ const PT_ICD9_TABLE = ICD9_TABLE_WHITELIST.includes(
   ? (process.env.PT_ICD9_TABLE as string)
   : "icd9_sss";
 
-// ใส่รหัส doctor ที่เป็น "ผู้ช่วยกายภาพ (PTA)" ตรงนี้ ถ้าระบบไม่ได้ระบุในชื่อ
+// ใส่รหัส doctor ที่เป็น "ผู้ช่วยกายภาพ (PTA)" ตรงนี้ ถ้าระบบไม่ได้ตั้ง position_id ให้
+// (ว่างไว้ = ตรงกับรายงานเป๊ะ; ถ้าเติม = ครอบคลุมคนที่ position ไม่ใช่ 9 เพิ่ม)
 const PTA_DOCTOR_CODES: string[] = [];
 
 // position_id จากตาราง doctor_position: 9 = เจ้าหน้าที่กายภาพ
 const PT_POSITION_IDS = ["9"];
 
-// ── predicate: doctor (alias) เป็นบุคลากรกายภาพหรือไม่ ────────────────────────
-function ptPredicate(alias: string): string {
-  return `(
-    ${alias}.position_id IN (${PT_POSITION_IDS.map((p) => `'${p}'`).join(",")})
-    OR ${alias}.name LIKE 'กภ.%'
-    OR ${alias}.name LIKE '%กายภาพ%'
-    ${PTA_DOCTOR_CODES.length ? `OR ${alias}.code IN (${PTA_DOCTOR_CODES.map((c) => `'${c}'`).join(",")})` : ""}
-  )`;
-}
-// override บน .doctor ของแต่ละตาราง (เผื่อ override ที่ code)
-const OVERRIDE_OP_IN = PTA_DOCTOR_CODES.length
-  ? `OR op.doctor IN (${PTA_DOCTOR_CODES.map((c) => `'${c}'`).join(",")})`
+// ── เกณฑ์ "เป็นบุคลากรกายภาพ" บน opitemrece.doctor (alias dd) — ตามรายงาน: position_id เท่านั้น ──
+const PT_POSITION_IN = PT_POSITION_IDS.map((p) => `'${p}'`).join(",");
+const PTA_OR_DD = PTA_DOCTOR_CODES.length
+  ? ` OR dd.code IN (${PTA_DOCTOR_CODES.map((c) => `'${c}'`).join(",")})`
   : "";
-const OVERRIDE_OD_IN = PTA_DOCTOR_CODES.length
-  ? `OR od.doctor IN (${PTA_DOCTOR_CODES.map((c) => `'${c}'`).join(",")})`
-  : "";
+const PT_STAFF_PREDICATE = `(dd.position_id IN (${PT_POSITION_IN})${PTA_OR_DD})`;
 
-// subquery: หา "บุคลากรกายภาพ" ของ VN ตามลำดับ (วินิจฉัย → หัตถการ)
-const PT_DIAG_DOCTOR_SUBQ = `
-          (SELECT od.doctor
-             FROM ovstdiag od
-             JOIN doctor dd ON dd.code = od.doctor
-            WHERE od.vn = o.vn
-              AND od.doctor IS NOT NULL AND od.doctor <> ''
-              AND (${ptPredicate("dd")} ${OVERRIDE_OD_IN})
-            LIMIT 1)`;
-const PT_OPER_DOCTOR_SUBQ = `
-          (SELECT op.doctor
-             FROM doctor_operation op
-             JOIN doctor dd ON dd.code = op.doctor
-            WHERE op.vn = o.vn
-              AND op.doctor IS NOT NULL AND op.doctor <> ''
-              AND (${ptPredicate("dd")} ${OVERRIDE_OP_IN})
-            LIMIT 1)`;
+// EXISTS: visit นี้มีรายการ opitemrece ที่ผู้ลงค่าบริการเป็นบุคลากรกายภาพหรือไม่
+const PT_VISIT_EXISTS = `
+      EXISTS (
+        SELECT 1
+          FROM opitemrece oo
+          JOIN doctor dd ON dd.code = oo.doctor
+         WHERE oo.vn = v.vn
+           AND ${PT_STAFF_PREDICATE}
+      )`;
+
+// เลือกเจ้าของงาน = บุคลากรกายภาพที่คิดเงินมากสุดของ VN
+const PT_STAFF_SUBQ = `
+        (SELECT oo.doctor
+           FROM opitemrece oo
+           JOIN doctor dd ON dd.code = oo.doctor
+          WHERE oo.vn = v.vn
+            AND ${PT_STAFF_PREDICATE}
+          GROUP BY oo.doctor
+          ORDER BY SUM(oo.sum_price) DESC
+          LIMIT 1)`;
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 interface RecordQueryRow extends RowDataPacket {
@@ -89,8 +77,13 @@ interface RecordQueryRow extends RowDataPacket {
   staff_name: string;
   hn: string;
   patient_name: string;
-  income: number;
   pcode: string;
+  pttype: string;
+  pttype_name: string;
+  charge_physio: number; // c13: income '14'
+  charge_drug: number; // c14: income '03','04','17'
+  charge_other: number; // c15: income นอกเหนือจากนั้น
+  charge_total: number; // c16: รวมทั้ง visit
   procedure_code: string;
   procedure_name: string;
 }
@@ -113,7 +106,10 @@ export interface PtRecord {
   right: string;
   procedure: string;
   procedure_name: string;
-  income: number;
+  income: number; // = charge_total (รวมทั้ง visit) เพื่อ backward-compat
+  physioCharge: number; // c13
+  drugCharge: number; // c14
+  otherCharge: number; // c15
   hn: string;
   patient_name: string;
 }
@@ -163,41 +159,46 @@ export async function getPtDashboard(
   start: string,
   end: string,
 ): Promise<PtDashboardData> {
-  // 1) records — 1 แถวต่อ 1 visit ของแผนกกายภาพ เจ้าของ = บุคลากรกายภาพจริง
-  //    ตัด VN ที่ไม่มีบุคลากรกายภาพ (staff_id = NULL) ออกด้วย INNER JOIN ชั้นนอก
+  // 1) records — 1 แถวต่อ 1 visit ที่ "มีบุคลากรกายภาพลงค่าบริการ" (ตามรายงาน)
+  //    ไม่กรอง main_dep, attribute เจ้าของจาก opitemrece, รายได้แยกหมวด c13–c16
   const [rows] = await db.query<RecordQueryRow[]>(
     `
     SELECT x.*, d2.name AS staff_name
     FROM (
       SELECT
-        o.vstdate                                  AS date,
+        v.vstdate                                  AS date,
         o.vsttime,
-        COALESCE(
-          ${PT_DIAG_DOCTOR_SUBQ},
-          ${PT_OPER_DOCTOR_SUBQ},
-          CASE WHEN ${ptPredicate("d")} THEN o.doctor END
-        )                                          AS staff_id,
-        o.hn,
+        ${PT_STAFF_SUBQ}                           AS staff_id,
+        v.hn,
         CONCAT(pt.pname, pt.fname, ' ', pt.lname)  AS patient_name,
-        COALESCE(v.income, 0)                      AS income,
         COALESCE(v.pcode, '')                      AS pcode,
+        v.pttype                                   AS pttype,
+        ptt.name                                   AS pttype_name,
+        COALESCE((SELECT SUM(oo.sum_price) FROM opitemrece oo
+                   WHERE oo.vn = v.vn AND oo.income IN ('14')), 0)                      AS charge_physio,
+        COALESCE((SELECT SUM(oo.sum_price) FROM opitemrece oo
+                   WHERE oo.vn = v.vn AND oo.income IN ('03','04','17')), 0)            AS charge_drug,
+        COALESCE((SELECT SUM(oo.sum_price) FROM opitemrece oo
+                   WHERE oo.vn = v.vn AND oo.income NOT IN ('03','04','17','14')), 0)   AS charge_other,
+        COALESCE((SELECT SUM(oo.sum_price) FROM opitemrece oo
+                   WHERE oo.vn = v.vn), 0)                                              AS charge_total,
         (SELECT op.icd9 FROM doctor_operation op
-          WHERE op.vn = o.vn ORDER BY op.icd9 LIMIT 1)                       AS procedure_code,
+          WHERE op.vn = v.vn ORDER BY op.icd9 LIMIT 1)                                  AS procedure_code,
         (SELECT COALESCE(ic9.name, op.icd9) FROM doctor_operation op
           LEFT JOIN ${PT_ICD9_TABLE} ic9 ON ic9.code = op.icd9
-          WHERE op.vn = o.vn ORDER BY op.icd9 LIMIT 1)                       AS procedure_name
-      FROM ovst o
-      INNER JOIN vn_stat v   ON v.vn  = o.vn
-      INNER JOIN patient pt  ON pt.hn = o.hn
-      LEFT  JOIN doctor d    ON d.code = o.doctor
-      WHERE o.vstdate BETWEEN ? AND ?
-        AND o.main_dep = ?
-        AND o.an IS NULL
+          WHERE op.vn = v.vn ORDER BY op.icd9 LIMIT 1)                                  AS procedure_name
+      FROM vn_stat v
+      LEFT JOIN ovst o     ON o.vn  = v.vn
+      LEFT JOIN patient pt ON pt.hn = v.hn
+      LEFT JOIN pttype ptt ON ptt.pttype = v.pttype
+      WHERE v.vstdate BETWEEN ? AND ?
+        AND ${PT_VISIT_EXISTS}
+      GROUP BY v.vn
     ) x
     INNER JOIN doctor d2 ON d2.code = x.staff_id
     ORDER BY x.date, x.vsttime
     `,
-    [start, end, PT_DEPCODE],
+    [start, end],
   );
 
   const records: PtRecord[] = rows.map((r) => ({
@@ -209,13 +210,16 @@ export async function getPtDashboard(
     right: classifyRight(r.pcode),
     procedure: r.procedure_code || "-",
     procedure_name: r.procedure_name || r.procedure_code || "-",
-    income: Number(r.income) || 0,
+    income: Number(r.charge_total) || 0,
+    physioCharge: Number(r.charge_physio) || 0,
+    drugCharge: Number(r.charge_drug) || 0,
+    otherCharge: Number(r.charge_other) || 0,
     hn: r.hn,
     patient_name: r.patient_name,
   }));
 
   // 2) คิว ณ ปัจจุบัน — ovst.oqueue เฉพาะวันนี้ของแผนก ที่ยังไม่จำหน่าย
-  //    (คงพฤติกรรมเดิม: แสดงผู้รอคิวทุกคน ไม่กรองตามบุคลากร)
+  //    (คงพฤติกรรมเดิม: แสดงผู้รอคิวทุกคน ไม่กรองตามบุคลากร, ยังใช้ main_dep)
   const dischargedList = DISCHARGED_STATUS.map((s) => `'${s}'`).join(",");
   const [qrows] = await db.query<QueueQueryRow[]>(
     `
