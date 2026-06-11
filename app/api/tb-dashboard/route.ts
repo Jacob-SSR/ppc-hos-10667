@@ -1,8 +1,20 @@
 // app/api/tb-dashboard/route.ts
+// อ่านข้อมูลผู้ป่วยวัณโรค (TB) ตรงจาก Google Sheets แบบ real-time
+// (เลิกอ่านไฟล์ data/tb-patients.xlsx) — โครงสร้างเดียวกับ accident-sheets/sepsis-sheets
+// Spreadsheet ID: 10fIHZdlGRqGxlEQg0NFcYHdRzQrI9uc-x2eMQC2ry6I
+// ชีตข้อมูลหลัก = "ผู้ป่วย" (fallback ชีตแรกที่มีคอลัมน์ HN)
 import { NextResponse } from "next/server";
-import { readFileSync, existsSync } from "fs";
-import path from "path";
-import * as XLSX from "xlsx";
+import {
+  getSheetClient,
+  getAllSheetTitles,
+  getValues,
+  toStr,
+  sheetsError,
+} from "@/lib/sheets";
+
+export const dynamic = "force-dynamic";
+
+const SPREADSHEET_ID = process.env.TB_SPREADSHEET_ID!;
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 export interface TBRow {
@@ -22,7 +34,7 @@ export interface TBRow {
   hiv: string;
   lft: string;
   bunCr: string;
-  startDate: string; // "DD/MM/YYYY" Thai year
+  startDate: string; // "YYYY-MM-DD" (ค.ศ.) สำหรับ sort
   outcome: string;
   concludeDate: string;
   note: string;
@@ -70,22 +82,12 @@ export interface TBSummary {
 
 export interface TBDashboardData {
   updatedAt: string;
+  sheetName: string;
   summary: TBSummary;
   rows: TBRow[];
 }
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
-function toStr(v: unknown): string {
-  if (v == null) return "";
-  if (v instanceof Date) return "";
-  return String(v).trim();
-}
-function toNum(v: unknown): number | null {
-  if (v == null || v === "") return null;
-  const n = Number(v);
-  return isNaN(n) ? null : n;
-}
-
+// ─── Normalizers ──────────────────────────────────────────────────────────────
 function normOutcome(raw: string): string {
   const r = raw.trim().toLowerCase();
   if (r === "cured") return "Cured";
@@ -162,16 +164,16 @@ function normUD(v: string): string[] {
   return tags.length > 0 ? tags : ["อื่นๆ"];
 }
 
+// "DD/MM/YYYY" (พ.ศ.) → "YYYY-MM-DD" (ค.ศ.) สำหรับ sort/group
 function parseThaiDateStr(v: unknown): string {
   if (!v) return "";
   const s = String(v).trim();
-  // Format DD/MM/YYYY (Thai year)
   const m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
   if (!m) return s;
   const d = m[1].padStart(2, "0");
   const mo = m[2].padStart(2, "0");
   let y = parseInt(m[3]);
-  if (y > 2400) y -= 543; // convert Thai → CE for sorting
+  if (y > 2400) y -= 543;
   if (y < 1900 || y > 2100) return s;
   return `${y}-${mo}-${d}`;
 }
@@ -198,26 +200,30 @@ function monthLabelFromDate(dateStr: string): string {
   return MONTHS[m - 1] ? `${MONTHS[m - 1]} ${thY}` : `${m}/${thY}`;
 }
 
-// ─── Parse Excel ──────────────────────────────────────────────────────────────
-function parseXlsx(filePath: string): TBRow[] {
-  const buf = readFileSync(filePath);
-  const wb = XLSX.read(buf, { type: "buffer", cellDates: true });
+function toNumOrNull(v: unknown): number | null {
+  if (v == null || v === "") return null;
+  const n = Number(String(v).replace(/,/g, "").trim());
+  return isNaN(n) ? null : n;
+}
 
-  // Find the patient sheet (ผู้ป่วย or first sheet with HN column)
-  let wsName = wb.SheetNames.find(
-    (n) => n.includes("ผู้ป่วย") || n.toLowerCase().includes("patient"),
+// ─── เลือกชีตข้อมูลผู้ป่วย ─────────────────────────────────────────────────────
+async function pickPatientSheet(
+  sheets: Awaited<ReturnType<typeof getSheetClient>>,
+): Promise<string> {
+  const titles = await getAllSheetTitles(sheets, SPREADSHEET_ID);
+  const byName = titles.find(
+    (t) => t.includes("ผู้ป่วย") || t.toLowerCase().includes("patient"),
   );
-  if (!wsName) wsName = wb.SheetNames[0];
-  const ws = wb.Sheets[wsName];
-  const raw = XLSX.utils.sheet_to_json<unknown[]>(ws, {
-    header: 1,
-    defval: null,
-  }) as unknown[][];
+  if (byName) return byName;
+  return titles[0] ?? "ผู้ป่วย";
+}
+
+// ─── Parse จาก Google Sheets values (string[][]) ──────────────────────────────
+function parseRows(raw: string[][]): TBRow[] {
   if (raw.length < 2) return [];
 
-  // Map column headers
-  const header = (raw[0] as unknown[]).map((h) => toStr(h));
-  const col = (kws: string[]) => {
+  const header = raw[0].map((h) => toStr(h));
+  const col = (kws: string[]): number => {
     for (const kw of kws) {
       const i = header.findIndex((h) =>
         h.toLowerCase().includes(kw.toLowerCase()),
@@ -228,7 +234,7 @@ function parseXlsx(filePath: string): TBRow[] {
   };
 
   const cYear = col(["ปีงบ"]);
-  const cHN = col(["hn", "HN"]);
+  const cHN = col(["hn"]);
   const cSitthi = col(["สิทธิ"]);
   const cName = col(["ชื่อ-สกุล", "ชื่อ"]);
   const cAge = col(["อายุ"]);
@@ -248,38 +254,38 @@ function parseXlsx(filePath: string): TBRow[] {
   const cConclude = col(["วันที่สรุป", "วันสรุป"]);
   const cNote = col(["หมายเหตุ", "note"]);
 
+  const get = (r: string[], i: number) => (i >= 0 ? toStr(r[i]) : "");
+
   const rows: TBRow[] = [];
   for (let i = 1; i < raw.length; i++) {
-    const r = raw[i] as unknown[];
-    const hn = toStr(cHN >= 0 ? r[cHN] : null);
-    const name = toStr(cName >= 0 ? r[cName] : null);
+    const r = raw[i];
+    if (!r || r.every((c) => !c || !String(c).trim())) continue;
+
+    const hn = get(r, cHN);
+    const name = get(r, cName);
     if (!hn && !name) continue;
 
-    const startRaw = cStart >= 0 ? toStr(r[cStart]) : "";
-    const concludeRaw = cConclude >= 0 ? toStr(r[cConclude]) : "";
-    const outcomeRaw = toStr(cOutcome >= 0 ? r[cOutcome] : null);
-
     rows.push({
-      year: toStr(cYear >= 0 ? r[cYear] : null) || "2568",
+      year: (get(r, cYear) || "2568").replace(/\.0$/, ""),
       hn,
-      sitthi: toStr(cSitthi >= 0 ? r[cSitthi] : null),
+      sitthi: get(r, cSitthi),
       name,
-      age: cAge >= 0 ? toNum(r[cAge]) : null,
-      tambon: normTambon(toStr(cTambon >= 0 ? r[cTambon] : null)),
-      ud: toStr(cUD >= 0 ? r[cUD] : null),
-      regimen: toStr(cRegimen >= 0 ? r[cRegimen] : null),
-      regType: toStr(cRegType >= 0 ? r[cRegType] : null),
-      cxr: normCXR(toStr(cCXR >= 0 ? r[cCXR] : null)),
-      afb: normAFB(toStr(cAFB >= 0 ? r[cAFB] : null)),
-      culture: toStr(cCulture >= 0 ? r[cCulture] : null),
-      geneExpert: normGX(toStr(cGX >= 0 ? r[cGX] : null)),
-      hiv: normHIV(toStr(cHIV >= 0 ? r[cHIV] : null)),
-      lft: toStr(cLFT >= 0 ? r[cLFT] : null),
-      bunCr: toStr(cBunCr >= 0 ? r[cBunCr] : null),
-      startDate: parseThaiDateStr(startRaw),
-      outcome: normOutcome(outcomeRaw),
-      concludeDate: parseThaiDateStr(concludeRaw),
-      note: toStr(cNote >= 0 ? r[cNote] : null),
+      age: toNumOrNull(get(r, cAge)),
+      tambon: normTambon(get(r, cTambon)),
+      ud: get(r, cUD),
+      regimen: get(r, cRegimen),
+      regType: get(r, cRegType),
+      cxr: normCXR(get(r, cCXR)),
+      afb: normAFB(get(r, cAFB)),
+      culture: get(r, cCulture),
+      geneExpert: normGX(get(r, cGX)),
+      hiv: normHIV(get(r, cHIV)),
+      lft: get(r, cLFT),
+      bunCr: get(r, cBunCr),
+      startDate: parseThaiDateStr(get(r, cStart)),
+      outcome: normOutcome(get(r, cOutcome)),
+      concludeDate: parseThaiDateStr(get(r, cConclude)),
+      note: get(r, cNote),
     });
   }
   return rows;
@@ -323,7 +329,6 @@ function buildYearSummary(year: string, rows: TBRow[]): TBByYear {
       ? Math.round(ages.reduce((s, a) => s + a, 0) / ages.length)
       : 0;
 
-  // Monthly trend
   const monthMap: Record<string, number> = {};
   rows.forEach((r) => {
     const lbl = monthLabelFromDate(r.startDate);
@@ -334,7 +339,6 @@ function buildYearSummary(year: string, rows: TBRow[]): TBByYear {
     count,
   }));
 
-  // Cohort: group by start month × outcome
   const cohortMap: Record<string, Record<string, number>> = {};
   rows.forEach((r) => {
     const lbl = monthLabelFromDate(r.startDate);
@@ -344,7 +348,6 @@ function buildYearSummary(year: string, rows: TBRow[]): TBByYear {
     cohortMap[lbl][o] = (cohortMap[lbl][o] || 0) + 1;
   });
 
-  // U/D aggregation (multi-tag)
   const byUD: Record<string, number> = {};
   rows.forEach((r) => {
     normUD(r.ud).forEach((tag) => {
@@ -352,7 +355,6 @@ function buildYearSummary(year: string, rows: TBRow[]): TBByYear {
     });
   });
 
-  // Regimen: normalize
   const regimenMap: Record<string, number> = {};
   rows.forEach((r) => {
     if (!r.regimen) return;
@@ -414,27 +416,34 @@ function buildSummary(rows: TBRow[]): TBSummary {
 }
 
 // ─── GET ──────────────────────────────────────────────────────────────────────
-export async function GET() {
+export async function GET(req: Request) {
+  const debug = new URL(req.url).searchParams.get("debug") === "1";
+
   try {
-    const filePath = path.join(process.cwd(), "data", "tb-patients.xlsx");
-    if (!existsSync(filePath)) {
-      return NextResponse.json(
-        { error: "ไม่พบไฟล์ data/tb-patients.xlsx — กรุณาอัปโหลดข้อมูลก่อน" },
-        { status: 404 },
-      );
-    }
-    const rows = parseXlsx(filePath);
+    const sheets = await getSheetClient();
+    const sheetName = await pickPatientSheet(sheets);
+    const raw = await getValues(sheets, SPREADSHEET_ID, `${sheetName}!A:Z`);
+
+    const rows = parseRows(raw);
     const summary = buildSummary(rows);
+
+    if (debug) {
+      return NextResponse.json({
+        sheetName,
+        headers: raw[0] ?? [],
+        sampleRow: raw[1] ?? [],
+        totalRows: rows.length,
+        firstRows: rows.slice(0, 3),
+      });
+    }
+
     return NextResponse.json({
       updatedAt: new Date().toISOString(),
+      sheetName,
       summary,
       rows,
     } satisfies TBDashboardData);
   } catch (err) {
-    console.error("TBDashboard error:", err);
-    return NextResponse.json(
-      { error: "Internal Server Error" },
-      { status: 500 },
-    );
+    return sheetsError(err, "TBSheets");
   }
 }
