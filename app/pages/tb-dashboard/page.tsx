@@ -1,17 +1,17 @@
 "use client";
 
-import { useEffect, useState, useCallback, useRef, useMemo } from "react";
-import { motion, AnimatePresence } from "framer-motion";
+import { useEffect, useState, useCallback, useMemo, useRef } from "react";
+import { motion } from "framer-motion";
 import {
     BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid, ResponsiveContainer,
-    PieChart, Pie, Cell, AreaChart, Area, LineChart, Line,
+    PieChart, Pie, Cell, AreaChart, Area, Line,
 } from "recharts";
 import {
-    RefreshCw, UploadCloud, CheckCircle2, XCircle, Info,
+    RefreshCw, CheckCircle2,
     Users, Skull, TrendingUp, Activity, ShieldCheck, Microscope,
     AlertTriangle, HeartPulse, MapPin, Stethoscope,
 } from "lucide-react";
-import type { TBDashboardData, TBSummary, TBRow, TBByYear } from "@/app/api/tb-dashboard/route";
+import type { TBDashboardData, TBRow, TBByYear } from "@/app/api/tb-dashboard/route";
 
 // ─── Colors ───────────────────────────────────────────────────────────────────
 const C = {
@@ -164,73 +164,6 @@ function WhoCards({ yd }: { yd: TBByYear }) {
                     </div>
                 );
             })}
-        </div>
-    );
-}
-
-// ─── Upload ───────────────────────────────────────────────────────────────────
-function UploadDropzone({ onSuccess }: { onSuccess: () => void }) {
-    const inputRef = useRef<HTMLInputElement>(null);
-    const [dragging, setDragging] = useState(false);
-    const [uploading, setUploading] = useState(false);
-    const [result, setResult] = useState<{ ok: boolean; msg: string } | null>(null);
-
-    const upload = useCallback(async (file: File) => {
-        setUploading(true); setResult(null);
-        const form = new FormData(); form.append("file", file);
-        try {
-            const res = await fetch("/api/tb-upload", { method: "POST", body: form, credentials: "include" });
-            const json = await res.json();
-            setResult({ ok: !!json.success, msg: json.message ?? json.error });
-            if (json.success) setTimeout(onSuccess, 600);
-        } catch { setResult({ ok: false, msg: "เชื่อมต่อ server ไม่ได้" }); }
-        finally { setUploading(false); }
-    }, [onSuccess]);
-
-    return (
-        <div className="bg-white border border-gray-200 rounded-2xl p-4 shadow-sm">
-            <div className="flex items-center justify-between mb-3">
-                <p className="text-sm font-semibold text-gray-700">อัปโหลด Excel TB_Editable</p>
-                <span className="text-xs text-gray-400">tb-patients.xlsx</span>
-            </div>
-            <motion.div
-                onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
-                onDragLeave={() => setDragging(false)}
-                onDrop={(e) => { e.preventDefault(); setDragging(false); const f = e.dataTransfer.files[0]; if (f) upload(f); }}
-                onClick={() => !uploading && inputRef.current?.click()}
-                animate={{ borderColor: dragging ? C.teal : "#d1d5db", backgroundColor: dragging ? "#f0faf4" : "#fafafa" }}
-                className="border-2 border-dashed rounded-xl cursor-pointer flex flex-col items-center gap-2 py-5 select-none">
-                <input ref={inputRef} type="file" accept=".xlsx,.xls" className="hidden"
-                    onChange={(e) => { const f = e.target.files?.[0]; if (f) upload(f); e.target.value = ""; }} />
-                <AnimatePresence mode="wait">
-                    {uploading ? (
-                        <motion.div key="up" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="flex flex-col items-center gap-2">
-                            <motion.div animate={{ rotate: 360 }} transition={{ duration: 1, repeat: Infinity, ease: "linear" }}>
-                                <RefreshCw size={24} style={{ color: C.teal }} />
-                            </motion.div>
-                            <p className="text-sm font-semibold" style={{ color: C.teal }}>กำลังอัปโหลด...</p>
-                        </motion.div>
-                    ) : result?.ok ? (
-                        <motion.div key="ok" initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0 }} className="flex flex-col items-center gap-1">
-                            <CheckCircle2 size={24} style={{ color: C.teal }} />
-                            <p className="text-sm font-bold" style={{ color: C.teal }}>{result.msg}</p>
-                            <p className="text-xs text-gray-400 underline cursor-pointer" onClick={(e) => { e.stopPropagation(); setResult(null); }}>อัปโหลดใหม่</p>
-                        </motion.div>
-                    ) : result ? (
-                        <motion.div key="err" initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0 }} className="flex flex-col items-center gap-1">
-                            <XCircle size={24} className="text-red-500" />
-                            <p className="text-sm font-semibold text-red-600">{result.msg}</p>
-                            <p className="text-xs text-gray-500 underline cursor-pointer" onClick={(e) => { e.stopPropagation(); setResult(null); }}>ลองใหม่</p>
-                        </motion.div>
-                    ) : (
-                        <motion.div key="idle" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="flex flex-col items-center gap-1 pointer-events-none">
-                            <UploadCloud size={24} style={{ color: dragging ? C.teal : "#9ca3af" }} />
-                            <p className="text-sm font-semibold text-gray-600">{dragging ? "ปล่อยเพื่ออัปโหลด" : "ลากวางหรือคลิกเลือก"}</p>
-                            <p className="text-xs text-gray-400">ไฟล์ TB_Editable.xlsx — sheet ผู้ป่วย</p>
-                        </motion.div>
-                    )}
-                </AnimatePresence>
-            </motion.div>
         </div>
     );
 }
@@ -408,7 +341,6 @@ function DashboardCharts({ rows, yd }: { rows: TBRow[]; yd: TBByYear }) {
     const regimenData = useMemo(() =>
         Object.entries(yd.byRegimen).sort(([, a], [, b]) => b - a).slice(0, 6) as [string, number][], [yd]);
 
-    // Age distribution
     const ageData = useMemo(() => {
         const groups: Record<string, number> = { "0–19": 0, "20–29": 0, "30–39": 0, "40–49": 0, "50–59": 0, "60–69": 0, "70–79": 0, "80+": 0 };
         rows.forEach((r) => {
@@ -428,7 +360,6 @@ function DashboardCharts({ rows, yd }: { rows: TBRow[]; yd: TBByYear }) {
 
     return (
         <div className="space-y-4">
-            {/* Row 1: Outcome + Monthly trend */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <SectionCard title="ผลการรักษา (Treatment Outcomes)" icon={Activity}>
                     <div className="flex justify-center">
@@ -462,7 +393,6 @@ function DashboardCharts({ rows, yd }: { rows: TBRow[]; yd: TBByYear }) {
                 </SectionCard>
             </div>
 
-            {/* Row 2: RegType + Tambon */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <SectionCard title="ประเภทการขึ้นทะเบียน" icon={Stethoscope}>
                     <HBarList data={regTypeData} colors={PALETTE} />
@@ -475,7 +405,6 @@ function DashboardCharts({ rows, yd }: { rows: TBRow[]; yd: TBByYear }) {
                 </SectionCard>
             </div>
 
-            {/* Row 3: AFB + HIV + Gene Xpert */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <SectionCard title="ผล AFB Smear" icon={Microscope}>
                     <div className="flex justify-center">
@@ -514,7 +443,6 @@ function DashboardCharts({ rows, yd }: { rows: TBRow[]; yd: TBByYear }) {
                 </SectionCard>
             </div>
 
-            {/* Row 4: UD + Regimen + Age */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <SectionCard title="โรคประจำตัว (Comorbidity)" icon={HeartPulse}>
                     <HBarList data={udData} colors={PALETTE} />
@@ -537,7 +465,6 @@ function DashboardCharts({ rows, yd }: { rows: TBRow[]; yd: TBByYear }) {
                 </SectionCard>
             </div>
 
-            {/* Cohort */}
             <div className="bg-white border border-gray-200 rounded-2xl shadow-sm overflow-hidden">
                 <div className="px-5 py-4 border-b border-gray-100 flex items-center gap-2">
                     <Activity size={15} className="text-gray-400" />
@@ -573,27 +500,53 @@ function YearCompareChart({ data }: { data: { year: string; total: number; cured
     );
 }
 
+// ─── Live badge ───────────────────────────────────────────────────────────────
+function LiveBadge() {
+    return (
+        <span className="flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-bold border"
+            style={{ backgroundColor: C.tealL, borderColor: C.teal + "66", color: "#0f766e" }}>
+            <span className="w-1.5 h-1.5 rounded-full bg-teal-500 animate-pulse inline-block" />
+            LIVE
+        </span>
+    );
+}
+
 // ─── Main Page ────────────────────────────────────────────────────────────────
+const REFRESH_MS = 60_000;
+
 export default function TBDashboardPage() {
     const [data, setData] = useState<TBDashboardData | null>(null);
     const [loading, setLoading] = useState(true);
-    const [noFile, setNoFile] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [selectedYear, setSelectedYear] = useState("all");
+    const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-    const fetchData = useCallback(async () => {
-        setLoading(true); setError(null); setNoFile(false);
+    // silent = ดึงเบื้องหลัง (auto-refresh) ไม่ล้างหน้าจอ/ไม่โชว์ spinner เต็ม
+    const fetchData = useCallback(async (silent = false) => {
+        if (!silent) setLoading(true);
+        setError(null);
         try {
             const res = await fetch("/api/tb-dashboard", { credentials: "include" });
-            if (res.status === 404) { setNoFile(true); setLoading(false); return; }
-            if (!res.ok) throw new Error(`HTTP ${res.status}`);
+            if (!res.ok) {
+                const j = await res.json().catch(() => ({}));
+                throw new Error(j.error ?? `HTTP ${res.status}`);
+            }
             const d = await res.json();
             setData(d);
-        } catch (e) { setError((e as Error).message); }
-        finally { setLoading(false); }
+        } catch (e) {
+            if (!silent) setError((e as Error).message);
+        } finally {
+            if (!silent) setLoading(false);
+        }
     }, []);
 
-    useEffect(() => { fetchData(); }, [fetchData]);
+    useEffect(() => {
+        fetchData();
+        timerRef.current = setInterval(() => fetchData(true), REFRESH_MS);
+        return () => {
+            if (timerRef.current) clearInterval(timerRef.current);
+        };
+    }, [fetchData]);
 
     const years = useMemo(() => data?.summary.byYear.map((y) => y.year) ?? [], [data]);
 
@@ -602,11 +555,9 @@ export default function TBDashboardPage() {
         return selectedYear === "all" ? data.rows : data.rows.filter((r) => r.year === selectedYear);
     }, [data, selectedYear]);
 
-    // Active year data (for charts & cohort)
     const activeYD = useMemo((): TBByYear | null => {
         if (!data) return null;
         if (selectedYear === "all") {
-            // Merge all years
             const all = data.summary.byYear;
             if (!all.length) return null;
             const total = activeRows.length;
@@ -623,11 +574,9 @@ export default function TBDashboardPage() {
             const ages = activeRows.map((r) => r.age).filter((a): a is number => a != null && a > 0);
             const avgAge = ages.length > 0 ? Math.round(ages.reduce((s, a) => s + a, 0) / ages.length) : 0;
 
-            // Merge byMonth
             const monthMap: Record<string, number> = {};
             all.forEach((y) => y.byMonth.forEach(({ month, count }) => { monthMap[month] = (monthMap[month] || 0) + count; }));
 
-            // Merge byCohort
             const cohortMap: Record<string, Record<string, number>> = {};
             all.forEach((y) => {
                 Object.entries(y.byCohort).forEach(([m, oc]) => {
@@ -662,16 +611,17 @@ export default function TBDashboardPage() {
             {/* Header */}
             <div className="bg-white border border-gray-200 rounded-2xl shadow-sm px-6 py-4 flex flex-wrap items-center justify-between gap-3">
                 <div>
-                    <h1 className="text-lg font-bold text-gray-800">
+                    <h1 className="text-lg font-bold text-gray-800 flex items-center gap-2 flex-wrap">
                         🫁 แดชบอร์ดผู้ป่วยวัณโรค (TB Dashboard)
-                        {s && <span className="ml-2 text-sm font-normal text-gray-400">· {fmt(s.total)} ราย · {years.length} ปีงบ</span>}
+                        <LiveBadge />
+                        {s && <span className="text-sm font-normal text-gray-400">· {fmt(s.total)} ราย · {years.length} ปีงบ</span>}
                     </h1>
                     <p className="text-xs text-gray-400 mt-0.5">
                         ตามมาตรฐาน WHO / กรมควบคุมโรค · รพ.พลับพลาชัย จ.บุรีรัมย์
                         {data && <span className="ml-2">· อัปเดต {new Date(data.updatedAt).toLocaleString("th-TH")}</span>}
                     </p>
                 </div>
-                <button onClick={fetchData} disabled={loading}
+                <button onClick={() => fetchData()} disabled={loading}
                     className="flex items-center gap-1.5 border border-gray-200 rounded-lg px-3 py-1.5 text-sm text-gray-600 hover:bg-gray-50 disabled:opacity-40">
                     <motion.span animate={loading ? { rotate: 360 } : { rotate: 0 }}
                         transition={loading ? { duration: 0.8, repeat: Infinity, ease: "linear" } : {}}>
@@ -681,16 +631,7 @@ export default function TBDashboardPage() {
                 </button>
             </div>
 
-            {/* Status */}
-            {noFile && !loading && (
-                <div className="bg-amber-50 border border-amber-200 rounded-2xl p-5 flex items-start gap-3">
-                    <Info size={18} className="text-amber-600 shrink-0 mt-0.5" />
-                    <div>
-                        <p className="text-sm font-bold text-amber-800">ยังไม่มีข้อมูล</p>
-                        <p className="text-xs text-amber-700 mt-1">กรุณาอัปโหลดไฟล์ TB_Editable.xlsx ด้านล่าง</p>
-                    </div>
-                </div>
-            )}
+            {/* Error */}
             {error && <div className="bg-red-50 border border-red-200 rounded-2xl p-4 text-sm text-red-700">เกิดข้อผิดพลาด: {error}</div>}
 
             {/* Year Tabs */}
@@ -746,9 +687,6 @@ export default function TBDashboardPage() {
 
             {/* Patient table */}
             {!loading && activeRows.length > 0 && <PatientTable rows={activeRows} />}
-
-            {/* Upload */}
-            <UploadDropzone onSuccess={fetchData} />
         </div>
     );
 }
