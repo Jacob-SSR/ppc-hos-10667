@@ -143,20 +143,28 @@ function DeptModal({
             !(p.cur_dep_code === card.dep_code && !p.isFinished),
     );
 
-    const Row = ({ p, showDest }: { p: DeptPatientRow; showDest?: boolean }) => (
-        <div className="flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-gray-50">
-            <span className="text-xs font-mono text-gray-400 w-12 shrink-0">{p.vsttime}</span>
-            <span className="text-xs font-mono text-gray-500 w-20 shrink-0">{p.hn}</span>
-            <span className="flex-1 text-sm text-gray-800 truncate">{p.patient_name}</span>
-            {showDest ? (
-                <span className="text-[11px] text-gray-500 shrink-0">
-                    {p.isFinished ? p.status : `→ ${p.cur_dep_name}`}
-                </span>
-            ) : (
-                <span className="text-[11px] font-medium text-amber-700 shrink-0">{p.status}</span>
-            )}
-        </div>
-    );
+    const Row = ({ p, showDest }: { p: DeptPatientRow; showDest?: boolean }) => {
+        // ย้ายไปแผนกอื่นจริงไหม (ปลายทางต่างจากการ์ดที่เปิดอยู่)
+        const movedAway = p.cur_dep_code !== card.dep_code;
+        return (
+            <div className="flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-gray-50">
+                <span className="text-xs font-mono text-gray-400 w-12 shrink-0">{p.vsttime}</span>
+                <span className="text-xs font-mono text-gray-500 w-20 shrink-0">{p.hn}</span>
+                <span className="flex-1 text-sm text-gray-800 truncate">{p.patient_name}</span>
+                {showDest ? (
+                    <span className="text-[11px] shrink-0 flex items-center gap-1.5">
+                        {p.isFinished && <span className="text-gray-400">{p.status}</span>}
+                        {/* โชว์ลูกศรเฉพาะตอนย้ายไปแผนกอื่นจริง ไม่ชี้กลับการ์ดตัวเอง */}
+                        {movedAway && (
+                            <span className="font-medium text-gray-600">→ {p.cur_dep_name}</span>
+                        )}
+                    </span>
+                ) : (
+                    <span className="text-[11px] font-medium text-amber-700 shrink-0">{p.status}</span>
+                )}
+            </div>
+        );
+    };
 
     return (
         <AnimatePresence>
@@ -381,8 +389,7 @@ export default function DeptStatusPage() {
                         ))}
                     </div>
                     <p className="text-[11px] text-gray-400 mt-2">
-                        สีส้ม = ยังไม่เสร็จ · สีเทา = เสร็จ/ออกจาก OPD · ปรับเกณฑ์ &quot;เสร็จ&quot; ได้ที่
-                        FINISHED_STATUS_KEYWORDS ใน deptStatus.service.ts
+                        สีส้ม = ยังไม่เสร็จ · สีเทา = เสร็จ/ออกจาก OPD
                     </p>
                 </div>
             )}

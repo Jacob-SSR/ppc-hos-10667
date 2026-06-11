@@ -9,8 +9,9 @@ import type {
 } from "@/lib/deptStatus.types";
 
 /**
- * รายการ keyword ของ "ชื่อสถานะ" (ovstost.name) ที่ถือว่า
- * ผู้ป่วย "เสร็จ / ออกจาก OPD แล้ว"
+ * รายการ keyword ของ "ชื่อสถานะ" (ovstost.name) หรือ "ชื่อแผนกปัจจุบัน"
+ * ที่ถือว่าผู้ป่วย "เสร็จ / ออกจาก OPD แล้ว"
+ * (เช่น แผนกปลายทาง "กลับบ้าน" = ออกจากระบบ ไม่ใช่แผนกตรวจจริง)
  *
  * 👉 ปรับลิสต์นี้ให้ตรงกับชื่อสถานะจริงของโรงพยาบาลได้เลย
  *    (เปิดหน้า dashboard แล้วดูแถว "สถานะผู้ป่วยขณะนี้" หรือเรียก API ?debug=1
@@ -113,7 +114,9 @@ export async function getDeptStatus(date: string): Promise<DeptStatusData> {
     const lastCode = clean(r.last_dep);
     const lastName = clean(r.last_dep_name);
     const status = clean(r.status_name) || "ไม่ระบุ";
-    const finished = isFinishedStatus(status);
+    // ถ้า "แผนกปัจจุบัน" คือจุดออกจากระบบ (เช่น "กลับบ้าน", "จำหน่าย") = ออกไปแล้ว
+    const exitDept = isFinishedStatus(curName);
+    const finished = isFinishedStatus(status) || exitDept;
 
     allVn.add(vn);
     if (finished) totalDone++;
@@ -124,13 +127,15 @@ export async function getDeptStatus(date: string): Promise<DeptStatusData> {
     s.count++;
     statusMap.set(status, s);
 
-    // entered: ทั้ง cur และ last
-    if (curCode) ensure(curCode, curName).entered.add(vn);
+    // entered ของแผนกปัจจุบัน: ข้ามถ้าเป็นแผนกจุดออก (ไม่ต้องมีการ์ด "กลับบ้าน")
+    if (curCode && !exitDept) {
+      ensure(curCode, curName).entered.add(vn);
+      // active: ยังอยู่แผนกนี้ (cur) และยังไม่เสร็จ
+      if (!finished) ensure(curCode, curName).active.add(vn);
+    }
+    // แผนกก่อนหน้า (last) ยังนับเป็น "ผ่าน/เสร็จ" ที่แผนกจริงนั้น
     if (lastCode && lastCode !== curCode)
       ensure(lastCode, lastName).entered.add(vn);
-
-    // active: เฉพาะแผนกที่ยังอยู่ตอนนี้ (cur) และยังไม่เสร็จ
-    if (curCode && !finished) ensure(curCode, curName).active.add(vn);
 
     patients.push({
       vn,
@@ -152,7 +157,8 @@ export async function getDeptStatus(date: string): Promise<DeptStatusData> {
     const entered = a.entered.size;
     const active = a.active.size;
     const done = Math.max(0, entered - active);
-    const percent = entered > 0 ? Math.round((active / entered) * 1000) / 10 : 0;
+    const percent =
+      entered > 0 ? Math.round((active / entered) * 1000) / 10 : 0;
     cards.push({
       dep_code: a.code,
       dep_name: a.name,
