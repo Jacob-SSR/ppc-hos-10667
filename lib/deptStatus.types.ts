@@ -14,6 +14,8 @@ export interface DeptStatusCard {
   done: number;
   /** % = active / entered * 100 */
   percent: number;
+  /** การ์ดรวม "กลับบ้าน / ออกจาก OPD" (ไม่ใช่แผนกจริง) */
+  isExit?: boolean;
 }
 
 /** สถานะผู้ป่วยรายคน (ใช้ใน modal + ตาราง) */

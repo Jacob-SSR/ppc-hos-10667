@@ -118,14 +118,19 @@ export async function getDeptStatus(date: string): Promise<DeptStatusData> {
     const exitDept = isFinishedStatus(curName);
     const finished = isFinishedStatus(status) || exitDept;
 
+    // ป้ายใน "สถานะผู้ป่วยขณะนี้"
+    // - ผู้ที่ออกผ่านแผนกปลายทาง (กลับบ้าน ฯลฯ) จัดกลุ่มเป็นชื่อแผนกนั้น (= "กลับบ้าน")
+    // - Admit แต่ละแผนก / ส่งต่อ ฯลฯ คงชื่อสถานะเดิม → แสดงแยกเป็นป้ายของตัวเอง
+    const statusLabel = exitDept ? curName || status : status;
+
     allVn.add(vn);
     if (finished) totalDone++;
     else totalActive++;
 
     // สรุปตามสถานะ
-    const s = statusMap.get(status) ?? { count: 0, finished };
+    const s = statusMap.get(statusLabel) ?? { count: 0, finished };
     s.count++;
-    statusMap.set(status, s);
+    statusMap.set(statusLabel, s);
 
     // entered ของแผนกปัจจุบัน: ข้ามถ้าเป็นแผนกจุดออก (ไม่ต้องมีการ์ด "กลับบ้าน")
     if (curCode && !exitDept) {
@@ -170,6 +175,22 @@ export async function getDeptStatus(date: string): Promise<DeptStatusData> {
   }
   // เรียง % คงค้างมาก -> น้อย, แล้วค่อยตามจำนวนที่ยังค้าง
   cards.sort((a, b) => b.percent - a.percent || b.active - a.active);
+
+  // ---- การ์ดรวม "กลับบ้าน / ออกจาก OPD" ----
+  // รวมทุกคนที่ออกจาก flow OPD แล้ว = กลับบ้าน + Admit เข้า ward ทุกแผนก
+  // + ส่งต่อ + เสียชีวิต ฯลฯ (= totalDone ตรงกับ KPI "เสร็จ/ออกจาก OPD แล้ว")
+  // วางไว้ท้ายสุดของกริดการ์ดเสมอ
+  if (totalDone > 0) {
+    cards.push({
+      dep_code: "__exit__",
+      dep_name: "กลับบ้าน / ออกจาก OPD",
+      entered: totalDone,
+      active: 0,
+      done: totalDone,
+      percent: 0,
+      isExit: true,
+    });
+  }
 
   // ---- byStatus เรียงจำนวนมาก -> น้อย ----
   const byStatus: DeptStatusCount[] = Array.from(statusMap.entries())

@@ -96,6 +96,39 @@ function Donut({ percent }: { percent: number }) {
 
 // ─── Card ────────────────────────────────────────────────────────
 function DeptCard({ card, onClick }: { card: DeptStatusCard; onClick: () => void }) {
+    // การ์ดรวม "กลับบ้าน / ออกจาก OPD" — แสดงแบบ summary (เครื่องหมายถูกเขียว + จำนวนรวม)
+    if (card.isExit) {
+        return (
+            <div className="bg-white border border-green-200 rounded-xl p-5 flex flex-col items-center gap-3 hover:shadow-md transition-all duration-150">
+                <p className="text-sm font-bold text-gray-800 text-center leading-snug w-full min-h-[2.5rem] flex items-center justify-center">
+                    {card.dep_name}
+                </p>
+
+                <div
+                    style={{ width: SIZE, height: SIZE }}
+                    className="rounded-full bg-green-50 flex items-center justify-center shrink-0"
+                >
+                    <CheckCircle2 size={40} className="text-green-600" strokeWidth={1.8} />
+                </div>
+
+                <p className="text-2xl font-extrabold text-green-700 text-center tabular-nums">
+                    {card.done.toLocaleString()} คน
+                </p>
+                <p className="text-xs font-medium text-gray-500 text-center">
+                    กลับบ้าน /ออกจาก OPD แล้ว
+                </p>
+
+                <button
+                    onClick={onClick}
+                    disabled={card.done === 0}
+                    className="border border-gray-300 rounded-full px-5 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-100 transition-all flex items-center gap-1 disabled:opacity-40"
+                >
+                    รายละเอียด <ArrowRight size={13} />
+                </button>
+            </div>
+        );
+    }
+
     return (
         <div className="bg-white border border-gray-200 rounded-xl p-5 flex flex-col items-center gap-3 hover:shadow-md transition-all duration-150">
             <p className="text-sm font-bold text-gray-800 text-center leading-snug w-full min-h-[2.5rem] flex items-center justify-center">
@@ -132,16 +165,26 @@ function DeptModal({
     patients: DeptPatientRow[];
     onClose: () => void;
 }) {
+    const isExit = !!card.isExit;
+
+    // การ์ดรวม "กลับบ้าน / ออกจาก OPD": แสดงทุกคนที่ออกจาก OPD แล้ว
+    const exitList = isExit ? patients.filter((p) => p.isFinished) : [];
+
     // ยังอยู่แผนกนี้ (ยังไม่เสร็จ)
-    const here = patients.filter(
-        (p) => p.cur_dep_code === card.dep_code && !p.isFinished,
-    );
+    const here = isExit
+        ? []
+        : patients.filter(
+            (p) => p.cur_dep_code === card.dep_code && !p.isFinished,
+        );
     // ผ่านแผนกนี้ไปแล้ว: เคยมี cur หรือ last = แผนกนี้ แต่ตอนนี้ไม่ได้อยู่ที่นี่/เสร็จแล้ว
-    const moved = patients.filter(
-        (p) =>
-            (p.last_dep_code === card.dep_code || p.cur_dep_code === card.dep_code) &&
-            !(p.cur_dep_code === card.dep_code && !p.isFinished),
-    );
+    const moved = isExit
+        ? []
+        : patients.filter(
+            (p) =>
+                (p.last_dep_code === card.dep_code ||
+                    p.cur_dep_code === card.dep_code) &&
+                !(p.cur_dep_code === card.dep_code && !p.isFinished),
+        );
 
     const Row = ({ p, showDest }: { p: DeptPatientRow; showDest?: boolean }) => {
         // ย้ายไปแผนกอื่นจริงไหม (ปลายทางต่างจากการ์ดที่เปิดอยู่)
@@ -165,6 +208,16 @@ function DeptModal({
             </div>
         );
     };
+
+    // แถวสำหรับการ์ดรวม "ออกจาก OPD" — โชว์สถานะ/ปลายทางที่ออกไป
+    const ExitRow = ({ p }: { p: DeptPatientRow }) => (
+        <div className="flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-gray-50">
+            <span className="text-xs font-mono text-gray-400 w-12 shrink-0">{p.vsttime}</span>
+            <span className="text-xs font-mono text-gray-500 w-20 shrink-0">{p.hn}</span>
+            <span className="flex-1 text-sm text-gray-800 truncate">{p.patient_name}</span>
+            <span className="text-[11px] font-medium text-gray-500 shrink-0">{p.status}</span>
+        </div>
+    );
 
     return (
         <AnimatePresence>
@@ -192,13 +245,21 @@ function DeptModal({
                 >
                     {/* header */}
                     <div className="bg-white border-b border-gray-100 px-5 py-4 shrink-0 flex items-center gap-3">
-                        <div className="w-9 h-9 rounded-xl bg-green-700 flex items-center justify-center shrink-0">
-                            <Users size={16} className="text-white" />
+                        <div
+                            className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${isExit ? "bg-green-600" : "bg-green-700"}`}
+                        >
+                            {isExit ? (
+                                <CheckCircle2 size={16} className="text-white" />
+                            ) : (
+                                <Users size={16} className="text-white" />
+                            )}
                         </div>
                         <div className="flex-1 min-w-0">
                             <h2 className="text-sm font-bold text-gray-900 truncate">{card.dep_name}</h2>
                             <p className="text-[11px] text-gray-400">
-                                ยังอยู่แผนกนี้ {card.active} · เข้าทั้งหมด {card.entered} · คงค้าง {card.percent}%
+                                {isExit
+                                    ? `ออกจาก OPD แล้ว ${card.done} คน (กลับบ้าน + Admit + ส่งต่อ ฯลฯ)`
+                                    : `ยังอยู่แผนกนี้ ${card.active} · เข้าทั้งหมด ${card.entered} · คงค้าง ${card.percent}%`}
                             </p>
                         </div>
                         <button
@@ -211,33 +272,52 @@ function DeptModal({
 
                     {/* body */}
                     <div className="flex-1 overflow-y-auto px-4 py-4 space-y-4">
-                        <div>
-                            <p className="text-[11px] font-bold uppercase tracking-widest text-amber-600 mb-1 px-1">
-                                ยังอยู่แผนกนี้ ({here.length})
-                            </p>
-                            <div className="bg-white border border-gray-100 rounded-xl divide-y divide-gray-50">
-                                {here.length === 0 ? (
-                                    <p className="text-xs text-gray-400 text-center py-6">ไม่มีคนค้าง</p>
-                                ) : (
-                                    here.map((p, i) => <Row key={`here-${p.vn}-${p.hn}-${i}`} p={p} />)
-                                )}
+                        {isExit ? (
+                            <div>
+                                <p className="text-[11px] font-bold uppercase tracking-widest text-green-600 mb-1 px-1">
+                                    ออกจาก OPD แล้ว ({exitList.length})
+                                </p>
+                                <div className="bg-white border border-gray-100 rounded-xl divide-y divide-gray-50">
+                                    {exitList.length === 0 ? (
+                                        <p className="text-xs text-gray-400 text-center py-6">—</p>
+                                    ) : (
+                                        exitList.map((p, i) => (
+                                            <ExitRow key={`exit-${p.vn}-${p.hn}-${i}`} p={p} />
+                                        ))
+                                    )}
+                                </div>
                             </div>
-                        </div>
+                        ) : (
+                            <>
+                                <div>
+                                    <p className="text-[11px] font-bold uppercase tracking-widest text-amber-600 mb-1 px-1">
+                                        ยังอยู่แผนกนี้ ({here.length})
+                                    </p>
+                                    <div className="bg-white border border-gray-100 rounded-xl divide-y divide-gray-50">
+                                        {here.length === 0 ? (
+                                            <p className="text-xs text-gray-400 text-center py-6">ไม่มีคนค้าง</p>
+                                        ) : (
+                                            here.map((p, i) => <Row key={`here-${p.vn}-${p.hn}-${i}`} p={p} />)
+                                        )}
+                                    </div>
+                                </div>
 
-                        <div>
-                            <p className="text-[11px] font-bold uppercase tracking-widest text-gray-400 mb-1 px-1">
-                                ผ่านแผนกนี้ไปแล้ว ({moved.length})
-                            </p>
-                            <div className="bg-white border border-gray-100 rounded-xl divide-y divide-gray-50">
-                                {moved.length === 0 ? (
-                                    <p className="text-xs text-gray-400 text-center py-6">—</p>
-                                ) : (
-                                    moved.map((p, i) => (
-                                        <Row key={`moved-${p.vn}-${p.hn}-${i}`} p={p} showDest />
-                                    ))
-                                )}
-                            </div>
-                        </div>
+                                <div>
+                                    <p className="text-[11px] font-bold uppercase tracking-widest text-gray-400 mb-1 px-1">
+                                        ผ่านแผนกนี้ไปแล้ว ({moved.length})
+                                    </p>
+                                    <div className="bg-white border border-gray-100 rounded-xl divide-y divide-gray-50">
+                                        {moved.length === 0 ? (
+                                            <p className="text-xs text-gray-400 text-center py-6">—</p>
+                                        ) : (
+                                            moved.map((p, i) => (
+                                                <Row key={`moved-${p.vn}-${p.hn}-${i}`} p={p} showDest />
+                                            ))
+                                        )}
+                                    </div>
+                                </div>
+                            </>
+                        )}
                     </div>
                 </motion.div>
             </div>
@@ -263,9 +343,13 @@ export default function DeptStatusPage() {
 
     const infoLabel = toThaiDate(fmtDate(activeDate));
     const cards = data?.cards ?? [];
-    // เรียง % คงค้างมากไปน้อย (100% บนสุด) ใช้ร่วมกันทั้งการ์ดและตาราง
+    // เรียง % คงค้างมากไปน้อย — การ์ดรวม "ออกจาก OPD" (isExit) อยู่ท้ายสุดเสมอ
     const sortedCards = useMemo(
-        () => [...cards].sort((a, b) => b.percent - a.percent || b.active - a.active),
+        () =>
+            [...cards].sort((a, b) => {
+                if (!!a.isExit !== !!b.isExit) return a.isExit ? 1 : -1;
+                return b.percent - a.percent || b.active - a.active;
+            }),
         [cards],
     );
     const patients = useMemo(() => data?.patients ?? [], [data]);
@@ -324,20 +408,10 @@ export default function DeptStatusPage() {
                     </div>
                 </div>
 
-                {/* Info + legend */}
-                <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-sm text-[#717171]">
-                    <span className="flex items-center gap-2">
-                        <Info size={14} />
-                        แสดงข้อมูล: <span className="font-bold">{infoLabel}</span>
-                    </span>
-                    <span className="flex items-center gap-3 text-xs ml-auto">
-                        {LEGEND.map((l) => (
-                            <span key={l.label} className="flex items-center gap-1.5">
-                                <span className="w-3 h-3 rounded-sm inline-block" style={{ background: l.color }} />
-                                {l.label}
-                            </span>
-                        ))}
-                    </span>
+                {/* Info */}
+                <div className="flex items-center gap-2 text-sm text-[#717171]">
+                    <Info size={14} />
+                    แสดงข้อมูล: <span className="font-bold">{infoLabel}</span>
                 </div>
             </div>
 
@@ -353,7 +427,7 @@ export default function DeptStatusPage() {
                 />
                 <KpiCard
                     icon={Hourglass}
-                    label="ยังไม่เสร็จ (กำลังรับบริการ)"
+                    label="กำลังรับบริการ"
                     value={(data?.totalActive ?? 0).toLocaleString()}
                     sub="ยังอยู่ในระบบ"
                     accent="#b45309"
@@ -361,7 +435,7 @@ export default function DeptStatusPage() {
                 />
                 <KpiCard
                     icon={CheckCircle2}
-                    label="เสร็จ/ออกจาก OPD แล้ว"
+                    label="กลับบ้าน /ออกจาก OPD แล้ว"
                     value={(data?.totalDone ?? 0).toLocaleString()}
                     accent="#15803d"
                     bg="#ecfdf5"
@@ -388,9 +462,24 @@ export default function DeptStatusPage() {
                             </span>
                         ))}
                     </div>
-                    <p className="text-[11px] text-gray-400 mt-2">
-                        สีส้ม = ยังไม่เสร็จ · สีเทา = เสร็จ/ออกจาก OPD
-                    </p>
+
+                    {/* Legends — สถานะ + ระดับ % คงค้าง (ย้ายมาจาก header) */}
+                    <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 mt-3 pt-3 border-t border-gray-100">
+                        <span className="text-[11px] text-gray-400">
+                            สีส้ม = กำลังรับบริการ · สีเทา = เสร็จ/ออกจาก OPD
+                        </span>
+                        <span className="flex flex-wrap items-center gap-3 text-[11px] text-gray-400 sm:ml-auto">
+                            {LEGEND.map((l) => (
+                                <span key={l.label} className="flex items-center gap-1.5">
+                                    <span
+                                        className="w-3 h-3 rounded-sm inline-block"
+                                        style={{ background: l.color }}
+                                    />
+                                    {l.label}
+                                </span>
+                            ))}
+                        </span>
+                    </div>
                 </div>
             )}
 
@@ -420,7 +509,7 @@ export default function DeptStatusPage() {
                         ))}
                     </div>
 
-                    {/* Summary table */}
+                    {/* Summary table — ไม่รวมการ์ด "ออกจาก OPD" (เป็น summary แยก) */}
                     <div className="bg-white border border-gray-200 rounded-xl shadow-sm p-5">
                         <h2 className="text-sm font-bold text-gray-600 mb-3">
                             สรุปสถานะตามแผนก (เรียง % คงค้างมากไปน้อย)
@@ -443,7 +532,7 @@ export default function DeptStatusPage() {
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    {sortedCards.map((c, i) => (
+                                    {sortedCards.filter((c) => !c.isExit).map((c, i) => (
                                         <tr
                                             key={c.dep_code}
                                             onClick={() => setSelected(c)}
