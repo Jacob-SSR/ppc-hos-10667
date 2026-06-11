@@ -66,6 +66,12 @@ export const DASHBOARD_GROUPS: SidebarSubGroup[] = [
         group: "main",
       },
       {
+        label: "สถานะผู้ป่วยตามแผนก",
+        href: "/pages/dept-status",
+        icon: Activity,
+        group: "main"
+      },
+      {
         label: "สถิติผู้รับบริการแยกเวร",
         href: "/pages/shift-stats",
         icon: BarChart3,
