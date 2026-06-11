@@ -1,8 +1,3 @@
-// app/api/tb-dashboard/route.ts
-// อ่านข้อมูลผู้ป่วยวัณโรค (TB) ตรงจาก Google Sheets แบบ real-time
-// (เลิกอ่านไฟล์ data/tb-patients.xlsx) — โครงสร้างเดียวกับ accident-sheets/sepsis-sheets
-// Spreadsheet ID: 10fIHZdlGRqGxlEQg0NFcYHdRzQrI9uc-x2eMQC2ry6I
-// ชีตข้อมูลหลัก = "ผู้ป่วย" (fallback ชีตแรกที่มีคอลัมน์ HN)
 import { NextResponse } from "next/server";
 import {
   getSheetClient,
