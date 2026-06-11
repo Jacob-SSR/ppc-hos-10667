@@ -8,17 +8,29 @@ import {
   UserCheck,
   Users,
   HeartPulse,
-  Activity,
+  Stethoscope,
+  Dumbbell,
+  Leaf,
+  Building2,
+  Monitor,
   Baby,
   BedDouble,
   UserMinus,
   AlertTriangle,
   Banknote,
   Wallet,
+  Receipt,
+  Landmark,
   Settings,
   UserSearch,
   Pill,
   Brain,
+  Microscope,
+  Scissors,
+  Ambulance,
+  Droplet,
+  Droplets,
+  HeartHandshake,
   Syringe,
 } from "lucide-react";
 
@@ -44,31 +56,31 @@ export const DASHBOARD_GROUPS: SidebarSubGroup[] = [
       {
         label: "IMC",
         href: "/pages/imc-dashboard",
-        icon: Activity,
+        icon: Stethoscope,
         group: "main"
       },
       {
         label: "กายภาพบำบัด",
         href: "/pages/pt-dashboard",
-        icon: Activity,
+        icon: Dumbbell,
         group: "main",
       },
       {
         label: "ทันตกรรม",
         href: "/pages/dental-dashboard",
-        icon: Activity,
+        icon: Smile,
         group: "main",
       },
       {
         label: "แพทย์แผนไทย",
         href: "/pages/ttm-dashboard",
-        icon: Activity,
+        icon: Leaf,
         group: "main",
       },
       {
         label: "สถานะผู้ป่วยตามแผนก",
         href: "/pages/dept-status",
-        icon: Activity,
+        icon: Building2,
         group: "main"
       },
       {
@@ -80,7 +92,7 @@ export const DASHBOARD_GROUPS: SidebarSubGroup[] = [
       {
         label: "บันทึกงาน IT",
         href: "/pages/it-worklog",
-        icon: Activity,
+        icon: Monitor,
         group: "main",
       },
       {
@@ -111,13 +123,13 @@ export const DASHBOARD_GROUPS: SidebarSubGroup[] = [
       {
         label: "DMTB",
         href: "/pages/dmtb-dashboard",
-        icon: Activity,
+        icon: Receipt,
         group: "claim",
       },
       {
         label: "KTB",
         href: "/pages/ktb-dashboard",
-        icon: Wallet,
+        icon: Landmark,
         group: "claim",
       },
       {
@@ -137,7 +149,7 @@ export const DASHBOARD_GROUPS: SidebarSubGroup[] = [
       {
         label: "วัณโรค (TB)",
         href: "/pages/tb-dashboard",
-        icon: Activity,
+        icon: Microscope,
         group: "disease",
       },
       {
@@ -149,19 +161,19 @@ export const DASHBOARD_GROUPS: SidebarSubGroup[] = [
       {
         label: "ผู้ป่วยยาเสพติด",
         href: "/pages/drug-dashboard",
-        icon: Activity,
+        icon: Syringe,
         group: "disease",
       },
       {
         label: "หัตถการเสี่ยงสูง",
         href: "/pages/high-risk-procedures",
-        icon: Activity,
+        icon: Scissors,
         group: "disease",
       },
       {
         label: "อุบัติเหตุ",
         href: "/pages/accident-dashboard",
-        icon: AlertTriangle,
+        icon: Ambulance,
         group: "disease",
       },
       {
@@ -180,7 +192,7 @@ export const DASHBOARD_GROUPS: SidebarSubGroup[] = [
       {
         label: "Sepsis",
         href: "/pages/sepsis-dashboard",
-        icon: Activity,
+        icon: Droplets,
         group: "disease",
       },
 
@@ -287,7 +299,7 @@ export const PPA_ITEMS: SidebarItem[] = [
   {
     label: "NCD02 (R73/R030)",
     href: "/pages/ppa/ncd02",
-    icon: Activity,
+    icon: Droplet,
     desc: "วินิจฉัย R73 หรือ R030",
     group: "ppa",
   },
@@ -308,7 +320,7 @@ export const PPA_ITEMS: SidebarItem[] = [
   {
     label: "MCH03 (วางแผนครอบครัว)",
     href: "/pages/ppa/mch-woman",
-    icon: Baby,
+    icon: HeartHandshake,
     desc: "คุมกำเนิด/วางแผนครอบครัว อายุ 15-49 ปี",
     group: "ppa",
   },
