@@ -8,7 +8,7 @@ export interface DeptStatusCard {
   dep_name: string;
   /** เข้าแผนกนี้ทั้งหมดวันนี้ (cur_dep = X หรือ last_dep = X) — ตัวหาร */
   entered: number;
-  /** ยังไม่เสร็จ = ยังอยู่แผนกนี้ (cur_dep = X) และยังไม่ถูกจำหน่าย — ตัวตั้ง */
+  /** ยังไม่เสร็จ = ยังอยู่แผนกนี้ (cur_dep = X) และสถานะยังไม่ "เสร็จ" — ตัวตั้ง */
   active: number;
   /** เสร็จ/ผ่านแผนกนี้ไปแล้ว = entered - active */
   done: number;
@@ -25,20 +25,28 @@ export interface DeptPatientRow {
   cur_dep_name: string;
   last_dep_code: string;
   last_dep_name: string;
-  /** label สถานะ (จาก ovstost.name หรือ "เสร็จ/จำหน่าย") */
+  /** ชื่อสถานะจริง (ovstost.name) เช่น "รอรับยา", "ตรวจแล้ว", "Admit แผนก..." */
   status: string;
-  /** ถูกจำหน่ายออกจาก OPD แล้วหรือยัง */
-  isDischarged: boolean;
+  /** สถานะนี้ถือว่า "เสร็จ/ออกจาก OPD แล้ว" หรือยัง */
+  isFinished: boolean;
   vsttime: string;
+}
+
+/** จำนวนผู้ป่วยแยกตามชื่อสถานะ (ovstost.name) */
+export interface DeptStatusCount {
+  name: string;
+  count: number;
+  finished: boolean;
 }
 
 /** payload รวมที่ API ส่งกลับ */
 export interface DeptStatusData {
   updatedAt: string;
   date: string; // YYYY-MM-DD (ค.ศ.)
-  totalVisits: number; // ผู้รับบริการ OPD ทั้งหมดของวันนั้น
+  totalVisits: number; // ผู้รับบริการทั้งหมดของวันนั้น
   totalActive: number; // ยังไม่เสร็จทั้งโรงพยาบาล
-  totalDone: number; // เสร็จ/จำหน่ายแล้ว
+  totalDone: number; // เสร็จ/ออกจาก OPD แล้ว
   cards: DeptStatusCard[];
   patients: DeptPatientRow[];
+  byStatus: DeptStatusCount[]; // สรุปตามชื่อสถานะ (เรียงมากไปน้อย)
 }

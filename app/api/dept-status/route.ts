@@ -1,46 +1,37 @@
 // app/api/dept-status/route.ts
-// Dashboard สถานะผู้ป่วยตามแผนก (OPD real-time)
-// รับ ?date=YYYY-MM-DD (default = วันนี้ใน timezone Asia/Bangkok)
-//      &debug=1 เพื่อดู sample
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { getDeptStatus } from "@/lib/deptStatus.service";
+import { fmtDate, getBangkokToday } from "@/lib/thaiDate";
 
 export const dynamic = "force-dynamic";
 
-function bangkokToday(): string {
-  const now = new Date(
-    new Date().toLocaleString("en-US", { timeZone: "Asia/Bangkok" }),
-  );
-  const y = now.getFullYear();
-  const m = String(now.getMonth() + 1).padStart(2, "0");
-  const d = String(now.getDate()).padStart(2, "0");
-  return `${y}-${m}-${d}`;
-}
-
-export async function GET(req: Request) {
+export async function GET(req: NextRequest) {
   try {
     const { searchParams } = new URL(req.url);
-    const date = searchParams.get("date") || bangkokToday();
-    const debug = searchParams.get("debug") === "1";
+    // getBangkokToday() คืนค่าเป็น Date -> แปลงเป็น "YYYY-MM-DD" ด้วย fmtDate
+    const date = searchParams.get("date") || fmtDate(getBangkokToday());
+    const debug = searchParams.get("debug");
 
     const data = await getDeptStatus(date);
 
     if (debug) {
+      // โหมด debug: ดูชื่อสถานะทั้งหมด + ตัวอย่างผู้ป่วย ไว้ปรับ keyword
       return NextResponse.json({
-        date,
+        date: data.date,
         totalVisits: data.totalVisits,
         totalActive: data.totalActive,
-        cardCount: data.cards.length,
-        cards: data.cards,
-        samplePatients: data.patients.slice(0, 10),
+        totalDone: data.totalDone,
+        byStatus: data.byStatus,
+        sampleCards: data.cards.slice(0, 5),
+        samplePatients: data.patients.slice(0, 20),
       });
     }
 
     return NextResponse.json(data);
-  } catch (error) {
-    console.error("DeptStatus API error:", error);
+  } catch (err) {
+    console.error("[dept-status] error:", err);
     return NextResponse.json(
-      { error: "Internal Server Error" },
+      { error: "failed to load dept status", detail: String(err) },
       { status: 500 },
     );
   }

@@ -33,7 +33,7 @@ import type {
     DeptPatientRow,
 } from "@/lib/deptStatus.types";
 
-// ─── สีตาม % คนค้าง ──────────────────────────────────────────────────────────
+// ─── สีตาม % คนค้าง ──────────────────────────────────────────────
 function barColor(pct: number): string {
     if (pct >= 70) return "#ef4444"; // ค้างเยอะ
     if (pct >= 40) return "#f59e0b"; // ปานกลาง
@@ -45,7 +45,7 @@ function textColor(pct: number): string {
     return "#15803d";
 }
 
-// ─── Donut ───────────────────────────────────────────────────────────────────
+// ─── Donut ───────────────────────────────────────────────────────
 const SIZE = 88;
 const R = 36;
 const STROKE = 7;
@@ -94,7 +94,7 @@ function Donut({ percent }: { percent: number }) {
     );
 }
 
-// ─── Card ────────────────────────────────────────────────────────────────────
+// ─── Card ────────────────────────────────────────────────────────
 function DeptCard({ card, onClick }: { card: DeptStatusCard; onClick: () => void }) {
     return (
         <div className="bg-white border border-gray-200 rounded-xl p-5 flex flex-col items-center gap-3 hover:shadow-md transition-all duration-150">
@@ -105,7 +105,7 @@ function DeptCard({ card, onClick }: { card: DeptStatusCard; onClick: () => void
             <Donut percent={card.percent} />
 
             <p className="text-sm font-bold text-gray-800 text-center">
-                ยังไม่เสร็จ {card.active}/{card.entered} คน
+                ยังอยู่ในแผนกนี้ {card.active}/{card.entered} คน
             </p>
             <p className="text-xs font-medium text-gray-500 text-center">
                 (เสร็จ/ผ่านไปแล้ว {card.done})
@@ -122,7 +122,7 @@ function DeptCard({ card, onClick }: { card: DeptStatusCard; onClick: () => void
     );
 }
 
-// ─── Detail Modal ────────────────────────────────────────────────────────────
+// ─── Detail Modal ────────────────────────────────────────────────
 function DeptModal({
     card,
     patients,
@@ -132,15 +132,15 @@ function DeptModal({
     patients: DeptPatientRow[];
     onClose: () => void;
 }) {
-    // ยังอยู่แผนกนี้ (ยังไม่จำหน่าย)
+    // ยังอยู่แผนกนี้ (ยังไม่เสร็จ)
     const here = patients.filter(
-        (p) => p.cur_dep_code === card.dep_code && !p.isDischarged,
+        (p) => p.cur_dep_code === card.dep_code && !p.isFinished,
     );
-    // ผ่านแผนกนี้ไปแล้ว: เคยมี cur หรือ last = แผนกนี้ แต่ตอนนี้ไม่ได้อยู่/จำหน่ายแล้ว
+    // ผ่านแผนกนี้ไปแล้ว: เคยมี cur หรือ last = แผนกนี้ แต่ตอนนี้ไม่ได้อยู่ที่นี่/เสร็จแล้ว
     const moved = patients.filter(
         (p) =>
             (p.last_dep_code === card.dep_code || p.cur_dep_code === card.dep_code) &&
-            !(p.cur_dep_code === card.dep_code && !p.isDischarged),
+            !(p.cur_dep_code === card.dep_code && !p.isFinished),
     );
 
     const Row = ({ p, showDest }: { p: DeptPatientRow; showDest?: boolean }) => (
@@ -150,7 +150,7 @@ function DeptModal({
             <span className="flex-1 text-sm text-gray-800 truncate">{p.patient_name}</span>
             {showDest ? (
                 <span className="text-[11px] text-gray-500 shrink-0">
-                    {p.isDischarged ? "เสร็จ/จำหน่าย" : `→ ${p.cur_dep_name}`}
+                    {p.isFinished ? p.status : `→ ${p.cur_dep_name}`}
                 </span>
             ) : (
                 <span className="text-[11px] font-medium text-amber-700 shrink-0">{p.status}</span>
@@ -168,7 +168,11 @@ function DeptModal({
                 exit={{ opacity: 0 }}
                 onClick={onClose}
             />
-            <div key="dept-modal-panel" className="fixed inset-0 z-[9999] flex items-center justify-center p-4" onClick={onClose}>
+            <div
+                key="dept-modal-panel"
+                className="fixed inset-0 z-[9999] flex items-center justify-center p-4"
+                onClick={onClose}
+            >
                 <motion.div
                     className="relative bg-gray-50 rounded-2xl flex flex-col overflow-hidden w-full max-w-lg"
                     style={{ height: "min(80vh, 640px)", boxShadow: "0 24px 80px rgba(0,0,0,0.2)" }}
@@ -186,7 +190,7 @@ function DeptModal({
                         <div className="flex-1 min-w-0">
                             <h2 className="text-sm font-bold text-gray-900 truncate">{card.dep_name}</h2>
                             <p className="text-[11px] text-gray-400">
-                                ยังไม่เสร็จ {card.active} · เข้าทั้งหมด {card.entered} · คงค้าง {card.percent}%
+                                ยังอยู่แผนกนี้ {card.active} · เข้าทั้งหมด {card.entered} · คงค้าง {card.percent}%
                             </p>
                         </div>
                         <button
@@ -220,7 +224,9 @@ function DeptModal({
                                 {moved.length === 0 ? (
                                     <p className="text-xs text-gray-400 text-center py-6">—</p>
                                 ) : (
-                                    moved.map((p, i) => <Row key={`moved-${p.vn}-${p.hn}-${i}`} p={p} showDest />)
+                                    moved.map((p, i) => (
+                                        <Row key={`moved-${p.vn}-${p.hn}-${i}`} p={p} showDest />
+                                    ))
                                 )}
                             </div>
                         </div>
@@ -231,7 +237,7 @@ function DeptModal({
     );
 }
 
-// ─── Page ────────────────────────────────────────────────────────────────────
+// ─── Page ────────────────────────────────────────────────────────
 const LEGEND = [
     { color: "#16a34a", label: "ค้างน้อย (<40%)" },
     { color: "#f59e0b", label: "ปานกลาง (40–69%)" },
@@ -255,6 +261,7 @@ export default function DeptStatusPage() {
         [cards],
     );
     const patients = useMemo(() => data?.patients ?? [], [data]);
+    const byStatus = data?.byStatus ?? [];
 
     return (
         <div className="p-4 md:p-6 space-y-5">
@@ -288,7 +295,9 @@ export default function DeptStatusPage() {
                     <div className="flex items-center gap-2 ml-auto flex-wrap">
                         <DatePicker
                             selected={date}
-                            onChange={(d: Date | null) => { if (d) setDate(d); }}
+                            onChange={(d: Date | null) => {
+                                if (d) setDate(d);
+                            }}
                             dateFormat="dd/MM/yyyy"
                             locale={th}
                             showMonthDropdown
@@ -328,7 +337,7 @@ export default function DeptStatusPage() {
             <div className="grid grid-cols-2 lg:grid-cols-3 gap-3">
                 <KpiCard
                     icon={Users}
-                    label="ผู้รับบริการ OPD ทั้งหมด"
+                    label="ผู้รับบริการทั้งหมด"
                     value={(data?.totalVisits ?? 0).toLocaleString()}
                     sub="วันที่เลือก"
                     accent="#1a5233"
@@ -344,12 +353,39 @@ export default function DeptStatusPage() {
                 />
                 <KpiCard
                     icon={CheckCircle2}
-                    label="เสร็จ/จำหน่ายแล้ว"
+                    label="เสร็จ/ออกจาก OPD แล้ว"
                     value={(data?.totalDone ?? 0).toLocaleString()}
                     accent="#15803d"
                     bg="#ecfdf5"
                 />
             </div>
+
+            {/* สรุปสถานะผู้ป่วยขณะนี้ (จาก ovstost.name จริง) */}
+            {byStatus.length > 0 && (
+                <div className="bg-white border border-gray-200 rounded-xl p-4">
+                    <p className="text-xs font-bold text-gray-500 mb-2">สถานะผู้ป่วยขณะนี้</p>
+                    <div className="flex flex-wrap gap-2">
+                        {byStatus.map((s) => (
+                            <span
+                                key={s.name}
+                                className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium border"
+                                style={
+                                    s.finished
+                                        ? { background: "#f9fafb", borderColor: "#e5e7eb", color: "#6b7280" }
+                                        : { background: "#fff7ed", borderColor: "#fed7aa", color: "#b45309" }
+                                }
+                            >
+                                {s.name}
+                                <span className="font-bold tabular-nums">{s.count}</span>
+                            </span>
+                        ))}
+                    </div>
+                    <p className="text-[11px] text-gray-400 mt-2">
+                        สีส้ม = ยังไม่เสร็จ · สีเทา = เสร็จ/ออกจาก OPD · ปรับเกณฑ์ &quot;เสร็จ&quot; ได้ที่
+                        FINISHED_STATUS_KEYWORDS ใน deptStatus.service.ts
+                    </p>
+                </div>
+            )}
 
             {/* Error */}
             {error && (
@@ -358,7 +394,7 @@ export default function DeptStatusPage() {
                 </div>
             )}
 
-            {/* Cards grid */}
+            {/* Cards grid + table */}
             {loading && !data ? (
                 <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
                     {Array.from({ length: 8 }).map((_, i) => (
@@ -386,7 +422,7 @@ export default function DeptStatusPage() {
                             <table className="min-w-full text-sm border-collapse">
                                 <thead>
                                     <tr className="bg-green-700">
-                                        {["#", "แผนก", "เข้าทั้งหมด", "ยังไม่เสร็จ", "เสร็จ/ผ่านไปแล้ว", "% คงค้าง"].map(
+                                        {["#", "แผนก", "เข้าทั้งหมด", "ยังอยู่แผนก", "เสร็จ/ผ่านไปแล้ว", "% คงค้าง"].map(
                                             (h, i) => (
                                                 <th
                                                     key={h}
@@ -434,7 +470,7 @@ export default function DeptStatusPage() {
                                 <tfoot>
                                     <tr className="bg-gray-50 border-t-2 border-gray-200 font-bold">
                                         <td className="px-3 py-2.5 text-center text-gray-500" colSpan={2}>
-                                            รวม OPD ทั้งหมด
+                                            รวมทั้งหมด
                                         </td>
                                         <td className="px-3 py-2.5 text-center text-gray-800 tabular-nums">
                                             {(data?.totalVisits ?? 0).toLocaleString()}
@@ -456,7 +492,8 @@ export default function DeptStatusPage() {
                             </table>
                         </div>
                         <p className="text-[11px] text-gray-400 mt-3">
-                            * คอลัมน์ &quot;เข้าทั้งหมด&quot; นับทั้งคนที่ยังอยู่และที่ผ่านแผนกนี้ไปแล้ว — ผลรวมจึงมากกว่ายอด OPD จริงได้ (1 คนผ่านหลายแผนก) · คลิกแถวเพื่อดูรายชื่อ
+                            * คอลัมน์ &quot;เข้าทั้งหมด&quot; นับทั้งคนที่ยังอยู่และที่ผ่านแผนกนี้ไปแล้ว — ผลรวมจึงมากกว่ายอด
+                            OPD จริงได้ (1 คนผ่านหลายแผนก) · คลิกแถวเพื่อดูรายชื่อ
                         </p>
                     </div>
                 </>
