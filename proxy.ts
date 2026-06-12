@@ -90,5 +90,6 @@ export const config = {
     "/api/dental-dashboard/:path*",
     "/api/high-risk-procedures/:path*",
     "/api/dept-status/:path*",
+    "/api/dmht-new/:path*",
   ],
 };
