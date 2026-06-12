@@ -1,28 +1,3 @@
-// lib/dental.service.ts
-// SQL service สำหรับ Dashboard ทันตกรรม (Dental — ทันตแพทย์ / ทันตาภิบาล / ผู้ช่วยทันตแพทย์)
-// คืนข้อมูลครบทั้ง 8 ชุดในคำขอเดียว ให้หน้าเพจ render ได้เลย
-//
-// *** การ attribute เจ้าของงาน (สำคัญ) ***
-// ปัญหาเดิม: คนไข้ 1 VN อาจเข้าหลายคลินิก (เช่น ทันตกรรม + แผนไทย) ระบบลง o.doctor
-// เป็นหมอคนเดียว (อาจเป็นแผนไทย) ทำให้งานทันตกรรมไปโผล่ใต้ชื่อหมอแผนไทย
-// แก้: ยึด "หมอฝั่งทันตกรรม" ของ VN นั้นตามลำดับ
-//   (1) หมอที่ลงวินิจฉัยฝั่งทันตกรรมใน ovstdiag (ครอบคลุมทุก visit แม้ไม่มีหัตถการ)
-//   (2) หมอที่ทำหัตถการทันตกรรมใน doctor_operation
-//   (3) หมอหลัก o.doctor เฉพาะเมื่อตัวเองเป็นบุคลากรทันตกรรม
-//   - visit จะถูกนับเป็นทันตกรรมก็ต่อเมื่อหาหมอฝั่งทันตกรรมเจอ (ไม่งั้นตัดทิ้ง)
-//     → คนไข้ที่มาทั้งทันตกรรม + แผนไทย จะไปอยู่ใต้ทันตแพทย์ที่ตรวจ ไม่ใช่หมอแผนไทย
-//   - หัตถการแต่ละรายการ attribute ตามคนทำจริง (แยกงานนวดแผนไทยออกอัตโนมัติ)
-//
-// หมายเหตุรายได้: total_income = vn_stat.income เป็นยอด "ทั้ง VN" (รวมทุกคลินิก)
-//   กรณีคนไข้เข้าหลายคลินิกในวันเดียว ยอดนี้จะรวมงานคลินิกอื่นด้วย
-//   ถ้าต้องการแยกเฉพาะรายได้ทันตกรรมจริง ต้อง join opitemrece ตามแผนก (ทำเพิ่มได้)
-//
-// ปรับให้ตรงกับ master ของ รพ. ก่อนใช้จริง:
-//   - DENTAL_DEPCODE: รหัสแผนกทันตกรรม (kskdepartment) — รพ.พลับพลาชัย = '019'
-//   - position_id (ตาราง doctor_position): 2 = ทันตแพทย์, 6 = ผู้ช่วยทันตแพทย์ (กลุ่ม "ทันตาภิบาล")
-//   - เติม override รายคนได้ที่ DENTIST_DOCTOR_CODES / THERAPIST_DOCTOR_CODES
-//   - หัตถการชื่อ join จาก DENTAL_ICD9_TABLE (default icd9_sss)
-
 import { db } from "@/lib/db";
 import { RowDataPacket } from "mysql2";
 
@@ -43,46 +18,37 @@ const DENTAL_POSITION_IDS = [
 ];
 const OVERRIDE_CODES = [...DENTIST_DOCTOR_CODES, ...THERAPIST_DOCTOR_CODES];
 
-// ── predicate: doctor (alias) เป็นบุคลากรทันตกรรมหรือไม่ ───────────────────────
-function dentalPredicate(alias: string): string {
-  return `(
-    ${alias}.position_id IN (${DENTAL_POSITION_IDS.map((p) => `'${p}'`).join(",")})
-    OR ${alias}.name LIKE 'ทพ.%'
-    OR ${alias}.name LIKE 'ทพญ.%'
-    OR ${alias}.name LIKE 'ทภ.%'
-    OR ${alias}.name LIKE '%ทันตาภิบาล%'
-    OR ${alias}.name LIKE '%ผู้ช่วยทันต%'
-    ${OVERRIDE_CODES.length ? `OR ${alias}.code IN (${OVERRIDE_CODES.map((c) => `'${c}'`).join(",")})` : ""}
-  )`;
-}
-// predicate override บน .doctor ของแต่ละตาราง (เผื่อ override ที่ code)
-const OVERRIDE_OP_IN = OVERRIDE_CODES.length
-  ? `OR op.doctor IN (${OVERRIDE_CODES.map((c) => `'${c}'`).join(",")})`
+// ── เกณฑ์ "เป็นบุคลากรทันตกรรม" บน opitemrece.doctor (alias dd) — ตามรายงาน: position_id เท่านั้น ──
+const DENTAL_POSITION_IN = DENTAL_POSITION_IDS.map((p) => `'${p}'`).join(",");
+const OVERRIDE_DD = OVERRIDE_CODES.length
+  ? ` OR dd.code IN (${OVERRIDE_CODES.map((c) => `'${c}'`).join(",")})`
   : "";
-const OVERRIDE_OD_IN = OVERRIDE_CODES.length
-  ? `OR od.doctor IN (${OVERRIDE_CODES.map((c) => `'${c}'`).join(",")})`
-  : "";
+const DENTAL_STAFF_PREDICATE = `(dd.position_id IN (${DENTAL_POSITION_IN})${OVERRIDE_DD})`;
 
-// subquery: หาหมอ "ฝั่งทันตกรรม" ของ VN หนึ่ง ๆ ตามลำดับความน่าเชื่อถือ
-//   (1) หมอที่ลงวินิจฉัย (ovstdiag) เป็นบุคลากรทันตกรรม — ครอบคลุมทุก visit แม้ไม่มีหัตถการ
-//   (2) หมอที่ทำหัตถการ (doctor_operation) เป็นบุคลากรทันตกรรม
-// ใช้ร่วมกับ fallback หมอหลัก (o.doctor) ที่ฝั่งเรียกใช้
-const DENTAL_DIAG_DOCTOR_SUBQ = `
-          (SELECT od.doctor
-             FROM ovstdiag od
-             JOIN doctor dd ON dd.code = od.doctor
-            WHERE od.vn = o.vn
-              AND od.doctor IS NOT NULL AND od.doctor <> ''
-              AND (${dentalPredicate("dd")} ${OVERRIDE_OD_IN})
-            LIMIT 1)`;
-const DENTAL_OPER_DOCTOR_SUBQ = `
-          (SELECT op.doctor
-             FROM doctor_operation op
-             JOIN doctor dd ON dd.code = op.doctor
-            WHERE op.vn = o.vn
-              AND op.doctor IS NOT NULL AND op.doctor <> ''
-              AND (${dentalPredicate("dd")} ${OVERRIDE_OP_IN})
-            LIMIT 1)`;
+// EXISTS: visit นี้มีรายการ opitemrece ที่ผู้ลงค่าบริการเป็นบุคลากรทันตกรรมหรือไม่
+const DENTAL_VISIT_EXISTS = `
+      EXISTS (
+        SELECT 1 FROM opitemrece oo
+        JOIN doctor dd ON dd.code = oo.doctor
+        WHERE oo.vn = v.vn AND ${DENTAL_STAFF_PREDICATE}
+      )`;
+
+// เจ้าของงาน = บุคลากรทันตกรรมที่คิดเงินรวมมากสุดของ VN
+const DENTAL_STAFF_SUBQ = `
+        (SELECT oo.doctor
+           FROM opitemrece oo
+           JOIN doctor dd ON dd.code = oo.doctor
+          WHERE oo.vn = v.vn AND ${DENTAL_STAFF_PREDICATE}
+          GROUP BY oo.doctor
+          ORDER BY SUM(oo.sum_price) DESC
+          LIMIT 1)`;
+
+// เกณฑ์เดียวกันบน doctor_operation.doctor (alias d) — ใช้กรองหัตถการของบุคลากรทันตกรรม
+const DENTAL_PERFORMER_PREDICATE = `(d.position_id IN (${DENTAL_POSITION_IN})${
+  OVERRIDE_CODES.length
+    ? ` OR d.code IN (${OVERRIDE_CODES.map((c) => `'${c}'`).join(",")})`
+    : ""
+})`;
 
 // ตารางชื่อหัตถการ ICD-9 — default icd9_sss ; whitelist กัน SQL injection
 const ICD9_TABLE_WHITELIST = ["icd9cm", "icd9_sss"] as const;
@@ -261,42 +227,37 @@ export async function getDentalDashboard(
   start: string,
   end: string,
 ): Promise<DentalDashboardData> {
-  // 1) visits (1 แถว/visit) — เจ้าของ = คนทำหัตถการทันตกรรม, fallback = หมอหลักถ้าเป็นทันตกรรม
-  //    ตัด VN ที่ไม่มีงานทันตกรรมจริง (doctor_code = NULL) ออกด้วย INNER JOIN ชั้นนอก
+  // 1) visits (1 แถว/visit) — คัด visit ที่ "มีบุคลากรทันตกรรมลงค่าบริการ" (ตามรายงาน)
+  //    เจ้าของ = คนทันตกรรมที่คิดเงินมากสุดของ VN, ไม่กรอง main_dep
   const [visits] = await db.query<VisitRow[]>(
     `
     SELECT x.*, d2.name AS doctor_name, d2.position_id AS position_id
     FROM (
       SELECT
-        o.vn, o.hn, o.vstdate, o.vsttime,
+        v.vn, v.hn, v.vstdate, o.vsttime,
         CONCAT(pt.pname, pt.fname, ' ', pt.lname)        AS patient_name,
-        TIMESTAMPDIFF(YEAR, NULLIF(pt.birthday, '0000-00-00'), o.vstdate) AS age,
-        COALESCE(
-          ${DENTAL_DIAG_DOCTOR_SUBQ},
-          ${DENTAL_OPER_DOCTOR_SUBQ},
-          CASE WHEN ${dentalPredicate("d")} THEN o.doctor END
-        )                                                AS doctor_code,
+        TIMESTAMPDIFF(YEAR, NULLIF(pt.birthday, '0000-00-00'), v.vstdate) AS age,
+        ${DENTAL_STAFF_SUBQ}                             AS doctor_code,
         COALESCE(v.income, 0)                            AS total_income,
         COALESCE(ptt.name, '')                           AS pttype_name,
         COALESCE(v.pcode, '')                            AS pcode,
-        (SELECT os.cc FROM opdscreen os WHERE os.vn = o.vn LIMIT 1) AS chief_complaint
-      FROM ovst o
-      INNER JOIN vn_stat v  ON v.vn  = o.vn
-      INNER JOIN patient pt ON pt.hn = o.hn
-      LEFT  JOIN doctor d   ON d.code = o.doctor
-      LEFT  JOIN pttype ptt ON ptt.pttype = v.pttype
-      WHERE o.vstdate BETWEEN ? AND ?
-        AND o.main_dep = ?
-        AND o.an IS NULL
+        (SELECT os.cc FROM opdscreen os WHERE os.vn = v.vn LIMIT 1) AS chief_complaint
+      FROM vn_stat v
+      LEFT JOIN ovst o     ON o.vn  = v.vn
+      LEFT JOIN patient pt ON pt.hn = v.hn
+      LEFT JOIN pttype ptt ON ptt.pttype = v.pttype
+      WHERE v.vstdate BETWEEN ? AND ?
+        AND ${DENTAL_VISIT_EXISTS}
+      GROUP BY v.vn
     ) x
     INNER JOIN doctor d2 ON d2.code = x.doctor_code
     ORDER BY x.vstdate, x.vsttime
     `,
-    [start, end, DENTAL_DEPCODE],
+    [start, end],
   );
 
   // 2) procedures (หัตถการจริง ICD-9) — attribute ตาม "คนทำ" จริง, เก็บเฉพาะบุคลากรทันตกรรม
-  //    งานนวด/แผนไทยที่ทำโดยหมอแผนไทยจะถูกตัดออกอัตโนมัติ
+  //    ไม่กรอง main_dep (สอดคล้องกับการคัด visit แบบใหม่)
   const [procs] = await db.query<ProcRow[]>(
     `
     SELECT op.vn,
@@ -310,39 +271,34 @@ export async function getDentalDashboard(
     LEFT  JOIN doctor d ON d.code = op.doctor
     LEFT  JOIN ${DENTAL_ICD9_TABLE} ic9 ON ic9.code = op.icd9
     WHERE o.vstdate BETWEEN ? AND ?
-      AND o.main_dep = ?
       AND o.an IS NULL
       AND op.icd9 IS NOT NULL AND op.icd9 <> ''
-      AND (${dentalPredicate("d")} ${OVERRIDE_OP_IN})
+      AND ${DENTAL_PERFORMER_PREDICATE}
     `,
-    [start, end, DENTAL_DEPCODE],
+    [start, end],
   );
 
-  // 3) queue (วันนี้) — เจ้าของ = คนทำหัตถการทันตกรรม, fallback = หมอหลัก (คงผู้รอคิวไว้)
+  // 3) queue (วันนี้) — คงพฤติกรรมเดิม: แสดงผู้รอคิวทุกคนของแผนกทันตกรรมวันนี้
+  //    (คิวยังใช้ main_dep + o.doctor เพราะคนไข้รออาจยังไม่มีรายการ opitemrece)
   const dischargedList = DISCHARGED_STATUS.map((s) => `'${s}'`).join(",");
   const [qrows] = await db.query<QueueRow[]>(
     `
-    SELECT x.*, d2.name AS doctor_name, d2.position_id AS position_id
-    FROM (
-      SELECT
-        o.vn, o.hn,
-        CONCAT(pt.pname, pt.fname, ' ', pt.lname)        AS patient_name,
-        COALESCE(
-          ${DENTAL_DIAG_DOCTOR_SUBQ},
-          ${DENTAL_OPER_DOCTOR_SUBQ},
-          o.doctor
-        )                                                AS doctor_code,
-        o.vsttime                                        AS visit_time,
-        (SELECT os.cc FROM opdscreen os WHERE os.vn = o.vn LIMIT 1) AS chief_complaint
-      FROM ovst o
-      INNER JOIN patient pt ON pt.hn = o.hn
-      WHERE o.vstdate = CURDATE()
-        AND o.main_dep = ?
-        AND o.an IS NULL
-        AND (o.ovstost IS NULL OR o.ovstost = '' OR o.ovstost NOT IN (${dischargedList}))
-    ) x
-    LEFT JOIN doctor d2 ON d2.code = x.doctor_code
-    ORDER BY x.visit_time
+    SELECT
+      o.vn, o.hn,
+      CONCAT(pt.pname, pt.fname, ' ', pt.lname)        AS patient_name,
+      o.doctor                                         AS doctor_code,
+      COALESCE(d.name, o.doctor)                       AS doctor_name,
+      d.position_id                                    AS position_id,
+      o.vsttime                                        AS visit_time,
+      (SELECT os.cc FROM opdscreen os WHERE os.vn = o.vn LIMIT 1) AS chief_complaint
+    FROM ovst o
+    INNER JOIN patient pt ON pt.hn = o.hn
+    LEFT  JOIN doctor d   ON d.code = o.doctor
+    WHERE o.vstdate = CURDATE()
+      AND o.main_dep = ?
+      AND o.an IS NULL
+      AND (o.ovstost IS NULL OR o.ovstost = '' OR o.ovstost NOT IN (${dischargedList}))
+    ORDER BY o.vsttime
     `,
     [DENTAL_DEPCODE],
   );
