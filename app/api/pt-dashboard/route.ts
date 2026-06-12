@@ -1,6 +1,6 @@
 // app/api/pt-dashboard/route.ts
 // Dashboard กายภาพบำบัด — ส่ง records[] + queue[] ให้ฝั่ง client ไปคำนวณทุก section
-// รับ ?preset=today|7days|30days|thismonth  หรือ  ?start=YYYY-MM-DD&end=YYYY-MM-DD
+// รับ ?preset=today|7days|30days|thismonth|custom  หรือ  ?start=YYYY-MM-DD&end=YYYY-MM-DD
 import { NextResponse } from "next/server";
 import { getPtDashboard } from "@/lib/pt.service";
 
@@ -46,6 +46,7 @@ export async function GET(req: Request) {
     const endParam = searchParams.get("end");
     const preset = searchParams.get("preset") ?? "today";
 
+    // ถ้ามี start+end (เช่น preset=custom หรือส่ง start/end ตรง ๆ) ใช้ค่านั้นเลย
     const { start, end } =
       startParam && endParam
         ? { start: startParam, end: endParam }

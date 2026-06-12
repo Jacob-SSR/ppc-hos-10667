@@ -1,11 +1,15 @@
 "use client";
-import { useMemo, useState } from "react";
+import { useMemo, useState, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
     Users, Activity, Banknote, Stethoscope, UserCog,
     Search, ChevronRight, Printer, FileSpreadsheet, ListChecks, Clock, Table2,
+    CalendarDays,
 } from "lucide-react";
 import { PieChart, Pie, Cell, Tooltip as RTooltip, ResponsiveContainer } from "recharts";
+import DatePicker from "react-datepicker";
+import { th } from "date-fns/locale";
+import "react-datepicker/dist/react-datepicker.css";
 import { exportToExcel } from "@/lib/exportExcel";
 import {
     useAutoRefresh, timeAgo, CountdownRing,
@@ -13,6 +17,7 @@ import {
 } from "@/app/components/dashboard/live";
 import { Shimmer } from "@/app/components/ui/Shimmer";
 import { EmptyState } from "@/app/components/ui/EmptyState";
+import ThaiDateInput from "@/app/components/ThaiDateInput";
 import { formatThaiDate } from "@/lib/dateUtils";
 // ─── Types ──────────────────────────────────────────────────────────────────
 interface PtRecord {
@@ -44,7 +49,7 @@ interface ApiResp {
     updatedAt: string;
 }
 
-type Preset = "today" | "7days" | "30days" | "thismonth";
+type Preset = "today" | "7days" | "30days" | "thismonth" | "custom";
 
 // ─── Constants / theme ──────────────────────────────────────────────────────
 const REFRESH_MS = 60_000;
@@ -54,6 +59,7 @@ const PRESETS: { key: Preset; label: string }[] = [
     { key: "7days", label: "7 วัน" },
     { key: "30days", label: "30 วัน" },
     { key: "thismonth", label: "เดือนนี้" },
+    { key: "custom", label: "กำหนดเอง" },
 ];
 
 const MINT = {
@@ -76,6 +82,15 @@ const RIGHT_COLOR: Record<string, string> = {
 const CHART_PALETTE = ["#185FA5", "#3B6D11", "#854F0B", "#5b21b6", "#3aa36a", "#c0392b"];
 
 const baht = (n: number) => "฿" + (n || 0).toLocaleString();
+
+// ─── Date helpers (สำหรับ custom range) ──────────────────────────────────────
+function fmtDate(d: Date): string {
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+function getBangkokToday(): Date {
+    const now = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Bangkok" }));
+    return new Date(now.getFullYear(), now.getMonth(), now.getDate());
+}
 
 // ─── Small UI helpers ─────────────────────────────────────────────────────────
 function RoleBadge({ role }: { role: string }) {
@@ -137,11 +152,51 @@ function EmptyRow({ cols }: { cols: number }) {
 export default function PtDashboardPage() {
     const [preset, setPreset] = useState<Preset>("today");
 
+    // ── custom range state ──
+    const [customStart, setCustomStart] = useState<Date>(() => getBangkokToday());
+    const [customEnd, setCustomEnd] = useState<Date>(() => getBangkokToday());
+    // ช่วงที่ "ยืนยันแล้ว" (กด ค้นหา) — ใช้ประกอบ URL จริง
+    const [appliedRange, setAppliedRange] = useState<{ start: string; end: string } | null>(null);
+
+    // ── สร้าง URL ตาม preset ──
+    // custom → ใช้ start/end ที่ยืนยันแล้ว (ถ้ายังไม่กดค้นหา ใช้วันนี้ไปก่อน)
+    const apiUrl = useMemo(() => {
+        if (preset === "custom") {
+            if (appliedRange) {
+                return `/api/pt-dashboard?preset=custom&start=${appliedRange.start}&end=${appliedRange.end}`;
+            }
+            const today = fmtDate(getBangkokToday());
+            return `/api/pt-dashboard?preset=custom&start=${today}&end=${today}`;
+        }
+        return `/api/pt-dashboard?preset=${preset}`;
+    }, [preset, appliedRange]);
+
     const { data, loading, error, connected, secondsLeft, refetch } =
-        useAutoRefresh<ApiResp>(`/api/pt-dashboard?preset=${preset}`, REFRESH_MS);
+        useAutoRefresh<ApiResp>(apiUrl, REFRESH_MS);
 
     const records = useMemo(() => data?.records ?? [], [data]);
     const queue = useMemo(() => data?.queue ?? [], [data]);
+
+    // ── เปลี่ยน preset ──
+    const handlePreset = useCallback((key: Preset) => {
+        setPreset(key);
+        if (key === "custom" && !appliedRange) {
+            // ตั้ง default เป็นวันนี้รอไว้
+            const today = getBangkokToday();
+            setCustomStart(today);
+            setCustomEnd(today);
+        }
+    }, [appliedRange]);
+
+    // ── กดค้นหาช่วง custom ──
+    const handleCustomSearch = useCallback(() => {
+        if (!customStart || !customEnd) return;
+        let s = customStart;
+        let e = customEnd;
+        // กันกรณีเลือกกลับด้าน (start > end) → สลับให้
+        if (s > e) { const t = s; s = e; e = t; }
+        setAppliedRange({ start: fmtDate(s), end: fmtDate(e) });
+    }, [customStart, customEnd]);
 
     // filters
     const [q, setQ] = useState("");
@@ -343,40 +398,112 @@ export default function PtDashboardPage() {
             </div>
 
             {/* ── Controls ── */}
-            <div className="bg-white border border-gray-200 rounded-2xl shadow-sm px-6 py-3 flex flex-wrap items-center gap-3 no-print">
-                <div className="flex rounded-lg overflow-hidden border border-gray-200">
-                    {PRESETS.map((p) => (
+            <div className="bg-white border border-gray-200 rounded-2xl shadow-sm px-6 py-3 no-print">
+                <div className="flex flex-wrap items-center gap-3">
+                    <div className="flex rounded-lg overflow-hidden border border-gray-200">
+                        {PRESETS.map((p) => (
+                            <button
+                                key={p.key}
+                                onClick={() => handlePreset(p.key)}
+                                className="px-3.5 py-1.5 text-xs transition-colors"
+                                style={{
+                                    backgroundColor: preset === p.key ? MINT[500] : "#fff",
+                                    color: preset === p.key ? "#fff" : "#4b5563",
+                                    fontWeight: preset === p.key ? 600 : 400,
+                                }}
+                            >
+                                {p.label}
+                            </button>
+                        ))}
+                    </div>
+
+                    <div className="flex items-center gap-2 ml-auto">
                         <button
-                            key={p.key}
-                            onClick={() => setPreset(p.key)}
-                            className="px-3.5 py-1.5 text-xs transition-colors"
-                            style={{
-                                backgroundColor: preset === p.key ? MINT[500] : "#fff",
-                                color: preset === p.key ? "#fff" : "#4b5563",
-                                fontWeight: preset === p.key ? 600 : 400,
-                            }}
+                            onClick={onExportExcel}
+                            disabled={!records.length}
+                            className="flex items-center gap-1.5 text-white text-sm font-semibold px-4 py-2 rounded-lg shadow-sm disabled:opacity-40 transition-colors"
+                            style={{ backgroundColor: MINT[500] }}
                         >
-                            {p.label}
+                            <FileSpreadsheet size={15} /> Excel
                         </button>
-                    ))}
+                        <button
+                            onClick={() => window.print()}
+                            className="flex items-center gap-1.5 text-gray-600 text-sm font-semibold px-4 py-2 rounded-lg border border-gray-200 hover:bg-gray-50 transition-colors"
+                        >
+                            <Printer size={15} /> พิมพ์ / PDF
+                        </button>
+                    </div>
                 </div>
 
-                <div className="flex items-center gap-2 ml-auto">
-                    <button
-                        onClick={onExportExcel}
-                        disabled={!records.length}
-                        className="flex items-center gap-1.5 text-white text-sm font-semibold px-4 py-2 rounded-lg shadow-sm disabled:opacity-40 transition-colors"
-                        style={{ backgroundColor: MINT[500] }}
-                    >
-                        <FileSpreadsheet size={15} /> Excel
-                    </button>
-                    <button
-                        onClick={() => window.print()}
-                        className="flex items-center gap-1.5 text-gray-600 text-sm font-semibold px-4 py-2 rounded-lg border border-gray-200 hover:bg-gray-50 transition-colors"
-                    >
-                        <Printer size={15} /> พิมพ์ / PDF
-                    </button>
-                </div>
+                {/* ── Custom date range — แสดงเฉพาะตอนเลือก "กำหนดเอง" ── */}
+                <AnimatePresence>
+                    {preset === "custom" && (
+                        <motion.div
+                            initial={{ height: 0, opacity: 0, marginTop: 0 }}
+                            animate={{ height: "auto", opacity: 1, marginTop: 12 }}
+                            exit={{ height: 0, opacity: 0, marginTop: 0 }}
+                            transition={{ duration: 0.22, ease: "easeOut" }}
+                            className="overflow-hidden"
+                        >
+                            <div className="border-t border-gray-100 pt-3 flex flex-wrap items-center gap-3">
+                                <div className="flex items-center gap-2 text-[#717171]">
+                                    <CalendarDays size={16} />
+                                    <span className="text-sm">เลือกช่วงวันที่:</span>
+                                </div>
+
+                                <div className="flex flex-col gap-1">
+                                    <span className="text-[10px] font-bold uppercase tracking-wide text-gray-400">วันที่เริ่ม</span>
+                                    <DatePicker
+                                        selected={customStart}
+                                        onChange={(d: Date | null) => { if (d) setCustomStart(d); }}
+                                        dateFormat="dd/MM/yyyy"
+                                        locale={th}
+                                        showMonthDropdown showYearDropdown dropdownMode="select"
+                                        yearDropdownItemNumber={10}
+                                        customInput={<ThaiDateInput />}
+                                    />
+                                </div>
+
+                                <div className="flex flex-col gap-1">
+                                    <span className="text-[10px] font-bold uppercase tracking-wide text-gray-400">วันที่สิ้นสุด</span>
+                                    <DatePicker
+                                        selected={customEnd}
+                                        onChange={(d: Date | null) => { if (d) setCustomEnd(d); }}
+                                        dateFormat="dd/MM/yyyy"
+                                        locale={th}
+                                        showMonthDropdown showYearDropdown dropdownMode="select"
+                                        yearDropdownItemNumber={10}
+                                        customInput={<ThaiDateInput />}
+                                    />
+                                </div>
+
+                                <button
+                                    onClick={handleCustomSearch}
+                                    disabled={loading}
+                                    className="flex items-center gap-1.5 text-white text-sm font-semibold px-5 py-2 rounded-lg shadow-sm self-end disabled:opacity-50 transition-colors"
+                                    style={{ backgroundColor: MINT[500] }}
+                                >
+                                    {loading ? (
+                                        <span className="w-3.5 h-3.5 border-2 border-white/40 border-t-white rounded-full animate-spin inline-block" />
+                                    ) : (
+                                        <Search size={15} />
+                                    )}
+                                    ค้นหา
+                                </button>
+
+                                {data?.start && data?.end && (
+                                    <span className="text-xs text-gray-500 self-end pb-2 ml-1">
+                                        แสดงข้อมูล:{" "}
+                                        <strong style={{ color: MINT[800] }}>
+                                            {formatThaiDate(data.start)}
+                                            {data.start !== data.end ? ` – ${formatThaiDate(data.end)}` : ""}
+                                        </strong>
+                                    </span>
+                                )}
+                            </div>
+                        </motion.div>
+                    )}
+                </AnimatePresence>
             </div>
 
             {/* ── Error ── */}
