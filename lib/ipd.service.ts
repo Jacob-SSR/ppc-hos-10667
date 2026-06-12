@@ -345,3 +345,64 @@ export async function getBedOccupancy(
 
   return rows;
 }
+
+export interface IpdWardGroupSummary {
+  key: string;
+  label: string;
+  discharged: number;
+  avgLos: number;
+  byPttype: { name: string; count: number }[];
+}
+
+const SUMMARY_GROUPS = [
+  {
+    key: "general",
+    label: "ผู้ป่วยในทั่วไป (Ward 01 + ห้องพิเศษ 04)",
+    wardCodes: ["01", "04"],
+  },
+  {
+    key: "homeward",
+    label: "Home Ward (HW ยาเสพติด + พลับพลารักษ์)",
+    wardCodes: ["14", "15"],
+  },
+];
+
+export async function getIpdWardSummary(
+  start: string,
+  end: string,
+): Promise<{ groups: IpdWardGroupSummary[] }> {
+  const rows = await getIpdDischarge(start, end);
+
+  const groups = SUMMARY_GROUPS.map((grp) => {
+    const groupRows = rows.filter((r) =>
+      grp.wardCodes.includes(String(r.ward_code)),
+    );
+    const discharged = groupRows.length;
+
+    const losValues = groupRows
+      .map((r) => Number(r.los))
+      .filter((n) => !isNaN(n) && n >= 0);
+    const avgLos = losValues.length
+      ? losValues.reduce((a, b) => a + b, 0) / losValues.length
+      : 0;
+
+    const ptMap: Record<string, number> = {};
+    for (const r of groupRows) {
+      const name = (r.pttype_name || "ไม่ระบุสิทธิ์").trim();
+      ptMap[name] = (ptMap[name] || 0) + 1;
+    }
+    const byPttype = Object.entries(ptMap)
+      .map(([name, count]) => ({ name, count }))
+      .sort((a, b) => b.count - a.count);
+
+    return {
+      key: grp.key,
+      label: grp.label,
+      discharged,
+      avgLos: Math.round(avgLos * 10) / 10,
+      byPttype,
+    };
+  });
+
+  return { groups };
+}

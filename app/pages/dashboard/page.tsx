@@ -7,7 +7,7 @@ import IpdSection from "@/app/components/dashboard/components/IpdSection";
 import BedOccupancyChart from "@/app/components/dashboard/components/BedOccupancyChart";
 
 import AnnualChart from "@/app/components/dashboard/AnnualChart";
-import HomeWardTable from "@/app/components/dashboard/HomeWardTable";
+import HomeWardSummaryCard from "@/app/components/dashboard/HomeWardSummaryCard";
 import Top10Tables from "@/app/components/dashboard/Top10Tables";
 import PpaOverview from "@/app/components/dashboard/PpaOverview";
 
@@ -57,7 +57,7 @@ export default function DashboardPage() {
       <IpdSection />
       <AnnualChart months={monthlyData?.months ?? []} loading={loading} />
       <BedOccupancyChart />
-      <HomeWardTable start={todayStr} end={todayStr} />
+      <HomeWardSummaryCard start={todayStr} end={todayStr} />
       <Top10Tables start={range.start} end={range.end} />
       <PpaOverview />
     </div>
