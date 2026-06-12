@@ -253,6 +253,12 @@ export const REPORT_ITEMS: SidebarItem[] = [
 // =========================
 export const PRIMARY_CARE_ITEMS: SidebarItem[] = [
   {
+    label: "DM/HT รายใหม่ ประจำปีงบประมาณ",
+    href: "/pages/dmht-new",
+    icon: HeartPulse,
+    group: "primarycare",
+  },
+  {
     label: "รายชื่อผู้เสียชีวิต/จำหน่าย ที่ยังไม่ถูกจำหน่ายในบัญชี1",
     href: "/pages/death-not-discharged",
     icon: UserMinus,
