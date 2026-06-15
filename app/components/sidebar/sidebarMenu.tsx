@@ -32,6 +32,7 @@ import {
   Droplets,
   HeartHandshake,
   Syringe,
+  Activity,
 } from "lucide-react";
 
 import { SidebarItem, SidebarGroup, SidebarSubGroup } from "./types";
@@ -101,7 +102,12 @@ export const DASHBOARD_GROUPS: SidebarSubGroup[] = [
         icon: HeartPulse,
         group: "main",
       },
-
+      {
+        label: "ผลิตภาพการพยาบาล OPD",
+        href: "/pages/productivity-opd",
+        icon: Activity,
+        group: "main",
+      },
     ],
   },
 
