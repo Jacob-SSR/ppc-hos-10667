@@ -6,7 +6,7 @@ import {
     ResponsiveContainer, PieChart, Pie, Cell, Line,
 } from "recharts";
 import {
-    Info, Clock,
+    Info, Clock, Timer, Syringe, ChevronDown,
     Users, AlertTriangle, Activity, TrendingUp, Skull,
     ShieldAlert, Microscope, MapPin, HeartPulse, CheckCircle2,
 } from "lucide-react";
@@ -66,6 +66,8 @@ interface SepsisRow {
     typeOfInfection: string;
     definiteStatus: string;
     zone: string;
+    doorToDxMin: number | null;
+    dxToAtbMin: number | null;
 }
 
 interface DashboardData {
@@ -93,36 +95,28 @@ const PALETTE = [
     "#D85A30", "#7F77DD", "#E24B4A", "#888780",
 ];
 
-const YEAR_COLORS = ["#7F77DD", "#378ADD", "#1D9E75", "#639922", "#EF9F27"];
-
 const fmt = (n: number) => n.toLocaleString("th-TH");
 const fmtB = (n: number) => n.toLocaleString("th-TH", { minimumFractionDigits: 1, maximumFractionDigits: 1 });
 
-// ─── Year Tab ─────────────────────────────────────────────────────────────────
+// ─── Year Dropdown ────────────────────────────────────────────────────────────
 function YearTab({ years, selected, onSelect }: {
     years: string[]; selected: string; onSelect: (y: string) => void;
 }) {
     return (
-        <div className="flex gap-2 flex-wrap">
-            <button
-                onClick={() => onSelect("all")}
-                className="px-4 py-1.5 rounded-xl text-sm font-semibold transition-colors"
-                style={selected === "all"
-                    ? { backgroundColor: "#1a5233", color: "#fff" }
-                    : { backgroundColor: "#f0faf4", color: "#1a5233" }}
+        <div className="relative inline-block">
+            <select
+                value={selected}
+                onChange={(e) => onSelect(e.target.value)}
+                className="appearance-none pl-4 pr-10 py-2 rounded-xl border-2 border-[#a8d5ba] bg-[#f0faf4] text-sm font-semibold text-[#1a5233] cursor-pointer focus:outline-none focus:border-[#3aa36a] transition-colors min-w-[180px]"
             >
-                ทุกปี
-            </button>
-            {years.map((y, i) => (
-                <button key={y} onClick={() => onSelect(y)}
-                    className="px-4 py-1.5 rounded-xl text-sm font-semibold transition-colors"
-                    style={selected === y
-                        ? { backgroundColor: YEAR_COLORS[i % YEAR_COLORS.length], color: "#fff" }
-                        : { backgroundColor: "#f0faf4", color: "#555" }}
-                >
-                    {y}
-                </button>
-            ))}
+                <option value="all">ทุกปี</option>
+                {years.map((y) => (
+                    <option key={y} value={y}>ปีงบประมาณ {y}</option>
+                ))}
+            </select>
+            <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[#3aa36a]">
+                <ChevronDown size={16} />
+            </span>
         </div>
     );
 }
@@ -225,7 +219,7 @@ export default function SepsisDashboardPage() {
     const { data, loading, error, connected, secondsLeft, refetch } =
         useAutoRefresh<DashboardData>("/api/sepsis-sheets", REFRESH_INTERVAL_MS);
 
-    const [selectedYear, setSelectedYear] = useState("all");
+    const [selectedYear, setSelectedYear] = useState("2569");
 
     const years = useMemo(() => data?.summary.byYear.map((y) => y.year) ?? [], [data]);
 
@@ -244,6 +238,28 @@ export default function SepsisDashboardPage() {
     const kpiAvgAge = useMemo(() => {
         const ages = activeRows.map((r) => r.age).filter((a): a is number => a != null && a > 0);
         return ages.length > 0 ? Math.round(ages.reduce((s, a) => s + a, 0) / ages.length) : 0;
+    }, [activeRows]);
+
+    // ── KPI เวลา: เฉพาะ Admit / Refer (ไม่นับ Refer Back) ──
+    const timeKpis = useMemo(() => {
+        const isReferBack = (s: string) => /refer\s*back/i.test(s || "");
+        const elig = activeRows.filter((r) => !isReferBack(r.patientStatus));
+        const calc = (vals: (number | null)[], th: number) => {
+            const v = vals.filter((n): n is number => n != null && n >= 0);
+            const n = v.length;
+            const within = v.filter((x) => x <= th).length;
+            const avg = n ? Math.round(v.reduce((s, x) => s + x, 0) / n) : 0;
+            const pct = n ? Math.round((within / n) * 1000) / 10 : 0;
+            return { n, within, avg, pct };
+        };
+        const doorAtb = elig.map((r) =>
+            r.doorToDxMin != null && r.dxToAtbMin != null ? r.doorToDxMin + r.dxToAtbMin : null);
+        return {
+            door30: calc(elig.map((r) => r.doorToDxMin), 30),
+            door60: calc(elig.map((r) => r.doorToDxMin), 60),
+            atb60: calc(elig.map((r) => r.dxToAtbMin), 60),
+            doorToAtb: calc(doorAtb, 60),
+        };
     }, [activeRows]);
 
     // Chart data computed from activeRows
@@ -418,6 +434,52 @@ export default function SepsisDashboardPage() {
                     <KpiCard icon={Microscope} label="Pathogen พบ" value={`${pathogenData.length} ชนิด`}
                         sub="ยกเว้น No Growth" accent="#7F77DD" bg="#EEEDFE" />
                 </div>
+            )}
+
+            {/* ── KPI เวลา (Sepsis Time Bundle) ── */}
+            {data && (timeKpis.door30.n > 0 || timeKpis.atb60.n > 0) && (
+                <SectionCard
+                    title="ความรวดเร็วในการดูแล Sepsis (เฉพาะ Admit / Refer — ไม่นับ Refer Back)"
+                    icon={Clock}
+                >
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                        <KpiCard icon={Timer} label="มาถึง รพ. → Dx Sepsis ≤ 30 นาที"
+                            value={`${timeKpis.door30.pct}%`}
+                            sub={`เฉลี่ย ${timeKpis.door30.avg} นาที · ผ่าน ${timeKpis.door30.within}/${timeKpis.door30.n} ราย`}
+                            accent="#185FA5" bg="#E6F1FB" />
+                        <KpiCard icon={Activity} label="มาถึง รพ. → Dx Sepsis ≤ 1 ชม."
+                            value={`${timeKpis.door60.pct}%`}
+                            sub={`เฉลี่ย ${timeKpis.door60.avg} นาที · ผ่าน ${timeKpis.door60.within}/${timeKpis.door60.n} ราย`}
+                            accent="#1D9E75" bg="#E1F5EE" />
+                        <KpiCard icon={Syringe} label="Dx Sepsis → ได้รับ ATB ≤ 1 ชม."
+                            value={`${timeKpis.atb60.pct}%`}
+                            sub={`เฉลี่ย ${timeKpis.atb60.avg} นาที · ผ่าน ${timeKpis.atb60.within}/${timeKpis.atb60.n} ราย`}
+                            accent="#BA7517" bg="#FAEEDA" />
+                    </div>
+                    <div className="mt-3 mb-2 flex items-center gap-2">
+                        <span className="text-[11px] font-bold uppercase tracking-widest text-gray-400">เวลาเฉลี่ย</span>
+                        <div className="h-px flex-1 bg-gray-100" />
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                        <KpiCard icon={Timer} label="เฉลี่ย มาถึง รพ. → Dx Sepsis"
+                            value={`${timeKpis.door60.avg} นาที`}
+                            sub={`จาก ${timeKpis.door60.n} ราย`}
+                            accent="#185FA5" bg="#E6F1FB" />
+                        <KpiCard icon={Activity} label="เฉลี่ย มาถึง รพ. → Dx Sepsis"
+                            value={`${timeKpis.door60.avg} นาที`}
+                            sub={`จาก ${timeKpis.door60.n} ราย`}
+                            accent="#1D9E75" bg="#E1F5EE" />
+                        <KpiCard icon={Syringe} label="เฉลี่ย Dx Sepsis → ได้รับ ATB"
+                            value={`${timeKpis.atb60.avg} นาที`}
+                            sub={`จาก ${timeKpis.atb60.n} ราย`}
+                            accent="#BA7517" bg="#FAEEDA" />
+                    </div>
+                    <p className="text-[11px] text-gray-400 mt-3">
+                        * ตัวเลขใหญ่บน = % ที่ทำได้ตามเกณฑ์ · นับเฉพาะผู้ป่วยที่มีเวลาครบและสถานะ Admit หรือ Refer
+                        (ไม่นับ Refer Back) · เวลารวม มาถึง รพ. → ได้รับ ATB เฉลี่ย {timeKpis.doorToAtb.avg} นาที
+                        (จาก {timeKpis.doorToAtb.n} ราย) · ปี 2565–2566 ไม่มีคอลัมน์เวลาจึงไม่ถูกนับ
+                    </p>
+                </SectionCard>
             )}
 
             {/* ── Yearly Trend (all years only) ── */}

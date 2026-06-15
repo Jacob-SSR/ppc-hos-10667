@@ -38,6 +38,12 @@ export interface SepsisSheetRow {
   typeOfInfection: string;
   definiteStatus: string;
   zone: string;
+  // ── เพิ่มใหม่ ──
+  arrivalTime: string; // "HH:MM"
+  dxTime: string;
+  atbTime: string;
+  doorToDxMin: number | null; // เวลามาถึง รพ. → Dx Sepsis (นาที)
+  dxToAtbMin: number | null; // Dx Sepsis → ได้รับ ATB (นาที)
 }
 
 // ─── Column map per layout ────────────────────────────────────────────────────
@@ -58,12 +64,15 @@ interface ColMap {
   age: number | null;
   comorbidity: number;
   serviceDate: number;
+  arrivalTime: number | null;
   dxDate: number;
+  dxTime: number | null;
   dept: number;
   diagnosis: number;
   septicShock: number | null;
   atb: number;
   atbDate: number;
+  atbTime: number | null;
   culture: number;
   pathogen: number;
   patientStatus: number;
@@ -76,18 +85,49 @@ interface ColMap {
 
 function getColMap(layout: "new2569" | "new" | "old"): ColMap {
   if (layout === "new2569") {
+    // 2569: มี เวลาที่มาถึง รพ./OPD/ER แยกคอลัมน์
     return {
       name: 1,
       hn: 2,
       age: 3,
       comorbidity: 4,
       serviceDate: 5,
+      arrivalTime: 6,
       dxDate: 9,
-      dept: 11,
-      diagnosis: 12,
-      septicShock: null,
+      dxTime: 10,
+      septicShock: 12,
+      dept: 13,
+      diagnosis: 14,
+      atb: 15,
+      atbDate: 16,
+      atbTime: 17,
+      culture: 18,
+      pathogen: 20,
+      patientStatus: 22,
+      definiteDx: 23,
+      site: 24,
+      typeInf: 25,
+      definiteStatus: 26,
+      zone: 27,
+    };
+  }
+  if (layout === "new") {
+    // 2567-2568: มี เวลาที่มาถึง (เดี่ยว)
+    return {
+      name: 1,
+      hn: 2,
+      age: 3,
+      comorbidity: 4,
+      serviceDate: 5,
+      arrivalTime: 6,
+      dxDate: 7,
+      dxTime: 8,
+      dept: 9,
+      diagnosis: 10,
+      septicShock: 12,
       atb: 13,
       atbDate: 14,
+      atbTime: 15,
       culture: 16,
       pathogen: 18,
       patientStatus: 20,
@@ -98,42 +138,22 @@ function getColMap(layout: "new2569" | "new" | "old"): ColMap {
       zone: 25,
     };
   }
-  if (layout === "new") {
-    return {
-      name: 1,
-      hn: 2,
-      age: 3,
-      comorbidity: 4,
-      serviceDate: 5,
-      dxDate: 7,
-      dept: 9,
-      diagnosis: 10,
-      septicShock: 11,
-      atb: 12,
-      atbDate: 13,
-      culture: 15,
-      pathogen: 17,
-      patientStatus: 19,
-      definiteDx: 20,
-      site: 21,
-      typeInf: 22,
-      definiteStatus: 23,
-      zone: 24,
-    };
-  }
-  // old: 2565-2566
+  // old: 2565-2566 (ไม่มีคอลัมน์เวลา)
   return {
     name: 1,
     hn: 2,
     age: null,
     comorbidity: 3,
     serviceDate: 4,
+    arrivalTime: null,
     dxDate: 5,
+    dxTime: null,
     dept: -1,
     diagnosis: 6,
     septicShock: null,
     atb: 7,
     atbDate: -1,
+    atbTime: null,
     culture: 8,
     pathogen: 10,
     patientStatus: 12,
@@ -144,7 +164,6 @@ function getColMap(layout: "new2569" | "new" | "old"): ColMap {
     zone: 17,
   };
 }
-
 // ─── Normalizers ──────────────────────────────────────────────────────────────
 // toNum เฉพาะ sepsis — ใช้ Number(v) ตรงๆ (ไม่ strip comma) + เช็ค isFinite
 // ต่างจาก toNumOrNull กลางที่ strip comma → เก็บ local ไว้เพื่อ behavior เดิม
@@ -152,6 +171,45 @@ function toNum(v: unknown): number | null {
   if (v == null || v === "") return null;
   const n = Number(v);
   return isNaN(n) || !isFinite(n) ? null : n;
+}
+
+// แปลงค่าเวลาจากชีต → นาทีนับจากเที่ยงคืน
+// รองรับ "H:MM[:SS]" (+AM/PM) และ float แบบ H.MM (เช่น 11.06 = 11:06, 10.5 = 10:50)
+function parseClock(raw: unknown): number | null {
+  if (raw == null) return null;
+  const s = String(raw).trim();
+  if (!s || s === "-") return null;
+
+  const colon = s.match(/^(\d{1,2}):(\d{2})(?::\d{2})?\s*(AM|PM)?$/i);
+  if (colon) {
+    let h = parseInt(colon[1], 10);
+    const m = parseInt(colon[2], 10);
+    const ap = colon[3]?.toUpperCase();
+    if (ap === "PM" && h < 12) h += 12;
+    if (ap === "AM" && h === 12) h = 0;
+    return h <= 23 && m <= 59 ? h * 60 + m : null;
+  }
+
+  const num = Number(s);
+  if (!isNaN(num) && isFinite(num) && num >= 0 && num < 24) {
+    const h = Math.floor(num);
+    const mm = Math.round((num - h) * 100); // ทศนิยม 2 ตำแหน่ง = นาที
+    return mm <= 59 ? h * 60 + mm : null;
+  }
+  return null;
+}
+
+function minToClock(min: number | null): string {
+  if (min == null) return "";
+  return `${String(Math.floor(min / 60)).padStart(2, "0")}:${String(min % 60).padStart(2, "0")}`;
+}
+
+// รวมวันที่ (YYYY-MM-DD) + เวลา (นาที) → นาทีสัมบูรณ์ เพื่อให้คร่อมเที่ยงคืนได้
+function absMin(dateStr: string, clock: number | null): number | null {
+  if (clock == null) return null;
+  if (!dateStr) return clock;
+  const t = Date.parse(dateStr + "T00:00:00Z");
+  return isNaN(t) ? clock : Math.floor(t / 60000) + clock;
 }
 
 function normPathogen(raw: string): string {
@@ -242,6 +300,8 @@ function parseSheet(raw: string[][], thaiYear: string): SepsisSheetRow[] {
     const serviceDate = parseDate(r[cm.serviceDate], { validate: true });
     const dxDate =
       cm.dxDate >= 0 ? parseDate(r[cm.dxDate], { validate: true }) : "";
+    const atbDate =
+      cm.atbDate >= 0 ? parseDate(r[cm.atbDate], { validate: true }) : "";
 
     let septicShock: boolean | null = null;
     if (cm.septicShock != null && cm.septicShock >= 0) {
@@ -249,6 +309,23 @@ function parseSheet(raw: string[][], thaiYear: string): SepsisSheetRow[] {
       if (sv)
         septicShock = sv === "ใช่" || sv.toLowerCase() === "yes" || sv === "1";
     }
+
+    // ── เวลา + ช่วงเวลา ──
+    const get = (idx: number | null) =>
+      idx != null && idx >= 0 ? parseClock(r[idx]) : null;
+    const arrivalMin = get(cm.arrivalTime);
+    const dxMin = get(cm.dxTime);
+    const atbMin = get(cm.atbTime);
+
+    const arrivalAbs = absMin(serviceDate, arrivalMin);
+    const dxAbs = absMin(dxDate || serviceDate, dxMin);
+    const atbAbs = absMin(atbDate || dxDate || serviceDate, atbMin);
+
+    const span = (a: number | null, b: number | null): number | null => {
+      if (a == null || b == null) return null;
+      const d = b - a;
+      return d >= 0 && d <= 1440 ? d : null; // ตัดค่าติดลบ/เกิน 24 ชม. (data error)
+    };
 
     const hn = r[cm.hn] != null ? String(r[cm.hn]).trim() : "";
     const siteRaw = cm.site >= 0 ? toStr(r[cm.site]) : "";
@@ -268,8 +345,7 @@ function parseSheet(raw: string[][], thaiYear: string): SepsisSheetRow[] {
       diagnosis: toStr(r[cm.diagnosis]),
       septicShock,
       atb: toStr(r[cm.atb]),
-      atbDate:
-        cm.atbDate >= 0 ? parseDate(r[cm.atbDate], { validate: true }) : "",
+      atbDate,
       cultureType: toStr(r[cm.culture]),
       pathogen: normPathogen(toStr(r[cm.pathogen])),
       patientStatus: toStr(r[cm.patientStatus]),
@@ -278,6 +354,11 @@ function parseSheet(raw: string[][], thaiYear: string): SepsisSheetRow[] {
       typeOfInfection: typeRaw || "ไม่ระบุ",
       definiteStatus: toStr(r[cm.definiteStatus]),
       zone: normZone(zoneRaw),
+      arrivalTime: minToClock(arrivalMin),
+      dxTime: minToClock(dxMin),
+      atbTime: minToClock(atbMin),
+      doorToDxMin: span(arrivalAbs, dxAbs),
+      dxToAtbMin: span(dxAbs, atbAbs),
     });
   }
   return rows;
