@@ -66,13 +66,14 @@ function buildFilter(cardType: string, start: string, end: string) {
     string,
     { where: string; params: (string | number)[] }
   > = {
-    all: { where: baseWhere, params: baseParams },
+    // รวมที่ Admit ด้วย → ตรงกับการ์ด "ผู้รับบริการทั้งหมด" (239 คน)
+    all: { where: `v.vstdate BETWEEN ? AND ?`, params: baseParams },
     opdOnTime: {
-      where: `${baseWhere} AND o.vsttime BETWEEN '08:30:00' AND '16:30:59'`,
+      where: `${baseWhere} AND o.vsttime BETWEEN '08:30:00' AND '16:29:59'`,
       params: baseParams,
     },
     opdOffTime: {
-      where: `${baseWhere} AND (o.vsttime < '08:30:00' OR o.vsttime > '16:30:59')`,
+      where: `${baseWhere} AND o.vsttime BETWEEN '16:30:00' AND '20:30:59'`,
       params: baseParams,
     },
     opdUc: {

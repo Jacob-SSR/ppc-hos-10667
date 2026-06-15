@@ -78,41 +78,41 @@ export async function getDashboardData(start: string, end: string) {
   const [[summary]] = await db.query<SummaryQueryRow[]>(
     `
     SELECT
-      /* ── ผู้รับบริการทั้งหมด OPD ── */
+    /* ── ผู้รับบริการทั้งหมด (ตรงกับรายงาน HOSxP: รวมที่ Admit ด้วย) ── */
+      (SELECT COUNT(DISTINCT v.vn) FROM vn_stat v
+       WHERE v.vstdate BETWEEN ? AND ?) AS totalVisit,
+      (SELECT COUNT(DISTINCT v.hn) FROM vn_stat v
+       WHERE v.vstdate BETWEEN ? AND ?) AS totalPatient,
+      (SELECT COUNT(DISTINCT v.vn) FROM vn_stat v
+       INNER JOIN patient pt ON pt.hn=v.hn
+       WHERE v.vstdate BETWEEN ? AND ? AND pt.sex='1') AS totalMale,
+      (SELECT COUNT(DISTINCT v.vn) FROM vn_stat v
+       INNER JOIN patient pt ON pt.hn=v.hn
+       WHERE v.vstdate BETWEEN ? AND ? AND pt.sex='2') AS totalFemale,  
+       
+/* ── OPD ในเวลา (08:30–16:29) ── */
       (SELECT COUNT(DISTINCT o.vn) FROM ovst o INNER JOIN vn_stat v ON o.vn=v.vn
-       WHERE v.vstdate BETWEEN ? AND ? AND o.an IS NULL) AS totalVisit,
+       WHERE v.vstdate BETWEEN ? AND ? AND o.vsttime BETWEEN '08:30:00' AND '16:29:59' AND o.an IS NULL) AS opdOnTime,
       (SELECT COUNT(DISTINCT v.hn) FROM ovst o INNER JOIN vn_stat v ON o.vn=v.vn
-       WHERE v.vstdate BETWEEN ? AND ? AND o.an IS NULL) AS totalPatient,
+       WHERE v.vstdate BETWEEN ? AND ? AND o.vsttime BETWEEN '08:30:00' AND '16:29:59' AND o.an IS NULL) AS opdOnTimePat,
       (SELECT COUNT(DISTINCT o.vn) FROM ovst o INNER JOIN vn_stat v ON o.vn=v.vn
        INNER JOIN patient pt ON pt.hn=v.hn
-       WHERE v.vstdate BETWEEN ? AND ? AND o.an IS NULL AND pt.sex='1') AS totalMale,
+       WHERE v.vstdate BETWEEN ? AND ? AND o.vsttime BETWEEN '08:30:00' AND '16:29:59' AND o.an IS NULL AND pt.sex='1') AS opdOnTimeMale,
       (SELECT COUNT(DISTINCT o.vn) FROM ovst o INNER JOIN vn_stat v ON o.vn=v.vn
        INNER JOIN patient pt ON pt.hn=v.hn
-       WHERE v.vstdate BETWEEN ? AND ? AND o.an IS NULL AND pt.sex='2') AS totalFemale,
+       WHERE v.vstdate BETWEEN ? AND ? AND o.vsttime BETWEEN '08:30:00' AND '16:29:59' AND o.an IS NULL AND pt.sex='2') AS opdOnTimeFemale,
 
-      /* ── OPD ในเวลา ── */
+      /* ── OPD นอกเวลา (16:30–20:30) ── */
       (SELECT COUNT(DISTINCT o.vn) FROM ovst o INNER JOIN vn_stat v ON o.vn=v.vn
-       WHERE v.vstdate BETWEEN ? AND ? AND o.vsttime BETWEEN '08:30:00' AND '16:30:59' AND o.an IS NULL) AS opdOnTime,
+       WHERE v.vstdate BETWEEN ? AND ? AND o.vsttime BETWEEN '16:30:00' AND '20:30:59' AND o.an IS NULL) AS opdOffTime,
       (SELECT COUNT(DISTINCT v.hn) FROM ovst o INNER JOIN vn_stat v ON o.vn=v.vn
-       WHERE v.vstdate BETWEEN ? AND ? AND o.vsttime BETWEEN '08:30:00' AND '16:30:59' AND o.an IS NULL) AS opdOnTimePat,
+       WHERE v.vstdate BETWEEN ? AND ? AND o.vsttime BETWEEN '16:30:00' AND '20:30:59' AND o.an IS NULL) AS opdOffTimePat,
       (SELECT COUNT(DISTINCT o.vn) FROM ovst o INNER JOIN vn_stat v ON o.vn=v.vn
        INNER JOIN patient pt ON pt.hn=v.hn
-       WHERE v.vstdate BETWEEN ? AND ? AND o.vsttime BETWEEN '08:30:00' AND '16:30:59' AND o.an IS NULL AND pt.sex='1') AS opdOnTimeMale,
+       WHERE v.vstdate BETWEEN ? AND ? AND o.vsttime BETWEEN '16:30:00' AND '20:30:59' AND o.an IS NULL AND pt.sex='1') AS opdOffTimeMale,
       (SELECT COUNT(DISTINCT o.vn) FROM ovst o INNER JOIN vn_stat v ON o.vn=v.vn
        INNER JOIN patient pt ON pt.hn=v.hn
-       WHERE v.vstdate BETWEEN ? AND ? AND o.vsttime BETWEEN '08:30:00' AND '16:30:59' AND o.an IS NULL AND pt.sex='2') AS opdOnTimeFemale,
-
-      /* ── OPD นอกเวลา ── */
-      (SELECT COUNT(DISTINCT o.vn) FROM ovst o INNER JOIN vn_stat v ON o.vn=v.vn
-       WHERE v.vstdate BETWEEN ? AND ? AND (o.vsttime<'08:30:00' OR o.vsttime>'16:30:59') AND o.an IS NULL) AS opdOffTime,
-      (SELECT COUNT(DISTINCT v.hn) FROM ovst o INNER JOIN vn_stat v ON o.vn=v.vn
-       WHERE v.vstdate BETWEEN ? AND ? AND (o.vsttime<'08:30:00' OR o.vsttime>'16:30:59') AND o.an IS NULL) AS opdOffTimePat,
-      (SELECT COUNT(DISTINCT o.vn) FROM ovst o INNER JOIN vn_stat v ON o.vn=v.vn
-       INNER JOIN patient pt ON pt.hn=v.hn
-       WHERE v.vstdate BETWEEN ? AND ? AND (o.vsttime<'08:30:00' OR o.vsttime>'16:30:59') AND o.an IS NULL AND pt.sex='1') AS opdOffTimeMale,
-      (SELECT COUNT(DISTINCT o.vn) FROM ovst o INNER JOIN vn_stat v ON o.vn=v.vn
-       INNER JOIN patient pt ON pt.hn=v.hn
-       WHERE v.vstdate BETWEEN ? AND ? AND (o.vsttime<'08:30:00' OR o.vsttime>'16:30:59') AND o.an IS NULL AND pt.sex='2') AS opdOffTimeFemale,
+       WHERE v.vstdate BETWEEN ? AND ? AND o.vsttime BETWEEN '16:30:00' AND '20:30:59' AND o.an IS NULL AND pt.sex='2') AS opdOffTimeFemale,
 
       /* ── Admit ── */
       (SELECT COUNT(*) FROM an_stat a WHERE a.regdate BETWEEN ? AND ?) AS admitToday,

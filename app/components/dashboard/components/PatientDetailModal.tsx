@@ -21,35 +21,45 @@ interface PatientDetailModalProps {
 
 // ── Color maps ─────────────────────────────────────────────────────────────────
 const LEVEL_COLOR: Record<string, { bar: string; text: string }> = {
-  "Resuscitate (กู้ชีพทันที)":   { bar: "#A32D2D", text: "#A32D2D" },
+  "Resuscitate (กู้ชีพทันที)": { bar: "#A32D2D", text: "#A32D2D" },
   "Emergency (ฉุกเฉินเร่งด่วน)": { bar: "#BA7517", text: "#854F0B" },
-  "Urgency (ด่วนมาก)":            { bar: "#BA7517", text: "#854D0E" },
-  "Semi Urgency (ด่วน)":          { bar: "#185FA5", text: "#185FA5" },
-  "Non Urgency (รอได้)":          { bar: "#3B6D11", text: "#3B6D11" },
-  "ไม่ระบุ level":                { bar: "#888780", text: "#5F5E5A" },
+  "Urgency (ด่วนมาก)": { bar: "#BA7517", text: "#854D0E" },
+  "Semi Urgency (ด่วน)": { bar: "#185FA5", text: "#185FA5" },
+  "Non Urgency (รอได้)": { bar: "#3B6D11", text: "#3B6D11" },
+  "ไม่ระบุ level": { bar: "#888780", text: "#5F5E5A" },
+};
+
+// ลำดับความเสี่ยง — เลขน้อย = เสี่ยงสูง อยู่บนสุด
+const LEVEL_ORDER: Record<string, number> = {
+  "Resuscitate (กู้ชีพทันที)": 1,
+  "Emergency (ฉุกเฉินเร่งด่วน)": 2,
+  "Urgency (ด่วนมาก)": 3,
+  "Semi Urgency (ด่วน)": 4,
+  "Non Urgency (รอได้)": 5,
+  "ไม่ระบุ level": 99,
 };
 
 const PT_TYPE_COLOR: Record<string, { bar: string; text: string; icon: string }> = {
-  "ผู้ป่วยฉุกเฉิน":          { bar: "#A32D2D", text: "#A32D2D", icon: "🚨" },
-  "ผู้ป่วยอุบัติเหตุ":        { bar: "#BA7517", text: "#854F0B", icon: "🚗" },
-  "ผู้ป่วยตรวจโรคทั่วไป":   { bar: "#185FA5", text: "#185FA5", icon: "🩺" },
+  "ผู้ป่วยฉุกเฉิน": { bar: "#A32D2D", text: "#A32D2D", icon: "🚨" },
+  "ผู้ป่วยอุบัติเหตุ": { bar: "#BA7517", text: "#854F0B", icon: "🚗" },
+  "ผู้ป่วยตรวจโรคทั่วไป": { bar: "#185FA5", text: "#185FA5", icon: "🩺" },
   "ผู้ป่วยรับบริการอื่น ๆ": { bar: "#3B6D11", text: "#3B6D11", icon: "📋" },
-  "ไม่ระบุประเภท":            { bar: "#888780", text: "#5F5E5A", icon: "❓" },
+  "ไม่ระบุประเภท": { bar: "#888780", text: "#5F5E5A", icon: "❓" },
 };
 
 const VEHICLE_COLOR: Record<string, string> = {
-  "รถจักรยานยนต์":         "#EF9F27",
+  "รถจักรยานยนต์": "#EF9F27",
   "รถจักรยานและสามล้อถีบ": "#97C459",
-  "รถปิคอัพ":               "#85B7EB",
-  "คนเดินทางเท้า":          "#D4537E",
-  "รถยนต์ 4 ล้อ":           "#60a5fa",
+  "รถปิคอัพ": "#85B7EB",
+  "คนเดินทางเท้า": "#D4537E",
+  "รถยนต์ 4 ล้อ": "#60a5fa",
 };
 
 const DCH_COLOR: Record<string, { bar: string; text: string }> = {
-  "กลับบ้าน":               { bar: "#3B6D11", text: "#3B6D11" },
-  "Admitted":                { bar: "#185FA5", text: "#185FA5" },
+  "กลับบ้าน": { bar: "#3B6D11", text: "#3B6D11" },
+  "Admitted": { bar: "#185FA5", text: "#185FA5" },
   "ส่งต่อสถานพยาบาลอื่น": { bar: "#854F0B", text: "#854F0B" },
-  "เสียชีวิต":              { bar: "#A32D2D", text: "#A32D2D" },
+  "เสียชีวิต": { bar: "#A32D2D", text: "#A32D2D" },
 };
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
@@ -379,10 +389,12 @@ function ErPtTypeDrillDown({ data, total, drillDown }: {
 function ErLevelSummary({ data, total }: { data: Record<string, number>; total: number }) {
   return (
     <SummaryCard title="Emergency Level" icon={Activity} iconColor="#A32D2D">
-      {Object.entries(data).sort(([, a], [, b]) => b - a).map(([name, count]) => {
-        const c = LEVEL_COLOR[name] ?? { bar: "#888780", text: "#5F5E5A" };
-        return <BarRow key={name} label={name} count={count} total={total} bar={c.bar} text={c.text} />;
-      })}
+      {Object.entries(data)
+        .sort(([a], [b]) => (LEVEL_ORDER[a] ?? 98) - (LEVEL_ORDER[b] ?? 98))
+        .map(([name, count]) => {
+          const c = LEVEL_COLOR[name] ?? { bar: "#888780", text: "#5F5E5A" };
+          return <BarRow key={name} label={name} count={count} total={total} bar={c.bar} text={c.text} />;
+        })}
     </SummaryCard>
   );
 }
@@ -445,10 +457,10 @@ export default function PatientDetailModal({
   const isResizing = useRef(false);
   const resizeStart = useRef({ x: 0, y: 0, w: 520, h: 700 });
 
-  const isErCard        = cardType === "erEmergency";
+  const isErCard = cardType === "erEmergency";
   const isTransportCard = cardType === "erTransport";
-  const isOtherAcc      = cardType === "erOtherAccident";
-  const isAccidentCard  = isTransportCard || isOtherAcc;
+  const isOtherAcc = cardType === "erOtherAccident";
+  const isAccidentCard = isTransportCard || isOtherAcc;
 
   const startResize = (e: React.MouseEvent) => {
     e.preventDefault();
@@ -512,8 +524,8 @@ export default function PatientDetailModal({
       { total: 0, male: 0, female: 0 }), [pttypeSummary]);
 
   const maxTotal = pttypeSummary[0]?.total ?? 0;
-  const accTotal  = patients.length;
-  const accMale   = useMemo(() => patients.filter(p => isMale(p.sex)).length, [patients]);
+  const accTotal = patients.length;
+  const accMale = useMemo(() => patients.filter(p => isMale(p.sex)).length, [patients]);
   const accFemale = useMemo(() => patients.filter(p => !isMale(p.sex)).length, [patients]);
 
   const erDrillDown: DrillDownData = {
@@ -532,8 +544,8 @@ export default function PatientDetailModal({
   const subtitleLabel = isErCard
     ? "ประเภท · Level · สิทธิ์ · คลิกดูรายละเอียด"
     : isAccidentCard
-    ? "พาหนะ · ผู้นำส่ง · ผลการรักษา"
-    : "สรุปตามสิทธิ์";
+      ? "พาหนะ · ผู้นำส่ง · ผลการรักษา"
+      : "สรุปตามสิทธิ์";
 
   const isEmpty = isAccidentCard ? patients.length === 0 : pttypeSummary.length === 0;
 
