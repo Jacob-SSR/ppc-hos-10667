@@ -1,14 +1,13 @@
 "use client";
 
-import React, { useEffect, useState, useCallback, useMemo, useRef } from "react";
+import React, { useEffect, useState, useCallback, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid, ResponsiveContainer,
 } from "recharts";
 import {
   RefreshCw, TrendingUp, BadgeCheck, AlertTriangle, Info,
-  Building2, UploadCloud, CheckCircle2, XCircle, ChevronDown,
-  ChevronLeft, ChevronRight,
+  Building2, ChevronDown, ChevronLeft, ChevronRight,
 } from "lucide-react";
 
 const PAGE_SIZE = 50;
@@ -33,10 +32,21 @@ interface StmSubFundSummary {
   กองทุน: string; label: string; จำนวน: number; เรียกเก็บ: number; ชดเชย: number;
 }
 
+interface StmMonthSummary {
+  period: string; label: string;
+  จำนวน: number; เรียกเก็บ: number; ชดเชย: number; ไม่ชดเชย: number;
+}
+
+type Seg = "all" | "walkin" | "nonwalkin";
+
 interface StmDashboardData {
-  updatedAt: string; totalRows: number; totalClaim: number;
+  updatedAt: string;
+  source?: string;
+  seg?: Seg;
+  segLabel?: string;
+  totalRows: number; totalClaim: number;
   totalComp: number; totalNoComp: number;
-  rows: StmRow[]; byRep: StmRepSummary[];
+  rows: StmRow[]; byRep: StmRepSummary[]; byMonth: StmMonthSummary[];
   bySubFund: StmSubFundSummary[]; bySource: Record<string, number>;
 }
 
@@ -45,6 +55,20 @@ interface StmDashboardData {
 const fmt = (n: number) => n.toLocaleString("th-TH");
 const fmtB = (n: number) =>
   n.toLocaleString("th-TH", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+// 4 หลักแรกของ REP = YYMM (งวด/เดือน) เช่น "681000005" -> "6810"
+const periodOf = (rep: string) => (rep || "").slice(0, 4);
+
+const SEG_TABS: { key: Seg; label: string }[] = [
+  { key: "all", label: "ทั้งหมด" },
+  { key: "walkin", label: "WALKIN" },
+  { key: "nonwalkin", label: "ไม่ WALKIN" },
+];
+const SEG_LABEL: Record<Seg, string> = {
+  all: "ทั้งหมด",
+  walkin: "เฉพาะ WALKIN",
+  nonwalkin: "เฉพาะ ไม่ WALKIN",
+};
 
 const SUB_FUND_COLS: { key: keyof StmRow; label: string; color: string }[] = [
   { key: "พึงรับ", label: "OP พึงรับ", color: "#60a5fa" },
@@ -92,16 +116,16 @@ function KpiCard({ icon: Icon, label, value, sub, accent, bg }: {
 // ─── Bar Chart ─────────────────────────────────────────────────────────────────
 
 function StmBarChart({ data }: { data: StmDashboardData }) {
-  const chartData = data.byRep.map(r => ({
-    name: `REP ${r.rep}`,
-    เรียกเก็บ: r.เรียกเก็บ,
-    ชดเชย: r.ชดเชย,
-    ไม่ชดเชย: r.ไม่ชดเชย,
+  const chartData = data.byMonth.map(m => ({
+    name: m.label,
+    เรียกเก็บ: m.เรียกเก็บ,
+    ชดเชย: m.ชดเชย,
+    ไม่ชดเชย: m.ไม่ชดเชย,
   }));
 
   return (
     <div className="bg-white border border-gray-200 rounded-2xl shadow-sm p-5">
-      <h4 className="text-sm font-bold text-gray-600 mb-4">เรียกเก็บ vs ชดเชย — แยกตาม REP (งวด)</h4>
+      <h4 className="text-sm font-bold text-gray-600 mb-4">{`เรียกเก็บ vs ชดเชย — รายเดือน · ${data.segLabel ?? ""}`}</h4>
       <div className="flex gap-4 mb-4 flex-wrap">
         {[
           { color: "#85B7EB", label: "เรียกเก็บ" },
@@ -133,22 +157,24 @@ function StmBarChart({ data }: { data: StmDashboardData }) {
   );
 }
 
-// ─── Cross Tab (เหมือน BillingCrossTab) ────────────────────────────────────────
+// ─── Cross Tab (รายเดือน) ──────────────────────────────────────────────────────
 
-const COL_PAGE_SIZE = 5; // คอลัมน์กองทุนย่อยต่อหน้า
-const REP_PAGE_SIZE = 5; // REP ต่อหน้า (Cross-tab rows)
+const COL_PAGE_SIZE = 5;   // คอลัมน์กองทุนย่อยต่อหน้า
+const MONTH_PAGE_SIZE = 12; // เดือนต่อหน้า
 
 function StmCrossTab({ data }: { data: StmDashboardData }) {
   const [colPage, setColPage] = useState(1);
-  const [repPage, setRepPage] = useState(1);
+  const [rowPage, setRowPage] = useState(1);
 
+  // matrix: period -> { fundKey -> sum }
   const matrix = useMemo(() => {
     const m: Record<string, Record<string, number>> = {};
     for (const r of data.rows) {
-      if (!m[r.rep]) m[r.rep] = {};
+      const key = periodOf(r.rep);
+      if (!m[key]) m[key] = {};
       for (const col of SUB_FUND_COLS) {
         const v = Number(r[col.key] ?? 0);
-        m[r.rep][col.key as string] = (m[r.rep][col.key as string] || 0) + v;
+        m[key][col.key as string] = (m[key][col.key as string] || 0) + v;
       }
     }
     return m;
@@ -166,9 +192,9 @@ function StmCrossTab({ data }: { data: StmDashboardData }) {
   const totalColPages = Math.ceil(SUB_FUND_COLS.length / COL_PAGE_SIZE);
   const visibleCols = SUB_FUND_COLS.slice((colPage - 1) * COL_PAGE_SIZE, colPage * COL_PAGE_SIZE);
 
-  // Pagination แถว REP
-  const totalRepPages = Math.ceil(data.byRep.length / REP_PAGE_SIZE);
-  const visibleReps = data.byRep.slice((repPage - 1) * REP_PAGE_SIZE, repPage * REP_PAGE_SIZE);
+  // Pagination แถว (เดือน)
+  const totalRowPages = Math.ceil(data.byMonth.length / MONTH_PAGE_SIZE);
+  const visibleMonths = data.byMonth.slice((rowPage - 1) * MONTH_PAGE_SIZE, rowPage * MONTH_PAGE_SIZE);
 
   const thBase = "px-2 py-2 text-white font-semibold text-[11px] text-center border border-[#a8d5ba]";
 
@@ -177,7 +203,7 @@ function StmCrossTab({ data }: { data: StmDashboardData }) {
       {/* Header */}
       <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
         <h4 className="text-sm font-bold text-gray-600">
-          สรุปยอดชดเชย OPD-UCS แยกตามกองทุนย่อย
+          {`สรุปยอดชดเชย OPD-UCS แยกตามกองทุนย่อย (รายเดือน) · ${data.segLabel ?? ""}`}
         </h4>
         {/* Col pagination */}
         <div className="flex items-center gap-2">
@@ -187,7 +213,7 @@ function StmCrossTab({ data }: { data: StmDashboardData }) {
             disabled={colPage === 1}
             className="flex items-center gap-1 px-2.5 py-1 rounded-lg border-2 border-gray-200 text-xs font-semibold text-gray-600 hover:border-[#7ec8a0] hover:text-[#1a5233] disabled:opacity-30 transition-colors"
           >
-            <ChevronLeft size={12} /> ก่อนหน้า
+            <ChevronLeft size={12} /> เลื่อนซ้าย
           </button>
           <span className="px-2.5 py-1 rounded-lg border-2 text-xs font-bold tabular-nums"
             style={{ borderColor: "#7ec8a0", backgroundColor: "#f0faf4", color: "#1a5233" }}>
@@ -198,7 +224,7 @@ function StmCrossTab({ data }: { data: StmDashboardData }) {
             disabled={colPage === totalColPages}
             className="flex items-center gap-1 px-2.5 py-1 rounded-lg border-2 border-gray-200 text-xs font-semibold text-gray-600 hover:border-[#7ec8a0] hover:text-[#1a5233] disabled:opacity-30 transition-colors"
           >
-            ถัดไป <ChevronRight size={12} />
+            เลื่อนขวา <ChevronRight size={12} />
           </button>
         </div>
       </div>
@@ -207,7 +233,7 @@ function StmCrossTab({ data }: { data: StmDashboardData }) {
         <table className="border-collapse text-xs w-full">
           <thead>
             <tr>
-              <th className={`${thBase} bg-[#1a5233]`} rowSpan={2} style={{ minWidth: 120 }}>REP (งวด)</th>
+              <th className={`${thBase} bg-[#1a5233]`} rowSpan={2} style={{ minWidth: 120 }}>เดือน</th>
               <th className={`${thBase} bg-[#1a5233]`} rowSpan={2} style={{ minWidth: 60 }}>จำนวน</th>
               <th className={`${thBase} bg-[#1a5233]`} rowSpan={2} style={{ minWidth: 90 }}>เรียกเก็บ (฿)</th>
               {visibleCols.map(col => (
@@ -228,22 +254,22 @@ function StmCrossTab({ data }: { data: StmDashboardData }) {
             </tr>
           </thead>
           <tbody>
-            {visibleReps.map((rep, i) => {
-              const repData = matrix[rep.rep] ?? {};
+            {visibleMonths.map((mo, i) => {
+              const moData = matrix[mo.period] ?? {};
               const base = i % 2 === 0 ? "bg-white" : "bg-gray-50/40";
               return (
-                <tr key={rep.rep} className={`border-b border-gray-200 hover:bg-[#f0faf4] transition-colors ${base}`}>
-                  <td className="px-2 py-2 text-center text-xs font-mono font-bold text-[#1a5233] bg-[#f0faf4] border-r border-gray-200">
-                    {rep.rep}
+                <tr key={mo.period} className={`border-b border-gray-200 hover:bg-[#f0faf4] transition-colors ${base}`}>
+                  <td className="px-2 py-2 text-center text-xs font-bold text-[#1a5233] bg-[#f0faf4] border-r border-gray-200 whitespace-nowrap">
+                    {mo.label}
                   </td>
                   <td className="px-2 py-2 text-right tabular-nums text-xs text-gray-700 border-r border-gray-200">
-                    {fmt(rep.จำนวน)}
+                    {fmt(mo.จำนวน)}
                   </td>
                   <td className="px-2 py-2 text-right tabular-nums text-xs font-bold text-gray-800 border-r-2 border-gray-300">
-                    {fmtB(rep.เรียกเก็บ)}
+                    {fmtB(mo.เรียกเก็บ)}
                   </td>
                   {visibleCols.map(col => {
-                    const v = repData[col.key as string] ?? 0;
+                    const v = moData[col.key as string] ?? 0;
                     return (
                       <td key={col.key as string}
                         className={`px-2 py-2 text-right tabular-nums text-xs border-r border-gray-200 ${v === 0 ? "text-gray-300" : "text-[#236b43] font-medium"
@@ -253,7 +279,7 @@ function StmCrossTab({ data }: { data: StmDashboardData }) {
                     );
                   })}
                   <td className="px-2 py-2 text-right tabular-nums text-xs font-extrabold text-[#1a5233]">
-                    {fmtB(rep.ชดเชย)}
+                    {fmtB(mo.ชดเชย)}
                   </td>
                 </tr>
               );
@@ -282,27 +308,27 @@ function StmCrossTab({ data }: { data: StmDashboardData }) {
         </table>
       </div>
 
-      {/* Row (REP) pagination */}
-      {totalRepPages > 1 && (
+      {/* Row (เดือน) pagination */}
+      {totalRowPages > 1 && (
         <div className="flex items-center justify-between mt-3 pt-3 border-t border-gray-100">
           <p className="text-xs text-gray-500">
-            REP <span className="font-bold text-gray-800">{(repPage - 1) * REP_PAGE_SIZE + 1}–{Math.min(repPage * REP_PAGE_SIZE, data.byRep.length)}</span> จาก {data.byRep.length} งวด
+            เดือน <span className="font-bold text-gray-800">{(rowPage - 1) * MONTH_PAGE_SIZE + 1}–{Math.min(rowPage * MONTH_PAGE_SIZE, data.byMonth.length)}</span> จาก {data.byMonth.length} เดือน
           </p>
           <div className="flex items-center gap-2">
             <button
-              onClick={() => setRepPage(p => Math.max(p - 1, 1))}
-              disabled={repPage === 1}
+              onClick={() => setRowPage(p => Math.max(p - 1, 1))}
+              disabled={rowPage === 1}
               className="flex items-center gap-1 px-3 py-1.5 rounded-lg border-2 border-gray-200 text-xs font-semibold text-gray-600 hover:border-[#7ec8a0] hover:text-[#1a5233] disabled:opacity-30 transition-colors"
             >
               <ChevronLeft size={13} /> ก่อนหน้า
             </button>
             <span className="px-3 py-1.5 rounded-lg border-2 text-xs font-bold tabular-nums"
               style={{ borderColor: "#7ec8a0", backgroundColor: "#f0faf4", color: "#1a5233" }}>
-              {repPage} / {totalRepPages}
+              {rowPage} / {totalRowPages}
             </span>
             <button
-              onClick={() => setRepPage(p => Math.min(p + 1, totalRepPages))}
-              disabled={repPage === totalRepPages}
+              onClick={() => setRowPage(p => Math.min(p + 1, totalRowPages))}
+              disabled={rowPage === totalRowPages}
               className="flex items-center gap-1 px-3 py-1.5 rounded-lg border-2 border-gray-200 text-xs font-semibold text-gray-600 hover:border-[#7ec8a0] hover:text-[#1a5233] disabled:opacity-30 transition-colors"
             >
               ถัดไป <ChevronRight size={13} />
@@ -349,38 +375,38 @@ function Pagination({ page, totalPages, onChange }: {
   );
 }
 
-// ─── REP Card (คล้าย UnitCard ใน billing) ──────────────────────────────────────
+// ─── Month Card ────────────────────────────────────────────────────────────────
 
-function RepCard({ rep, rows }: { rep: StmRepSummary; rows: StmRow[] }) {
+function MonthCard({ month, rows }: { month: StmMonthSummary; rows: StmRow[] }) {
   const [open, setOpen] = useState(false);
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState("");
 
-  const rate = rep.เรียกเก็บ > 0
-    ? Math.round((rep.ชดเชย / rep.เรียกเก็บ) * 1000) / 10
+  const rate = month.เรียกเก็บ > 0
+    ? Math.round((month.ชดเชย / month.เรียกเก็บ) * 1000) / 10
     : 0;
   const rateColor = rate >= 90 ? "#3B6D11" : rate >= 60 ? "#854F0B" : "#A32D2D";
 
-  const repRows = useMemo(
-    () => rows.filter(r => r.rep === rep.rep),
-    [rows, rep.rep]
+  const monthRows = useMemo(
+    () => rows.filter(r => periodOf(r.rep) === month.period),
+    [rows, month.period]
   );
 
   const filtered = useMemo(() => {
     const q = search.toLowerCase().trim();
-    if (!q) return repRows;
-    return repRows.filter(r =>
+    if (!q) return monthRows;
+    return monthRows.filter(r =>
       r.hn.includes(q) ||
       r.ชื่อสกุล.toLowerCase().includes(q) ||
       r.maininscl.toLowerCase().includes(q) ||
+      r.rep.includes(q) ||
       r.seqNo.includes(q)
     );
-  }, [repRows, search]);
+  }, [monthRows, search]);
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const paginated = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
-  // reset หน้าเมื่อ search เปลี่ยน
   const handleSearch = (v: string) => { setSearch(v); setPage(1); };
 
   return (
@@ -398,21 +424,21 @@ function RepCard({ rep, rows }: { rep: StmRepSummary; rows: StmRow[] }) {
           <Building2 size={18} className="text-blue-700" strokeWidth={1.8} />
         </div>
         <div className="flex-1 min-w-0">
-          <p className="text-sm font-bold text-gray-800">REP {rep.rep}</p>
-          <p className="text-[11px] text-gray-400">{fmt(rep.จำนวน)} รายการ</p>
+          <p className="text-sm font-bold text-gray-800">{month.label}</p>
+          <p className="text-[11px] text-gray-400">{fmt(month.จำนวน)} รายการ</p>
         </div>
         <div className="flex items-center gap-6 shrink-0 text-right">
           <div>
             <p className="text-[10px] text-gray-400 font-medium">เรียกเก็บ</p>
-            <p className="text-sm font-bold text-gray-800 tabular-nums">{fmtB(rep.เรียกเก็บ)}</p>
+            <p className="text-sm font-bold text-gray-800 tabular-nums">{fmtB(month.เรียกเก็บ)}</p>
           </div>
           <div>
             <p className="text-[10px] text-gray-400 font-medium">ชดเชย</p>
-            <p className="text-sm font-bold tabular-nums" style={{ color: rateColor }}>{fmtB(rep.ชดเชย)}</p>
+            <p className="text-sm font-bold tabular-nums" style={{ color: rateColor }}>{fmtB(month.ชดเชย)}</p>
           </div>
           <div>
             <p className="text-[10px] text-gray-400 font-medium">ไม่ชดเชย</p>
-            <p className="text-sm font-bold tabular-nums text-red-600">{fmtB(rep.ไม่ชดเชย)}</p>
+            <p className="text-sm font-bold tabular-nums text-red-600">{fmtB(month.ไม่ชดเชย)}</p>
           </div>
           <div>
             <p className="text-[10px] text-gray-400 font-medium">อัตรา</p>
@@ -451,7 +477,7 @@ function RepCard({ rep, rows }: { rep: StmRepSummary; rows: StmRow[] }) {
                   <span className="inline-flex items-center justify-center px-3 py-0.5 rounded-full text-xs font-bold border"
                     style={{ backgroundColor: "#f0faf4", borderColor: "#a8d5ba", color: "#1a5233" }}>
                     {filtered.length.toLocaleString()} รายการ
-                    {search && <span className="ml-1 font-normal text-gray-400">จาก {repRows.length.toLocaleString()}</span>}
+                    {search && <span className="ml-1 font-normal text-gray-400">จาก {monthRows.length.toLocaleString()}</span>}
                   </span>
                   <span className="text-xs text-gray-400">
                     หน้า {page}/{totalPages} · แสดง {PAGE_SIZE} ต่อหน้า
@@ -459,7 +485,7 @@ function RepCard({ rep, rows }: { rep: StmRepSummary; rows: StmRow[] }) {
                 </div>
                 <input
                   type="text"
-                  placeholder="ค้นหา HN / ชื่อ / MAININSCL..."
+                  placeholder="ค้นหา HN / ชื่อ / REP / MAININSCL..."
                   value={search}
                   onChange={e => handleSearch(e.target.value)}
                   className="border-2 border-gray-200 rounded-full px-4 py-1.5 text-xs w-56 focus:outline-none focus:border-[#7ec8a0] transition-colors"
@@ -472,7 +498,7 @@ function RepCard({ rep, rows }: { rep: StmRepSummary; rows: StmRow[] }) {
                 <table className="min-w-full text-xs border-collapse">
                   <thead>
                     <tr className="bg-green-700 sticky top-0">
-                      {["#", "HN", "ชื่อ-สกุล", "วันเข้ารักษา", "วันจำหน่าย", "MAININSCL", "เรียกเก็บ", "OP พึงรับ", "HC", "AE", "PP", "ยอดชดเชย", "แหล่งข้อมูล"].map(h => (
+                      {["#", "REP", "HN", "ชื่อ-สกุล", "วันเข้ารักษา", "วันจำหน่าย", "MAININSCL", "เรียกเก็บ", "OP พึงรับ", "HC", "AE", "PP", "ยอดชดเชย", "แหล่งข้อมูล"].map(h => (
                         <th key={h} className="px-3 py-2.5 text-left text-white font-semibold whitespace-nowrap border-r border-green-600">
                           {h}
                         </th>
@@ -482,7 +508,7 @@ function RepCard({ rep, rows }: { rep: StmRepSummary; rows: StmRow[] }) {
                   <tbody>
                     {paginated.length === 0 ? (
                       <tr>
-                        <td colSpan={13} className="px-4 py-8 text-center text-gray-400 text-xs">
+                        <td colSpan={14} className="px-4 py-8 text-center text-gray-400 text-xs">
                           ไม่พบข้อมูลที่ตรงกับการค้นหา
                         </td>
                       </tr>
@@ -495,6 +521,7 @@ function RepCard({ rep, rows }: { rep: StmRepSummary; rows: StmRow[] }) {
                           onMouseEnter={e => (e.currentTarget.style.backgroundColor = "#f0faf4")}
                           onMouseLeave={e => (e.currentTarget.style.backgroundColor = base)}>
                           <td className="px-3 py-2 text-gray-400 tabular-nums">{globalIdx}</td>
+                          <td className="px-3 py-2 font-mono text-gray-500">{r.rep}</td>
                           <td className="px-3 py-2 font-mono text-gray-600">{r.hn}</td>
                           <td className="px-3 py-2 text-gray-800 max-w-[200px] truncate">{r.ชื่อสกุล}</td>
                           <td className="px-3 py-2 text-gray-600 whitespace-nowrap">
@@ -533,149 +560,17 @@ function RepCard({ rep, rows }: { rep: StmRepSummary; rows: StmRow[] }) {
   );
 }
 
-// ─── REP Card List with Pagination ────────────────────────────────────────────
+// ─── Month Card List ───────────────────────────────────────────────────────────
 
-const REP_CARD_PAGE_SIZE = 5;
-
-function RepCardList({ reps, rows }: { reps: StmRepSummary[]; rows: StmRow[] }) {
-  const [page, setPage] = useState(1);
-  const totalPages = Math.ceil(reps.length / REP_CARD_PAGE_SIZE);
-  const visible = reps.slice((page - 1) * REP_CARD_PAGE_SIZE, page * REP_CARD_PAGE_SIZE);
-
+function MonthCardList({ months, rows, segLabel }: { months: StmMonthSummary[]; rows: StmRow[]; segLabel: string }) {
   return (
     <div className="space-y-3">
-      {/* Header + pagination */}
-      <div className="flex items-center justify-between">
-        <p className="text-xs font-bold uppercase tracking-widest text-gray-400">
-          รายละเอียดแยกตาม REP (งวดส่งข้อมูล)
-        </p>
-        {totalPages > 1 && (
-          <div className="flex items-center gap-2">
-            <span className="text-xs text-gray-400">
-              {(page - 1) * REP_CARD_PAGE_SIZE + 1}–{Math.min(page * REP_CARD_PAGE_SIZE, reps.length)} จาก {reps.length} งวด
-            </span>
-            <button
-              onClick={() => setPage(p => Math.max(p - 1, 1))}
-              disabled={page === 1}
-              className="flex items-center gap-1 px-3 py-1.5 rounded-lg border-2 border-gray-200 text-xs font-semibold text-gray-600 hover:border-[#7ec8a0] hover:text-[#1a5233] disabled:opacity-30 transition-colors"
-            >
-              <ChevronLeft size={13} /> ก่อนหน้า
-            </button>
-            <span className="px-3 py-1.5 rounded-lg border-2 text-xs font-bold tabular-nums"
-              style={{ borderColor: "#7ec8a0", backgroundColor: "#f0faf4", color: "#1a5233" }}>
-              {page} / {totalPages}
-            </span>
-            <button
-              onClick={() => setPage(p => Math.min(p + 1, totalPages))}
-              disabled={page === totalPages}
-              className="flex items-center gap-1 px-3 py-1.5 rounded-lg border-2 border-gray-200 text-xs font-semibold text-gray-600 hover:border-[#7ec8a0] hover:text-[#1a5233] disabled:opacity-30 transition-colors"
-            >
-              ถัดไป <ChevronRight size={13} />
-            </button>
-          </div>
-        )}
-      </div>
-
-      {/* Cards */}
-      {visible.map(rep => (
-        <RepCard key={rep.rep} rep={rep} rows={rows} />
+      <p className="text-xs font-bold uppercase tracking-widest text-gray-400">
+        {`รายละเอียดแยกตามเดือน · ${segLabel}`}
+      </p>
+      {months.map(month => (
+        <MonthCard key={month.period} month={month} rows={rows} />
       ))}
-
-      {/* Bottom pagination */}
-      {totalPages > 1 && (
-        <div className="flex items-center justify-end gap-2 pt-1">
-          <button
-            onClick={() => setPage(p => Math.max(p - 1, 1))}
-            disabled={page === 1}
-            className="flex items-center gap-1 px-3 py-1.5 rounded-lg border-2 border-gray-200 text-xs font-semibold text-gray-600 hover:border-[#7ec8a0] hover:text-[#1a5233] disabled:opacity-30 transition-colors"
-          >
-            <ChevronLeft size={13} /> ก่อนหน้า
-          </button>
-          <span className="px-3 py-1.5 rounded-lg border-2 text-xs font-bold tabular-nums"
-            style={{ borderColor: "#7ec8a0", backgroundColor: "#f0faf4", color: "#1a5233" }}>
-            {page} / {totalPages}
-          </span>
-          <button
-            onClick={() => setPage(p => Math.min(p + 1, totalPages))}
-            disabled={page === totalPages}
-            className="flex items-center gap-1 px-3 py-1.5 rounded-lg border-2 border-gray-200 text-xs font-semibold text-gray-600 hover:border-[#7ec8a0] hover:text-[#1a5233] disabled:opacity-30 transition-colors"
-          >
-            ถัดไป <ChevronRight size={13} />
-          </button>
-        </div>
-      )}
-    </div>
-  );
-}
-
-// ─── Upload Dropzone ────────────────────────────────────────────────────────────
-
-function UploadDropzone({ onSuccess }: { onSuccess: () => void }) {
-  const inputRef = useRef<HTMLInputElement>(null);
-  const [dragging, setDragging] = useState(false);
-  const [uploading, setUploading] = useState(false);
-  const [result, setResult] = useState<{ ok: boolean; msg: string } | null>(null);
-
-  const upload = useCallback(async (file: File) => {
-    setUploading(true); setResult(null);
-    const form = new FormData(); form.append("file", file);
-    try {
-      const res = await fetch("/api/stm-upload", { method: "POST", body: form, credentials: "include" });
-      const json = await res.json();
-      setResult({ ok: json.success, msg: json.message ?? json.error });
-      if (json.success) setTimeout(onSuccess, 600);
-    } catch {
-      setResult({ ok: false, msg: "เชื่อมต่อ server ไม่ได้" });
-    } finally {
-      setUploading(false);
-    }
-  }, [onSuccess]);
-
-  return (
-    <div className="bg-white border border-gray-200 rounded-2xl p-4">
-      <div className="flex items-center justify-between mb-3">
-        <h4 className="text-sm font-bold text-[#717171]">อัปโหลดข้อมูล STM (OPD-UCS)</h4>
-        <span className="text-[11px] text-gray-400">stm.xlsx</span>
-      </div>
-      <motion.div
-        onDragOver={e => { e.preventDefault(); setDragging(true); }}
-        onDragLeave={() => setDragging(false)}
-        onDrop={e => { e.preventDefault(); setDragging(false); const f = e.dataTransfer.files[0]; if (f) upload(f); }}
-        onClick={() => !uploading && inputRef.current?.click()}
-        animate={{ borderColor: dragging ? "#3aa36a" : "#d1d5db", backgroundColor: dragging ? "#f0faf4" : "#fafafa", scale: dragging ? 1.01 : 1 }}
-        className="border-2 border-dashed rounded-xl cursor-pointer flex flex-col items-center gap-2 py-6 select-none"
-      >
-        <input ref={inputRef} type="file" accept=".xlsx,.xls" className="hidden"
-          onChange={e => { const f = e.target.files?.[0]; if (f) upload(f); e.target.value = ""; }} />
-        <AnimatePresence mode="wait">
-          {uploading ? (
-            <motion.div key="up" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="flex flex-col items-center gap-2">
-              <motion.div animate={{ rotate: 360 }} transition={{ duration: 1, repeat: Infinity, ease: "linear" }}>
-                <RefreshCw size={28} className="text-green-600" />
-              </motion.div>
-              <p className="text-sm font-semibold text-green-700">กำลังอัปโหลด...</p>
-            </motion.div>
-          ) : result?.ok ? (
-            <motion.div key="ok" initial={{ opacity: 0, scale: 0.85 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0 }} className="flex flex-col items-center gap-1">
-              <CheckCircle2 size={28} className="text-green-600" />
-              <p className="text-sm font-bold text-green-700">{result.msg}</p>
-              <p className="text-xs text-gray-400 underline cursor-pointer" onClick={e => { e.stopPropagation(); setResult(null); }}>อัปโหลดไฟล์ใหม่</p>
-            </motion.div>
-          ) : result ? (
-            <motion.div key="err" initial={{ opacity: 0, scale: 0.85 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0 }} className="flex flex-col items-center gap-1">
-              <XCircle size={28} className="text-red-500" />
-              <p className="text-sm font-semibold text-red-600">{result.msg}</p>
-              <p className="text-xs text-gray-500 underline cursor-pointer" onClick={e => { e.stopPropagation(); setResult(null); }}>ลองใหม่</p>
-            </motion.div>
-          ) : (
-            <motion.div key="idle" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="flex flex-col items-center gap-1 pointer-events-none">
-              <UploadCloud size={28} style={{ color: dragging ? "#3aa36a" : "#9ca3af" }} />
-              <p className="text-sm font-semibold text-gray-600">{dragging ? "ปล่อยเพื่ออัปโหลด" : "ลากวางไฟล์ หรือคลิกเพื่อเลือก"}</p>
-              <p className="text-xs text-gray-400">ไฟล์ STM_XXXXX_OPUCS.xlsx</p>
-            </motion.div>
-          )}
-        </AnimatePresence>
-      </motion.div>
     </div>
   );
 }
@@ -687,11 +582,12 @@ export default function StmDashboardPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [noFile, setNoFile] = useState(false);
+  const [seg, setSeg] = useState<Seg>("walkin");
 
   const fetchData = useCallback(async () => {
     setLoading(true); setError(null); setNoFile(false);
     try {
-      const res = await fetch("/api/stm-dashboard", { credentials: "include" });
+      const res = await fetch(`/api/stm-dashboard?seg=${seg}`, { credentials: "include" });
       if (res.status === 404) { setNoFile(true); setLoading(false); return; }
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       setData(await res.json());
@@ -700,9 +596,16 @@ export default function StmDashboardPage() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [seg]);
 
-  useEffect(() => { fetchData(); }, [fetchData]);
+  // โหลดครั้งแรก + รีเฟรชอัตโนมัติทุก 60 วินาที (เรียลไทม์จาก Google Sheet)
+  useEffect(() => {
+    fetchData();
+    const id = setInterval(fetchData, 60_000);
+    return () => clearInterval(id);
+  }, [fetchData]);
+
+  const segLabel = SEG_LABEL[seg];
 
   const compRate = data && data.totalClaim > 0
     ? Math.round((data.totalComp / data.totalClaim) * 1000) / 10
@@ -715,10 +618,10 @@ export default function StmDashboardPage() {
       <div className="bg-white border border-gray-200 rounded-2xl shadow-sm px-6 py-4 flex flex-wrap items-center justify-between gap-4">
         <div>
           <h1 className="text-lg font-bold text-gray-800">
-            Dashboard ค่าบริการทางการแพทย์ OPD-UCS (STM)
+            Dashboard ค่าบริการ OPD-UCS (STM)
           </h1>
           <p className="text-xs text-gray-400 mt-0.5">
-            สรุปยอดเรียกเก็บและชดเชยแยกตามกองทุนย่อย — ไม่แสดงข้อมูล IP/VA/COVID
+            ข้อมูลเรียลไทม์จาก Google Sheet · สรุปยอดเรียกเก็บและยอดชดเชยทั้งสิ้น · {segLabel}
             {data && <span className="ml-2">· อัปเดต {new Date(data.updatedAt).toLocaleString("th-TH")}</span>}
           </p>
         </div>
@@ -732,13 +635,37 @@ export default function StmDashboardPage() {
         </button>
       </div>
 
-      {/* No file */}
+      {/* ปุ่มสลับกลุ่ม: ทั้งหมด / WALKIN / ไม่ WALKIN */}
+      <div className="flex items-center gap-2">
+        <span className="text-xs font-bold uppercase tracking-widest text-gray-400 mr-1">กลุ่มข้อมูล</span>
+        <div className="inline-flex bg-gray-100 rounded-xl p-1 gap-1">
+          {SEG_TABS.map((t) => {
+            const active = seg === t.key;
+            return (
+              <button
+                key={t.key}
+                onClick={() => setSeg(t.key)}
+                className={`px-4 py-1.5 rounded-lg text-sm font-semibold transition-all ${active
+                    ? "bg-white shadow-sm text-[#1a5233]"
+                    : "text-gray-500 hover:text-gray-700"
+                  }`}
+              >
+                {t.label}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* No data */}
       {noFile && !loading && (
         <div className="bg-amber-50 border border-amber-200 rounded-2xl p-6 flex items-start gap-3">
           <Info size={18} className="text-amber-600 shrink-0 mt-0.5" />
           <div>
-            <p className="text-sm font-bold text-amber-800">ยังไม่มีข้อมูล</p>
-            <p className="text-xs text-amber-700 mt-1">กรุณาอัปโหลดไฟล์ STM_XXXXX_OPUCS.xlsx ด้านล่าง</p>
+            <p className="text-sm font-bold text-amber-800">ยังไม่พบข้อมูลกลุ่ม &quot;{segLabel}&quot;</p>
+            <p className="text-xs text-amber-700 mt-1">
+              ตรวจสอบว่าได้แชร์ Google Sheet ให้ service account แล้ว และมีข้อมูลในกลุ่มที่เลือก
+            </p>
           </div>
         </div>
       )}
@@ -762,7 +689,7 @@ export default function StmDashboardPage() {
                 <KpiCard icon={TrendingUp} label="เรียกเก็บรวม"
                   value={fmtB(data.totalClaim)} sub="บาท"
                   accent="#854D0E" bg="#FEF9C3" />
-                <KpiCard icon={BadgeCheck} label="ชดเชยแล้ว"
+                <KpiCard icon={BadgeCheck} label="ยอดชดเชยทั้งสิ้น"
                   value={fmtB(data.totalComp)}
                   sub={`${compRate}% ของที่เรียกเก็บ`}
                   accent="#3B6D11" bg="#EAF3DE" />
@@ -775,18 +702,21 @@ export default function StmDashboardPage() {
       )}
 
       {/* Bar Chart */}
-      {data && data.byRep.length > 0 && <StmBarChart data={data} />}
+      {data && data.byMonth.length > 0 && <StmBarChart data={data} />}
 
       {/* Cross Tab */}
       {data && <StmCrossTab data={data} />}
 
-      {/* REP Cards */}
-      {data && data.byRep.length > 0 && (
-        <RepCardList reps={data.byRep} rows={data.rows} />
+      {/* Month Cards */}
+      {data && data.byMonth.length > 0 && (
+        <MonthCardList months={data.byMonth} rows={data.rows} segLabel={segLabel} />
       )}
 
-      {/* Upload */}
-      <UploadDropzone onSuccess={fetchData} />
+      {/* Footer note */}
+      <div className="bg-white border border-gray-200 rounded-2xl px-5 py-3 flex items-center gap-2 text-xs text-gray-400">
+        <Info size={14} className="shrink-0" />
+        {`ข้อมูลดึงสดจาก Google Sheet และรีเฟรชอัตโนมัติทุก 60 วินาที — กลุ่ม: ${segLabel}`}
+      </div>
     </div>
   );
 }
