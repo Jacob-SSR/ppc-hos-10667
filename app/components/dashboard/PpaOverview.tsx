@@ -39,6 +39,15 @@ const PPA_ITEMS = [
   },
 ];
 
+type PieLabelProps = {
+  cx?: number;
+  cy?: number;
+  midAngle?: number;
+  innerRadius?: number;
+  outerRadius?: number;
+  percent?: number;
+};
+
 export default function PpaOverview() {
   const [counts, setCounts] = useState<number[]>([0, 0, 0, 0]);
   const [loading, setLoading] = useState(true);
@@ -64,13 +73,13 @@ export default function PpaOverview() {
 
   const RADIAN = Math.PI / 180;
   const renderCustomLabel = ({
-    cx,
-    cy,
-    midAngle,
-    innerRadius,
-    outerRadius,
-    percent,
-  }: any) => {
+    cx = 0,
+    cy = 0,
+    midAngle = 0,
+    innerRadius = 0,
+    outerRadius = 0,
+    percent = 0,
+  }: PieLabelProps) => {
     if (percent < 0.05) return null;
     const r = innerRadius + (outerRadius - innerRadius) * 0.5;
     const x = cx + r * Math.cos(-midAngle * RADIAN);
@@ -157,8 +166,8 @@ export default function PpaOverview() {
                   ))}
                 </Pie>
                 <Tooltip
-                  formatter={(val: number, name: string) => [
-                    val.toLocaleString() + " ราย",
+                  formatter={(val, name) => [
+                    Number(val ?? 0).toLocaleString() + " ราย",
                     name,
                   ]}
                   contentStyle={{
