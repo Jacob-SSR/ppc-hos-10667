@@ -56,10 +56,10 @@ export async function POST(req: Request) {
   });
 
   const res = NextResponse.json({ message: "Login success" });
-
   res.cookies.set("token", token, {
     httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
+    secure: false,
+    sameSite: "lax",
     path: "/",
   });
   return res;
