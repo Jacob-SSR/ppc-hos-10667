@@ -8,6 +8,9 @@ import {
   getAncMissedAppts,
   getAncLaborAdmit,
   getAncReferOut,
+  getAncAnemiaHct,
+  getAncAnemiaHb,
+  getAncDailyMonthly,
 } from "@/lib/anc.service";
 
 export const dynamic = "force-dynamic";
@@ -33,11 +36,22 @@ export async function GET(req: Request) {
     const start = url.searchParams.get("start") || def.start;
     const end = url.searchParams.get("end") || def.end;
 
-    const [summary, missedAppts, laborAdmit, referOut] = await Promise.all([
+    const [
+      summary,
+      missedAppts,
+      laborAdmit,
+      referOut,
+      anemiaHct,
+      anemiaHb,
+      daily,
+    ] = await Promise.all([
       getAncSummary(start, end),
       getAncMissedAppts(start, end),
       getAncLaborAdmit(start, end),
       getAncReferOut(start, end),
+      getAncAnemiaHct(start, end),
+      getAncAnemiaHb(start, end),
+      getAncDailyMonthly(start, end),
     ]);
 
     return NextResponse.json({
@@ -48,6 +62,9 @@ export async function GET(req: Request) {
       missedAppts,
       laborAdmit,
       referOut,
+      anemiaHct,
+      anemiaHb,
+      daily,
     });
   } catch (err) {
     console.error("ANC nursing dashboard error:", err);

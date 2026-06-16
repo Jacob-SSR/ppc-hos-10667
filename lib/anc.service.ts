@@ -1,11 +1,11 @@
 // lib/anc.service.ts
 // SQL service สำหรับ Dashboard งานการพยาบาลผู้คลอด (ANC / Maternity)
-// แหล่งข้อมูล: ovstdiag (ICD10), person_anc (บัญชี 2), oapp (นัดหมาย), referout (ส่งต่อ), ipt_pregnancy (ห้องคลอด)
+// แหล่งข้อมูล: ovstdiag (ICD10), person_anc (บัญชี 2), oapp (นัดหมาย), referout (ส่งต่อ),
+//             ipt_pregnancy (ห้องคลอด), lab_head/lab_order/lab_items (ผล Lab), vn_stat (รายได้)
 //
-// หมายเหตุ (ปรับให้ตรงกับ master ของ รพ. ก่อนใช้งานจริง):
-//   - ANC_CLINIC_CODES: รหัสคลินิก/แผนกฝากครรภ์ ใน oapp.clinic / o.main_dep  (default ['010'] = ห้องคลอด)
-//   - QUALITY_VISIT_MIN: เกณฑ์ฝากครรภ์ครบคุณภาพ (default 8 ครั้ง)
-//   - ICD10 ทั้งหมดอ้างอิงตาม spec ใน Dashboard_งานการพยาบาลผู้คลอด.xlsx
+// ENV ที่เกี่ยวข้อง:
+//   ANC_HCT_LAB_CODES=10        // รหัส lab HCT (รพ.พลับพลาชัย = 10)
+//   ANC_HB_LAB_CODES=...        // รหัส lab Hb/Hemoglobin (ตั้งให้ตรง master LIS)
 
 import { db } from "@/lib/db";
 import { RowDataPacket } from "mysql2";
@@ -17,38 +17,35 @@ const clinicInList = ANC_CLINIC_CODES.map((c) => `'${c}'`).join(",");
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 export interface AncSummary {
-  // กลุ่ม ICD10 (ovstdiag)
-  pregPersons: number; // 1. หญิงตั้งครรภ์ที่มารับบริการ (Z340/Z348) — ราย
-  pregVisits: number; //    (ครั้ง)
-  pregFirst: number; //    Z340 ครรภ์แรก
-  pregLater: number; //    Z348 ครรภ์หลัง
-  referDiag: number; // 2. ที่ Refer (ระบุ Diag)
-  us: number; // 3. U/S (Z019)
-  upt: number; // 4. UPT (Z321)
-  pv: number; // 5. ตรวจภายใน PV (Z041)
-  nipt: number; // 6. NIPT (Z360)
-  gdma1: number; // 7. GDMA I (O240)
-  gdma2: number; // 8. GDMA II (O241)
-  lab: number; // 9. LAB (Z017,Z717)
-  vacFlu: number; // 10. วัคซีนไข้หวัดใหญ่ (Z251)
-  vacAp: number; // 11. วัคซีนไอกรน aP (Z237)
-  vacDt: number; // 12. วัคซีนบาดทะยัก dT (Z235,Z236)
-  riskOther: number; // 13. ภาวะเสี่ยงอื่นๆ (Z358)
-  bloodTest: number; // 16. ตรวจเลือด (Z718,Z017)
-  htn: number; // 22. ความดันโลหิตสูง (O10–O16)
-  // กลุ่ม person_anc (บัญชี 2 ที่ยังไม่คลอด)
-  admittedAfterAnc: number; // 14. ฝากครรภ์แล้วได้นอน รพ.
-  avgAge: number; // 15. อายุเฉลี่ย
-  newRegister: number; // 18. รับบริการฝากครรภ์รายใหม่
-  firstAncUnder12wk: number; // 19. ฝากครั้งแรก GA < 12 สัปดาห์
-  oldAncVisits: number; // 20. รายเก่า (ครั้ง)
-  quality8: number; // 21. ฝากครบ 8 ครั้งคุณภาพ
-  age15to19: number; // 23. อายุ 15–19 ปี
-  ageUnder15: number; // 24. อายุ < 15 ปี
-  ancActiveTotal: number; // รวมหญิงตั้งครรภ์ในบัญชี 2 (ยังไม่คลอด)
-  // จำนวนทะเบียน
-  laborAdmitCount: number; // 25. Admit ห้องคลอด
-  referOutCount: number; // 26. ส่งต่อห้องคลอด
+  pregPersons: number;
+  pregVisits: number;
+  pregFirst: number;
+  pregLater: number;
+  referDiag: number;
+  us: number;
+  upt: number;
+  pv: number;
+  nipt: number;
+  gdma1: number;
+  gdma2: number;
+  lab: number;
+  vacFlu: number;
+  vacAp: number;
+  vacDt: number;
+  riskOther: number;
+  bloodTest: number;
+  htn: number;
+  admittedAfterAnc: number;
+  avgAge: number;
+  newRegister: number;
+  firstAncUnder12wk: number;
+  oldAncVisits: number;
+  quality8: number;
+  age15to19: number; // วัยรุ่น 15–19 ในคนท้องที่มารับบริการช่วงนั้น
+  ageUnder15: number; // < 15 ในคนท้องที่มารับบริการช่วงนั้น
+  ancActiveTotal: number;
+  laborAdmitCount: number;
+  referOutCount: number;
 }
 
 export interface MissedApptRow extends RowDataPacket {
@@ -89,6 +86,7 @@ export async function getAncSummary(
   end: string,
 ): Promise<AncSummary> {
   // ── 1.1 ICD10 metrics จาก ovstdiag (นับ distinct hn = ราย, distinct vn = ครั้ง) ──
+  //        + วัยรุ่นในคนท้องที่มารับบริการช่วงนั้น (อายุ ณ วันมารับบริการ)
   const [[dx]] = await db.query<RowDataPacket[]>(
     `
     SELECT
@@ -108,14 +106,19 @@ export async function getAncSummary(
       COUNT(DISTINCT CASE WHEN od.icd10 IN ('Z235','Z236') THEN od.hn END) AS vacDt,
       COUNT(DISTINCT CASE WHEN od.icd10 = 'Z358' THEN od.hn END)           AS riskOther,
       COUNT(DISTINCT CASE WHEN od.icd10 IN ('Z718','Z017') THEN od.vn END) AS bloodTest,
-      COUNT(DISTINCT CASE WHEN od.icd10 >= 'O10' AND od.icd10 < 'O17' THEN od.hn END) AS htn
+      COUNT(DISTINCT CASE WHEN od.icd10 >= 'O10' AND od.icd10 < 'O17' THEN od.hn END) AS htn,
+      COUNT(DISTINCT CASE WHEN od.icd10 IN ('Z340','Z348')
+            AND TIMESTAMPDIFF(YEAR, pt.birthday, od.vstdate) BETWEEN 15 AND 19 THEN od.hn END) AS teen15to19,
+      COUNT(DISTINCT CASE WHEN od.icd10 IN ('Z340','Z348')
+            AND TIMESTAMPDIFF(YEAR, pt.birthday, od.vstdate) < 15 THEN od.hn END) AS teenUnder15
     FROM ovstdiag od
+    INNER JOIN patient pt ON pt.hn = od.hn
     WHERE od.vstdate BETWEEN ? AND ?
     `,
     [start, end],
   );
 
-  // ── 1.2 Refer (ระบุ Diag) — referout ที่ pdx เป็นกลุ่มตั้งครรภ์ (O.. หรือ Z3..) ──
+  // ── 1.2 Refer (ระบุ Diag) ──
   const [[ref]] = await db.query<RowDataPacket[]>(
     `
     SELECT COUNT(DISTINCT r.hn) AS referDiag
@@ -132,8 +135,6 @@ export async function getAncSummary(
     SELECT
       COUNT(*)                                                          AS ancActiveTotal,
       ROUND(AVG(p.age_y), 1)                                            AS avgAge,
-      SUM(CASE WHEN p.age_y BETWEEN 15 AND 19 THEN 1 ELSE 0 END)        AS age15to19,
-      SUM(CASE WHEN p.age_y < 15 THEN 1 ELSE 0 END)                     AS ageUnder15,
       SUM(CASE WHEN a.service_count >= ? THEN 1 ELSE 0 END)             AS quality8,
       SUM(CASE WHEN TIMESTAMPDIFF(WEEK, a.lmp, a.anc_register_date) < 12
                AND a.lmp IS NOT NULL THEN 1 ELSE 0 END)                 AS firstAncUnder12wk
@@ -144,8 +145,7 @@ export async function getAncSummary(
     [QUALITY_VISIT_MIN],
   );
 
-  // ── 1.4 รายใหม่ = ลงทะเบียนฝากครรภ์ครั้งแรกของครรภ์ในช่วงเวลา (ไม่อิงวันคลินิก) ──
-  // ครอบคลุมทั้งรายใหม่ที่มาวันจันทร์ และที่ปนมาวันพุธ — จับจากเหตุการณ์ลงทะเบียนจริง
+  // ── 1.4 รายใหม่ ──
   const [[reg]] = await db.query<RowDataPacket[]>(
     `
     SELECT COUNT(*) AS newRegister
@@ -155,7 +155,7 @@ export async function getAncSummary(
     [start, end],
   );
 
-  // ── 1.4b รายเก่า (ครั้ง) = visit ติดตามในช่วงเวลา (ไม่ใช่ครั้งลงทะเบียน) ──
+  // ── 1.4b รายเก่า (ครั้ง) ──
   const [[oldv]] = await db.query<RowDataPacket[]>(
     `
     SELECT COUNT(*) AS oldAncVisits
@@ -167,7 +167,7 @@ export async function getAncSummary(
     [start, end],
   );
 
-  // ── 1.5 ฝากครรภ์แล้วได้นอน รพ. (บัญชี 2 ยังไม่คลอด → จับกับ an_stat ด้วย cid) ──
+  // ── 1.5 ฝากครรภ์แล้วได้นอน รพ. ──
   const [[adm]] = await db.query<RowDataPacket[]>(
     `
     SELECT COUNT(DISTINCT a.person_id) AS admittedAfterAnc
@@ -181,7 +181,7 @@ export async function getAncSummary(
     [start, end],
   );
 
-  // ── 1.6 จำนวนทะเบียน Admit ห้องคลอด (ipt_pregnancy.labor_date) ──
+  // ── 1.6 Admit ห้องคลอด ──
   const [[lab]] = await db.query<RowDataPacket[]>(
     `
     SELECT COUNT(*) AS laborAdmitCount
@@ -191,7 +191,7 @@ export async function getAncSummary(
     [start, end],
   );
 
-  // ── 1.7 จำนวนทะเบียนส่งต่อ ──
+  // ── 1.7 ส่งต่อห้องคลอด ──
   const [[ro]] = await db.query<RowDataPacket[]>(
     `
     SELECT COUNT(*) AS referOutCount
@@ -228,15 +228,15 @@ export async function getAncSummary(
     firstAncUnder12wk: n(anc.firstAncUnder12wk),
     oldAncVisits: n(oldv.oldAncVisits),
     quality8: n(anc.quality8),
-    age15to19: n(anc.age15to19),
-    ageUnder15: n(anc.ageUnder15),
+    age15to19: n(dx.teen15to19),
+    ageUnder15: n(dx.teenUnder15),
     ancActiveTotal: n(anc.ancActiveTotal),
     laborAdmitCount: n(lab.laborAdmitCount),
     referOutCount: n(ro.referOutCount),
   };
 }
 
-// ─── 2. ทะเบียนหญิงตั้งครรภ์ที่ไม่มาตามนัด (17) ───────────────────────────────
+// ─── 2. ทะเบียนไม่มาตามนัด (17) ───────────────────────────────────────────────
 export async function getAncMissedAppts(
   start: string,
   end: string,
@@ -334,3 +334,281 @@ export async function getAncReferOut(
   );
   return rows;
 }
+
+// ════════════════════════════════════════════════════════════════════════════
+// ส่วนกลาง: helper รายวัน/รายเดือน + Lab predicates
+// ════════════════════════════════════════════════════════════════════════════
+const ANC_PREG_ICD = "'Z340','Z348'";
+const WEEKDAY_TH = ["อา.", "จ.", "อ.", "พ.", "พฤ.", "ศ.", "ส."];
+const TH_MON = [
+  "",
+  "ม.ค.",
+  "ก.พ.",
+  "มี.ค.",
+  "เม.ย.",
+  "พ.ค.",
+  "มิ.ย.",
+  "ก.ค.",
+  "ส.ค.",
+  "ก.ย.",
+  "ต.ค.",
+  "พ.ย.",
+  "ธ.ค.",
+];
+
+function ymd(d: unknown): string {
+  if (d instanceof Date)
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  return String(d).slice(0, 10);
+}
+
+export interface AncDayPoint {
+  date: string;
+  weekday: string;
+  value: number;
+}
+export interface AncMonthPoint {
+  month: string;
+  label: string;
+  value: number;
+}
+export interface AncSeries {
+  total: number;
+  byDay: AncDayPoint[];
+  byMonth: AncMonthPoint[];
+}
+
+// รวมค่ารายวัน/รายเดือนจาก list ของ { date, value } (ใช้ผลบวก)
+function buildSeries(rows: { date: string; value: number }[]): AncSeries {
+  const dayMap = new Map<string, number>();
+  const monMap = new Map<string, number>();
+  let total = 0;
+  for (const r of rows) {
+    if (!r.date) continue;
+    total += r.value;
+    dayMap.set(r.date, (dayMap.get(r.date) ?? 0) + r.value);
+    const m = r.date.slice(0, 7);
+    monMap.set(m, (monMap.get(m) ?? 0) + r.value);
+  }
+  const byDay = [...dayMap.entries()]
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([date, value]) => ({
+      date,
+      weekday: WEEKDAY_TH[new Date(date + "T00:00:00").getDay()],
+      value,
+    }));
+  const byMonth = [...monMap.entries()]
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([month, value]) => {
+      const [y, mm] = month.split("-").map(Number);
+      return {
+        month,
+        label: `${TH_MON[mm]} ${String(y + 543).slice(2)}`,
+        value,
+      };
+    });
+  return { total, byDay, byMonth };
+}
+
+// ─── 5. รายได้ / คนท้องมารับบริการ / ฝากครรภ์รายใหม่ : รายวัน + รายเดือน ──────
+export interface AncDailyMonthly {
+  revenue: AncSeries; // รายได้ (บาท) จาก visit ฝากครรภ์
+  visits: AncSeries; // จำนวนครั้งที่คนท้องมารับบริการ
+  newReg: AncSeries; // ฝากครรภ์รายใหม่
+}
+
+export async function getAncDailyMonthly(
+  start: string,
+  end: string,
+): Promise<AncDailyMonthly> {
+  // visit ฝากครรภ์ (มี dx Z340/Z348) → รายได้ + จำนวนครั้ง
+  const [vnRows] = await db.query<RowDataPacket[]>(
+    `
+    SELECT DATE(v.vstdate) AS d, v.vn, COALESCE(v.income, 0) AS income
+    FROM vn_stat v
+    WHERE v.vstdate BETWEEN ? AND ?
+      AND EXISTS (
+        SELECT 1 FROM ovstdiag od
+        WHERE od.vn = v.vn AND od.icd10 IN (${ANC_PREG_ICD})
+      )
+    `,
+    [start, end],
+  );
+
+  // ฝากครรภ์รายใหม่ตามวันลงทะเบียน
+  const [regRows] = await db.query<RowDataPacket[]>(
+    `
+    SELECT DATE(a.anc_register_date) AS d, COUNT(*) AS c
+    FROM person_anc a
+    WHERE a.anc_register_date BETWEEN ? AND ?
+    GROUP BY DATE(a.anc_register_date)
+    `,
+    [start, end],
+  );
+
+  const revenue = buildSeries(
+    vnRows.map((r) => ({
+      date: ymd(r.d),
+      value: Math.round(Number(r.income) || 0),
+    })),
+  );
+  const visits = buildSeries(vnRows.map((r) => ({ date: ymd(r.d), value: 1 })));
+  const newReg = buildSeries(
+    regRows.map((r) => ({ date: ymd(r.d), value: Number(r.c) || 0 })),
+  );
+
+  return { revenue, visits, newReg };
+}
+
+// ─── 6. ภาวะซีด (Lab) : รายวัน + รายเดือน + ทะเบียน ──────────────────────────
+// รหัส Lab ตั้งใน .env (แนะนำ):  ANC_HCT_LAB_CODES=10 , ANC_HB_LAB_CODES=...
+const ANC_HCT_LAB_CODES = (process.env.ANC_HCT_LAB_CODES ?? "")
+  .split(",")
+  .map((s) => s.trim())
+  .filter(Boolean);
+const ANC_HB_LAB_CODES = (process.env.ANC_HB_LAB_CODES ?? "")
+  .split(",")
+  .map((s) => s.trim())
+  .filter(Boolean);
+
+const HCT_PREDICATE = ANC_HCT_LAB_CODES.length
+  ? `lo.lab_items_code IN (${ANC_HCT_LAB_CODES.map((c) => `'${c}'`).join(",")})`
+  : `(li.lab_items_name LIKE '%Hct%' OR li.lab_items_name LIKE '%HCT%'
+      OR li.lab_items_name LIKE '%H.C.T%' OR li.lab_items_name LIKE '%ematocrit%')`;
+
+const HB_PREDICATE = ANC_HB_LAB_CODES.length
+  ? `lo.lab_items_code IN (${ANC_HB_LAB_CODES.map((c) => `'${c}'`).join(",")})`
+  : `((li.lab_items_name LIKE 'Hb%' OR li.lab_items_name LIKE 'Hgb%'
+       OR li.lab_items_name LIKE '%emoglobin%')
+      AND li.lab_items_name NOT LIKE '%A1c%' AND li.lab_items_name NOT LIKE '%A1C%')`;
+
+export interface AncAnemiaRow {
+  date: string;
+  hn: string;
+  ptname: string;
+  age_y: number;
+  value: number; // ค่าผล Lab (HCT % หรือ Hb g/dL)
+}
+
+export interface AncAnemia {
+  total: number; // ราย (distinct HN) ที่ต่ำกว่าเกณฑ์
+  totalTested: number; // ราย ที่ตรวจทั้งหมด (ไว้คิด %)
+  byDay: AncDayPoint[]; // value = จำนวนครั้ง (distinct VN) ที่ต่ำกว่าเกณฑ์ ต่อวัน
+  byMonth: AncMonthPoint[];
+  patients: AncAnemiaRow[];
+}
+
+async function getAncAnemia(
+  start: string,
+  end: string,
+  predicate: string,
+  threshold: number,
+): Promise<AncAnemia> {
+  const [rows] = await db.query<RowDataPacket[]>(
+    `
+    SELECT
+      DATE(lh.order_date)                        AS d,
+      lh.vn,
+      lh.hn,
+      CONCAT(pt.pname, pt.fname, ' ', pt.lname)  AS ptname,
+      TIMESTAMPDIFF(YEAR, pt.birthday, lh.order_date) AS age_y,
+      CAST(lo.lab_order_result AS DECIMAL(10,2)) AS val
+    FROM lab_head lh
+    INNER JOIN lab_order lo ON lo.lab_order_number = lh.lab_order_number
+    LEFT  JOIN lab_items li ON li.lab_items_code = lo.lab_items_code
+    INNER JOIN patient pt   ON pt.hn = lh.hn
+    WHERE lh.order_date BETWEEN ? AND ?
+      AND ${predicate}
+      AND lo.lab_order_result REGEXP '^[0-9]+(\\.[0-9]+)?$'
+      AND CAST(lo.lab_order_result AS DECIMAL(10,2)) < ${threshold}
+      AND EXISTS (
+        SELECT 1 FROM ovstdiag od
+        WHERE od.vn = lh.vn AND od.icd10 IN (${ANC_PREG_ICD})
+      )
+    ORDER BY lh.order_date
+    `,
+    [start, end],
+  );
+
+  const [[tested]] = await db.query<RowDataPacket[]>(
+    `
+    SELECT COUNT(DISTINCT lh.hn) AS c
+    FROM lab_head lh
+    INNER JOIN lab_order lo ON lo.lab_order_number = lh.lab_order_number
+    LEFT  JOIN lab_items li ON li.lab_items_code = lo.lab_items_code
+    WHERE lh.order_date BETWEEN ? AND ?
+      AND ${predicate}
+      AND lo.lab_order_result REGEXP '^[0-9]+(\\.[0-9]+)?$'
+      AND EXISTS (
+        SELECT 1 FROM ovstdiag od
+        WHERE od.vn = lh.vn AND od.icd10 IN (${ANC_PREG_ICD})
+      )
+    `,
+    [start, end],
+  );
+
+  const dayMap = new Map<string, Set<string>>();
+  const monMap = new Map<string, Set<string>>();
+  const patMap = new Map<string, AncAnemiaRow>();
+  const hnSet = new Set<string>();
+
+  for (const r of rows) {
+    const date = ymd(r.d);
+    const vn = String(r.vn);
+    hnSet.add(String(r.hn));
+
+    if (!dayMap.has(date)) dayMap.set(date, new Set());
+    dayMap.get(date)!.add(vn);
+
+    const mon = date.slice(0, 7);
+    if (!monMap.has(mon)) monMap.set(mon, new Set());
+    monMap.get(mon)!.add(vn);
+
+    if (!patMap.has(vn)) {
+      patMap.set(vn, {
+        date,
+        hn: String(r.hn),
+        ptname: r.ptname,
+        age_y: Number(r.age_y ?? 0),
+        value: Number(r.val),
+      });
+    }
+  }
+
+  const byDay = [...dayMap.entries()]
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([date, set]) => ({
+      date,
+      weekday: WEEKDAY_TH[new Date(date + "T00:00:00").getDay()],
+      value: set.size,
+    }));
+
+  const byMonth = [...monMap.entries()]
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([month, set]) => {
+      const [y, m] = month.split("-").map(Number);
+      return {
+        month,
+        label: `${TH_MON[m]} ${String(y + 543).slice(2)}`,
+        value: set.size,
+      };
+    });
+
+  const patients = [...patMap.values()].sort((a, b) =>
+    b.date.localeCompare(a.date),
+  );
+
+  return {
+    total: hnSet.size,
+    totalTested: Number(tested?.c ?? 0),
+    byDay,
+    byMonth,
+    patients,
+  };
+}
+
+export const getAncAnemiaHct = (start: string, end: string) =>
+  getAncAnemia(start, end, HCT_PREDICATE, 33);
+
+export const getAncAnemiaHb = (start: string, end: string) =>
+  getAncAnemia(start, end, HB_PREDICATE, 11);
