@@ -7,7 +7,7 @@ import type { ServiceKey } from "./billing.constants";
 interface ChartRow {
   เรียกเก็บ: number;
   ชดเชย: number;
-  ยังไม่ได้รับ: number;
+  ไม่ชดเชย: number;
   serviceCount?: number;
 }
 
@@ -26,7 +26,7 @@ export function BillingServiceSummary({
     (acc, row) => ({
       claim: acc.claim + (row.เรียกเก็บ ?? 0),
       comp: acc.comp + (row.ชดเชย ?? 0),
-      pending: acc.pending + (row.ยังไม่ได้รับ ?? 0),
+      pending: acc.pending + (row.ไม่ชดเชย ?? 0),
       count: acc.count + (row.serviceCount ?? 0),
     }),
     { claim: 0, comp: 0, pending: 0, count: 0 },
@@ -48,7 +48,7 @@ export function BillingServiceSummary({
       border: "border-green-100",
     },
     {
-      label: "ยังไม่ได้รับ",
+      label: "ไม่ชดเชย",
       value: fmtB(totals.pending),
       color: "text-red-600",
       bg: "bg-red-50",
