@@ -108,6 +108,12 @@ export const DASHBOARD_GROUPS: SidebarSubGroup[] = [
         icon: Activity,
         group: "main",
       },
+      {
+        label: "ผลิตภาพการพยาบาล ER",
+        href: "/pages/productivity-er",
+        icon: Ambulance,
+        group: "main",
+      },
     ],
   },
 

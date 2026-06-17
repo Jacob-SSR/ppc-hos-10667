@@ -92,5 +92,6 @@ export const config = {
     "/api/dept-status/:path*",
     "/api/dmht-new/:path*",
     "/api/productivity-opd/:path*",
+    "/api/productivity-er/:path*",
   ],
 };
