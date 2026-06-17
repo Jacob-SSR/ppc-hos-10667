@@ -69,10 +69,28 @@ const PT_STAFF_SUBQ = `
           ORDER BY SUM(oo.sum_price) DESC
           LIMIT 1)`;
 
+// ── เวลาที่ใช้จัดเวร = "เวลาที่นักกายภาพลงรายการจริง" ไม่ใช่เวลามา visit ──
+//
+//   ⚠️ ถ้า HOSxP ของคุณไม่มีคอลัมน์ oo.rxtime ให้แก้เฉพาะคอลัมน์เวลาในบรรทัดล่างนี้
+//      (เช่นเปลี่ยนเป็นเวลาจาก doctor_operation) ถ้าคอลัมน์ไม่มีอยู่จริง SQL จะ error
+//      ไม่ใช่ fallback — COALESCE กันได้แค่ค่า NULL/ว่าง เท่านั้น
+//
+//   ดึงเวลาล่าสุดของรายการที่บุคลากรกายภาพคิดเงินใน VN นั้น ถ้าว่าง → ใช้ o.vsttime แทน
+const PT_SERVICE_TIME_EXPR = `
+        COALESCE(
+          NULLIF((SELECT MAX(oo.rxtime)
+                    FROM opitemrece oo
+                    JOIN doctor dd ON dd.code = oo.doctor
+                   WHERE oo.vn = v.vn
+                     AND ${PT_STAFF_PREDICATE}), ''),
+          o.vsttime
+        )`;
+
 // ─── Types ────────────────────────────────────────────────────────────────────
 interface RecordQueryRow extends RowDataPacket {
   date: string;
   vsttime: string;
+  svc_time: string;
   staff_id: string;
   staff_name: string;
   hn: string;
@@ -147,11 +165,11 @@ function classifyRole(staffId: string, name: string): "pt" | "pta" {
   return "pt"; // กภ. / นักกายภาพบำบัด
 }
 
-// เวร: เช้า 08:30–16:30, นอกนั้นถือเป็นเย็น
+// เวร: เช้า 06:00–16:30, นอกช่วงนี้ (ตั้งแต่ 16:30 เป็นต้นไป หรือก่อน 06:00) = เย็น
 function classifyShift(vsttime: string): "morning" | "evening" {
   const [h, m] = (vsttime || "00:00").split(":").map(Number);
   const mins = (h || 0) * 60 + (m || 0);
-  return mins >= 8 * 60 + 30 && mins < 16 * 60 + 30 ? "morning" : "evening";
+  return mins >= 6 * 60 && mins < 16 * 60 + 30 ? "morning" : "evening";
 }
 
 // ─── Main ─────────────────────────────────────────────────────────────────────
@@ -168,6 +186,7 @@ export async function getPtDashboard(
       SELECT
         v.vstdate                                  AS date,
         o.vsttime,
+        ${PT_SERVICE_TIME_EXPR}                    AS svc_time,
         ${PT_STAFF_SUBQ}                           AS staff_id,
         v.hn,
         CONCAT(pt.pname, pt.fname, ' ', pt.lname)  AS patient_name,
@@ -203,7 +222,7 @@ export async function getPtDashboard(
 
   const records: PtRecord[] = rows.map((r) => ({
     date: r.date,
-    shift: classifyShift(r.vsttime),
+    shift: classifyShift(r.svc_time),
     staff_id: r.staff_id || "ไม่ระบุ",
     staff_name: (r.staff_name || r.staff_id || "ไม่ระบุ").trim(),
     role: classifyRole(r.staff_id, r.staff_name),
