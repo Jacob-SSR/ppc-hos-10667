@@ -46,7 +46,12 @@ export async function getNoEndpointReport(start: string, end: string) {
       CONVERT(CAST(CONVERT(concat(p.pname,p.fname,"  ",p.lname) USING tis620) AS BINARY) USING tis620) as "ชื่อ",
       CONVERT(CAST(CONVERT(k.department USING tis620) AS BINARY) USING tis620) as "แผนก",
       CONVERT(CAST(CONVERT(if(s.cc is null,'',s.cc) USING tis620) AS BINARY) USING tis620) as "อาการสำคัญ",
-      CONVERT(CAST(CONVERT(ptt.name USING tis620) AS BINARY) USING tis620) as "ชื่อสิทธิ์"
+      CONVERT(CAST(CONVERT(ptt.name USING tis620) AS BINARY) USING tis620) as "ชื่อสิทธิ์",
+      CASE
+        WHEN p.nationality = '99' OR p.nationality IS NULL OR p.nationality = ''
+        THEN 'ไทย'
+        ELSE 'ต่างชาติ'
+      END AS "สัญชาติ"
     FROM ovst o
     LEFT JOIN visit_pttype vp ON vp.vn=o.vn
     LEFT JOIN pttype ptt on ptt.pttype=vp.pttype 
@@ -65,7 +70,6 @@ export async function getNoEndpointReport(start: string, end: string) {
 
   return rows;
 }
-
 export async function getUcOutsideDentalReport(start: string, end: string) {
   const [rows] = await db.query(
     `

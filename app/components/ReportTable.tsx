@@ -27,6 +27,7 @@ export default function ReportTable({
     sheetName = "Report",
     columnFilterKeys = [],
     columnFilterLabels = {},
+    defaultColumnFilters = {},
     onData,
     afterFilter,
 }: ReportTableProps) {
@@ -41,7 +42,7 @@ export default function ReportTable({
         columnFilters, columnFilterOptions,
         setColumnFilter, clearAllFilters,
         activeFilterCount,
-    } = useReportTable({ apiPath, columnFilterKeys });
+    } = useReportTable({ apiPath, columnFilterKeys, defaultColumnFilters });
 
     useEffect(() => {
         onData?.(sortedData);   // เดิมเป็น data

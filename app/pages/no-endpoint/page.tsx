@@ -10,13 +10,16 @@ export default function NoEndpointPage() {
             dateKeys={[]}
             sheetName="NoEndpoint"
             columnFilterKeys={[
+                "สัญชาติ",
                 "แผนก",
                 "ชื่อสิทธิ์",
             ]}
             columnFilterLabels={{
+                "สัญชาติ": "สัญชาติ",
                 "แผนก": "แผนก",
                 "ชื่อสิทธิ์": "ประเภทสิทธิ์",
             }}
+            defaultColumnFilters={{ "สัญชาติ": "ไทย" }}
         />
     );
 }
