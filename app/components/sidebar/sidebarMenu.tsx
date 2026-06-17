@@ -270,6 +270,12 @@ export const REPORT_ITEMS: SidebarItem[] = [
     icon: AlertTriangle,
     group: "report",
   },
+  {
+    label: "รายการจ่ายถุงยางอนามัย OPD",
+    href: "/pages/condom-report",
+    icon: Receipt,
+    group: "report",
+  },
 ];
 
 // =========================

@@ -294,3 +294,39 @@ export async function getRabiesFollowupReport(start: string, end: string) {
 
   return rows;
 }
+
+export async function getCondomReport(start: string, end: string) {
+  const [rows] = await db.query(
+    `
+    SELECT
+      o.vstdate                                   AS "วันที่",
+      ov.vsttime                                  AS "เวลา",
+      o.hn,
+      p.cid,
+      CONCAT(p.pname, p.fname, " ", p.lname)      AS "ชื่อ-นามสกุล",
+      o.age_y                                     AS "อายุ",
+      IF(p.sex = '1', 'ชาย', 'หญิง')              AS "เพศ",
+      k.department                                AS "แผนก",
+      IF(sc.cc IS NULL, '', sc.cc)                AS "อาการสำคัญ",
+      GROUP_CONCAT(DISTINCT s.name SEPARATOR ', ') AS "รายการ",
+      SUM(oo.qty)                                 AS "จำนวน",
+      ptt.name                                    AS "ชื่อสิทธิ์"
+    FROM vn_stat o
+    INNER JOIN opitemrece oo  ON oo.vn = o.vn
+    LEFT  JOIN nondrugitems s ON s.icode = oo.icode
+    LEFT  JOIN patient p      ON p.hn = o.hn
+    LEFT  JOIN ovst ov        ON ov.vn = o.vn
+    LEFT  JOIN kskdepartment k ON k.depcode = ov.main_dep
+    LEFT  JOIN opdscreen sc   ON sc.vn = o.vn
+    LEFT  JOIN pttype ptt     ON ptt.pttype = o.pttype
+    WHERE oo.icode IN ('3140213','3140558','3140638','3140639')
+      AND o.vstdate >= ?
+      AND o.vstdate < DATE_ADD(?, INTERVAL 1 DAY)
+    GROUP BY o.vn
+    ORDER BY o.vstdate ASC, ov.vsttime ASC
+    `,
+    [start, end],
+  );
+
+  return rows;
+}

@@ -95,5 +95,6 @@ export const config = {
     "/api/productivity-er/:path*",
     "/api/productivity-ipd/:path*",
     "/api/productivity-lr/:path*",
+    "/api/condom-report/:path*",
   ],
 };

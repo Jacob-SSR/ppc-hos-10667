@@ -2,6 +2,12 @@ import { useState, useMemo } from "react";
 import { formatDate } from "@/lib/dateUtils";
 import { UseReportTableOptions } from "@/types/allTypes";
 import toast from "react-hot-toast";
+import {
+  getCurrentFiscalYear,
+  fiscalYearRange,
+  lastMonthRange,
+  thisYearToDate,
+} from "@/lib/thaiDate";
 
 const PAGE_SIZE = 50;
 
@@ -14,8 +20,9 @@ export function useReportTable<
 }: UseReportTableOptions) {
   const [data, setData] = useState<T[]>([]);
   const [loading, setLoading] = useState(false);
-  const [start, setStart] = useState<Date | null>(new Date(2026, 0, 1));
-  const [end, setEnd] = useState<Date | null>(new Date());
+  const [start, setStart] = useState<Date | null>(() => thisYearToDate().start);
+  const [end, setEnd] = useState<Date | null>(() => thisYearToDate().end);
+  const [preset, setPreset] = useState<string>("ปีนี้");
   const [search, setSearch] = useState("");
   const [sortKey, setSortKey] = useState<string | null>(null);
   const [sortAsc, setSortAsc] = useState(true);
@@ -111,6 +118,18 @@ export function useReportTable<
     }
   };
 
+  const handlePreset = (p: string) => {
+    setPreset(p);
+    if (p === "กำหนดเอง") return;
+    let range;
+    if (p === "ปีนี้")
+      range = thisYearToDate(); // ← ปีปฏิทิน
+    else if (p === "เดือนที่แล้ว") range = lastMonthRange();
+    else range = fiscalYearRange(Number(p)); // 2569/2568.. = ปีงบ
+    setStart(range.start);
+    setEnd(range.end);
+  };
+
   const handleSearch = (val: string) => {
     setSearch(val);
     setPage(1);
@@ -152,5 +171,8 @@ export function useReportTable<
     totalPages,
     fetchData,
     handleSort,
+    preset,
+    setPreset,
+    handlePreset,
   };
 }

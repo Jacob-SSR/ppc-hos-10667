@@ -17,6 +17,7 @@ import { AnimatedCount } from "@/app/components/TableHelpers";
 import { exportToExcel } from "@/lib/exportExcel";
 import { useReportTable } from "@/hooks/useReportTable";
 import { cardVariants, filterItemVariants, fadeSlide, pageVariants } from "@/lib/variants";
+import { recentFiscalYears, getCurrentCalendarYear } from "@/lib/thaiDate";
 import { ReportTableProps } from "@/types/allTypes";
 import { useEffect } from "react";
 
@@ -34,6 +35,7 @@ export default function ReportTable({
     const {
         data, loading,
         start, setStart, end, setEnd,
+        preset, setPreset, handlePreset,
         search, handleSearch,
         sortKey, sortAsc,
         page, setPage,
@@ -70,14 +72,37 @@ export default function ReportTable({
             <motion.div variants={cardVariants} className="bg-white border border-gray-200 rounded-2xl shadow-sm px-6 py-5">
                 <div className="flex flex-wrap items-end gap-5">
 
-                    {/* วันที่เริ่ม */}
+                    {/* ปีงบ / ช่วงเวลา */}
                     <motion.div custom={0} variants={filterItemVariants}>
+                        <label className="block text-xs font-bold uppercase tracking-widest text-gray-400 mb-2">
+                            ช่วงเวลา
+                        </label>
+                        <select
+                            value={preset}
+                            onChange={(e) => handlePreset(e.target.value)}
+                            className="border-2 border-gray-300 px-4 py-2 rounded-lg w-44 text-sm text-gray-800 bg-white focus:outline-none focus:border-green-800 shadow-sm cursor-pointer"
+                        >
+                            <option value="ปีนี้">ปีนี้ ({getCurrentCalendarYear()})</option>
+                            <option value="เดือนที่แล้ว">เดือนที่แล้ว</option>
+                            <option value="กำหนดเอง">กำหนดเอง</option>
+                            <optgroup label="ปีงบประมาณ">
+                                {recentFiscalYears(5).map((y) => (
+                                    <option key={y} value={String(y)}>
+                                        ปีงบ {y}
+                                    </option>
+                                ))}
+                            </optgroup>
+                        </select>
+                    </motion.div>
+
+                    {/* วันที่เริ่ม */}
+                    <motion.div custom={1} variants={filterItemVariants}>
                         <label className="block text-xs font-bold uppercase tracking-widest text-gray-400 mb-2">
                             วันที่เริ่ม
                         </label>
                         <DatePicker
                             selected={start}
-                            onChange={(d: Date | null) => setStart(d)}
+                            onChange={(d: Date | null) => { setStart(d); setPreset("กำหนดเอง"); }}
                             dateFormat="dd/MM/yyyy"
                             locale={th}
                             showMonthDropdown showYearDropdown
@@ -88,13 +113,13 @@ export default function ReportTable({
                     </motion.div>
 
                     {/* วันที่สิ้นสุด */}
-                    <motion.div custom={1} variants={filterItemVariants}>
+                    <motion.div custom={2} variants={filterItemVariants}>
                         <label className="block text-xs font-bold uppercase tracking-widest text-gray-400 mb-2">
                             วันที่สิ้นสุด
                         </label>
                         <DatePicker
                             selected={end}
-                            onChange={(d: Date | null) => setEnd(d)}
+                            onChange={(d: Date | null) => { setEnd(d); setPreset("กำหนดเอง"); }}
                             dateFormat="dd/MM/yyyy"
                             locale={th}
                             showMonthDropdown showYearDropdown
@@ -105,7 +130,7 @@ export default function ReportTable({
                     </motion.div>
 
                     {/* ค้นหา */}
-                    <motion.div custom={2} variants={filterItemVariants}>
+                    <motion.div custom={3} variants={filterItemVariants}>
                         <label className="block text-xs font-bold uppercase tracking-widest text-gray-400 mb-2">
                             ค้นหา
                         </label>
@@ -119,7 +144,7 @@ export default function ReportTable({
                     </motion.div>
 
                     {/* Buttons */}
-                    <motion.div custom={3} variants={filterItemVariants} className="flex gap-3 ml-auto items-end">
+                    <motion.div custom={4} variants={filterItemVariants} className="flex gap-3 ml-auto items-end">
                         <motion.button
                             onClick={fetchData}
                             disabled={loading}
