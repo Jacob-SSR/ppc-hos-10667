@@ -114,6 +114,12 @@ export const DASHBOARD_GROUPS: SidebarSubGroup[] = [
         icon: Ambulance,
         group: "main",
       },
+      {
+        label: "ผลิตภาพการพยาบาล IPD",
+        href: "/pages/productivity-ipd",
+        icon: BedDouble,
+        group: "main"
+      },
     ],
   },
 

@@ -93,5 +93,6 @@ export const config = {
     "/api/dmht-new/:path*",
     "/api/productivity-opd/:path*",
     "/api/productivity-er/:path*",
+    "/api/productivity-ipd/:path*",
   ],
 };
