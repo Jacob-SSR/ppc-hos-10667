@@ -141,18 +141,18 @@ function classifyRight(pcode: string): { code: string; name: string } {
   return { code: "OTHER", name: "อื่นๆ" };
 }
 
-const SHIFT_AM = "เช้า (08:30-16:30)";
+const SHIFT_AM = "เช้า (06:00-16:30)";
 const SHIFT_PM = "เย็น (16:30-20:30)";
 const SHIFT_OT = "นอกเวลา";
 
 function shiftName(vsttime: string): string {
   const [h, m] = (vsttime || "00:00").split(":").map(Number);
   const mins = (h || 0) * 60 + (m || 0);
-  if (mins >= 8 * 60 + 30 && mins < 16 * 60 + 30) return SHIFT_AM;
+  // เวรเช้าเริ่ม 06:00 → คนไข้ที่มา visit ก่อนเวลาทำการนับเป็นเช้า (ตรงกับ PT)
+  if (mins >= 6 * 60 && mins < 16 * 60 + 30) return SHIFT_AM;
   if (mins >= 16 * 60 + 30 && mins < 20 * 60 + 30) return SHIFT_PM;
   return SHIFT_OT;
 }
-
 // ─── Main: ดึง + aggregate ทั้ง dashboard ในครั้งเดียว ─────────────────────────
 export async function getTtmDashboard(
   start: string,

@@ -86,11 +86,11 @@ const fmtB = (n: number) =>
 function getShift(vsttime: string): ShiftKey {
     const [h, m] = (vsttime || "00:00").split(":").map(Number);
     const mins = (h || 0) * 60 + (m || 0);
-    if (mins >= 8 * 60 + 30 && mins < 16 * 60 + 30) return "am";
+    // เวรเช้าเริ่ม 06:00 → คนไข้ที่มา visit ก่อนเวลาทำการนับเป็นเช้า (ตรงกับ PT)
+    if (mins >= 6 * 60 && mins < 16 * 60 + 30) return "am";
     if (mins >= 16 * 60 + 30 && mins < 20 * 60 + 30) return "pm";
     return "ot";
 }
-
 function rightBadgeClass(code: string): string {
     switch (code) {
         case "UC": return "bg-blue-100 text-blue-700";

@@ -214,14 +214,14 @@ function classifyShift(vstdate: string, vsttime: string): ShiftCode {
   const dow = new Date(vstdate + "T00:00:00").getDay(); // 0=Sun,6=Sat
   const [h, m] = (vsttime || "00:00").split(":").map(Number);
   const mins = (h || 0) * 60 + (m || 0);
-  const inDay = mins >= 8 * 60 + 30 && mins < 16 * 60 + 30;
+  // เวรเช้าเริ่ม 06:00 → คนไข้ที่มา visit ก่อนเวลาทำการนับเป็นเช้า (ตรงกับ PT)
+  const inDay = mins >= 6 * 60 && mins < 16 * 60 + 30;
   const inEve = mins >= 16 * 60 + 30 && mins < 20 * 60 + 30;
   if (dow === 0 || dow === 6) return inDay ? "wknd" : "off";
   if (inDay) return "wd_am";
   if (inEve) return "wd_pm";
   return "off";
 }
-
 // ─── Main ─────────────────────────────────────────────────────────────────────
 export async function getDentalDashboard(
   start: string,
