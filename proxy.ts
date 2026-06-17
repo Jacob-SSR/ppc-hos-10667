@@ -94,5 +94,6 @@ export const config = {
     "/api/productivity-opd/:path*",
     "/api/productivity-er/:path*",
     "/api/productivity-ipd/:path*",
+    "/api/productivity-lr/:path*",
   ],
 };

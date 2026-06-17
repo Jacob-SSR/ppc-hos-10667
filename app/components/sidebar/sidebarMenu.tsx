@@ -120,6 +120,12 @@ export const DASHBOARD_GROUPS: SidebarSubGroup[] = [
         icon: BedDouble,
         group: "main"
       },
+      {
+        label: "ผลิตภาพการพยาบาลห้องคลอด (LR)",
+        href: "/pages/productivity-lr",
+        icon: Baby,
+        group: "main"
+      },
     ],
   },
 
