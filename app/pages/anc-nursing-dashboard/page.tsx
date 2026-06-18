@@ -20,6 +20,7 @@ import {
     KpiCard, SectionCard, HBarList, LiveBadge, RefreshButton,
 } from "@/app/components/dashboard/live";
 import { formatThaiDate } from "@/lib/dateUtils";
+import AiSummaryCard from "@/app/components/ai/AiSummaryCard";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 interface AncSummary {
@@ -551,6 +552,44 @@ export default function AncNursingDashboardPage() {
                     </SectionCard>
                 </>
             )}
+
+            {/* ── AI สรุป + แชท (ปุ่มลอยมุมขวาล่าง + modal กลางจอ) ── */}
+            <AiSummaryCard
+                summary={
+                    data?.summary
+                        ? {
+                            ช่วงข้อมูล: `${formatThaiDate(data.start)} – ${formatThaiDate(data.end)}`,
+                            หญิงตั้งครรภ์รับบริการ: data.summary.pregPersons,
+                            จำนวนครั้งฝากครรภ์: data.summary.pregVisits,
+                            ครรภ์แรก: data.summary.pregFirst,
+                            ครรภ์หลัง: data.summary.pregLater,
+                            ฝากครรภ์รายใหม่: data.summary.newRegister,
+                            ฝากครั้งแรกก่อน12สัปดาห์: data.summary.firstAncUnder12wk,
+                            ครบ8ครั้งคุณภาพ: data.summary.quality8,
+                            อายุเฉลี่ย: data.summary.avgAge,
+                            ตั้งครรภ์วัยรุ่น15ถึง19: data.summary.age15to19,
+                            ตั้งครรภ์อายุต่ำกว่า15: data.summary.ageUnder15,
+                            ในบัญชี2ยังไม่คลอด: data.summary.ancActiveTotal,
+                            ภาวะเสี่ยง: {
+                                ความดันโลหิตสูง: data.summary.htn,
+                                เบาหวาน_GDMA1: data.summary.gdma1,
+                                เบาหวาน_GDMA2: data.summary.gdma2,
+                                ซีด_HCT_ต่ำกว่า33: data.anemiaHct?.total ?? 0,
+                                ซีด_Hb_ต่ำกว่า11: data.anemiaHb?.total ?? 0,
+                                เสี่ยงอื่นๆ: data.summary.riskOther,
+                            },
+                            ฝากครรภ์แล้วAdmit: data.summary.admittedAfterAnc,
+                            Admitห้องคลอด: data.summary.laborAdmitCount,
+                            ส่งต่อห้องคลอด: data.summary.referOutCount,
+                            รายได้งานฝากครรภ์_บาท: data.daily?.revenue.total ?? 0,
+                            จำนวนครั้งบริการ: data.daily?.visits.total ?? 0,
+                            ไม่มาตามนัด_จำนวนราย: data.missedAppts.length,
+                        }
+                        : null
+                }
+                context="Dashboard งานการพยาบาลผู้คลอด (ANC / ฝากครรภ์) โรงพยาบาลพลับพลาชัย — การฝากครรภ์ คุณภาพบริการ ภาวะเสี่ยง ภาวะซีด การคลอด และรายได้"
+                disabled={!data?.summary}
+            />
         </div>
     );
 }
@@ -589,6 +628,7 @@ function RegisterTable({ headers, rows, empty }: {
                     </tbody>
                 </table>
             </div>
+
             {totalPages > 1 && (
                 <div className="flex items-center justify-between mt-3">
                     <p className="text-xs text-gray-400">หน้า {page} / {totalPages} · {rows.length} รายการ</p>

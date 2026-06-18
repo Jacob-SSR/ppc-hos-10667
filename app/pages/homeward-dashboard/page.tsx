@@ -12,6 +12,7 @@ import {
     CheckCircle2,
 } from "lucide-react";
 import { useAutoRefresh } from "@/app/components/dashboard/live";
+import AiSummaryCard from "@/app/components/ai/AiSummaryCard";
 import type { HomeWardSheetsData, HomeWardSheetRow, HomeWardSummary } from "@/app/api/homeward-sheets/route";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -505,6 +506,31 @@ export default function HomeWardDashboardPage() {
 
     const s = data?.summary;
 
+    // สรุปสำหรับ AI — ใช้ filteredSummary (สรุปตาม filter ที่เลือก, ไม่ส่งรายชื่อ/AN ผู้ป่วย)
+    const aiSummary = useMemo(() => {
+        if (!filteredSummary) return null;
+        const activeFilters = Object.entries(filters)
+            .filter(([, v]) => v)
+            .map(([k, v]) => `${k}=${v}`);
+        return {
+            ตัวกรองที่ใช้: activeFilters.length ? activeFilters.join(", ") : "ทั้งหมด (ไม่กรอง)",
+            ผู้ป่วยทั้งหมด: filteredSummary.total,
+            ชดเชยแล้ว: filteredSummary.compensated,
+            ยังไม่ได้ชดเชย: filteredSummary.pending,
+            ร้อยละยังไม่ได้ชดเชย: filteredSummary.total
+                ? Math.round((filteredSummary.pending / filteredSummary.total) * 1000) / 10
+                : 0,
+            เงินชดเชยรวม_บาท: filteredSummary.totalAmount,
+            adjRW_รวม: Math.round(filteredSummary.totalAdjRw * 100) / 100,
+            จำนวนตำบล: filteredSummary.tambonCount,
+            ผู้ป่วยแยกตำบล: filteredSummary.byTambon,
+            เงินชดเชยแยกตำบล_บาท: filteredSummary.amountByTambon,
+            ประเภทสารเสพติด: filteredSummary.byDrug,
+            แยกตามรพสต: filteredSummary.byRpsst,
+            แนวโน้มรายเดือน: filteredSummary.byMonth,
+        };
+    }, [filteredSummary, filters]);
+
     return (
         <div className="space-y-4">
             {/* ── Header ── */}
@@ -625,6 +651,13 @@ export default function HomeWardDashboardPage() {
                     <p className="text-xs text-gray-500">ตรวจสอบว่า Google Sheet มีข้อมูลและ Service Account มีสิทธิ์เข้าถึง</p>
                 </div>
             )}
+
+            {/* ── AI สรุป + แชท (ปุ่มลอยมุมขวาล่าง + modal กลางจอ) ── */}
+            <AiSummaryCard
+                summary={aiSummary}
+                context="Home Ward ยาเสพติด (ดูแลผู้ป่วยยาเสพติดที่บ้าน) รพ.พลับพลาชัย — ติดตามจำนวนผู้ป่วยแยกตำบล/รพ.สต. ประเภทสารเสพติด และสถานะการชดเชย DRG (เน้นผู้ป่วยที่ยังไม่ได้ชดเชย) ข้อมูลสรุปตามตัวกรองที่ผู้ใช้เลือก"
+                disabled={!aiSummary}
+            />
         </div>
     );
 }

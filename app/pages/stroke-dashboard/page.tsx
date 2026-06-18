@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import * as XLSX from "xlsx";
 import { useAutoRefresh, timeAgo, CountdownRing } from "@/app/components/dashboard/live";
+import AiSummaryCard from "@/app/components/ai/AiSummaryCard";
 import type { StrokeSheetsDashboardData, StrokeSheetRow } from "@/app/api/stroke-sheets/route";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -248,6 +249,44 @@ export default function StrokeDashboardPage() {
         { name: "AF", value: af },
         { name: "อื่นๆ", value: filtered.filter(r => r.ekg && !/non-AF/i.test(r.ekg) && !/\bAF\b/.test(r.ekg)).length },
     ].filter(d => d.value > 0);
+
+    // ─── สรุปสำหรับ AI — สถิติรวม (ไม่ส่งรายชื่อ/HN ผู้ป่วย) ───────────────────────
+    const aiSummary = useMemo(() => {
+        if (!data) return null;
+        const activeFilters: string[] = [];
+        if (search) activeFilters.push(`ค้นหา="${search}"`);
+        if (fYear) activeFilters.push(`ปี=${Number(fYear) + 543}`);
+        if (fType) activeFilters.push(`ประเภท=${fType}`);
+        if (fDept) activeFilters.push(`แผนก=${fDept}`);
+        if (fDistrict) activeFilters.push(`เขต=${fDistrict}`);
+        if (fOutcome) activeFilters.push(`outcome=${fOutcome}`);
+        if (fEMS) activeFilters.push(`EMS=${fEMS}`);
+        if (fIMC) activeFilters.push(`IMC=${fIMC}`);
+        const p = (n: number) => total ? Math.round((n / total) * 1000) / 10 : 0;
+        return {
+            ตัวกรองที่ใช้: activeFilters.length ? activeFilters.join(", ") : "ทั้งหมด (ไม่กรอง)",
+            ผู้ป่วยทั้งหมด: total,
+            FastTract: { จำนวน: fast, ร้อยละ: p(fast) },
+            ได้rtPA: { จำนวน: rtpa, ร้อยละ: p(rtpa) },
+            มาด้วยEMS1669: { จำนวน: ems, ร้อยละ: p(ems) },
+            IMC: imc,
+            ผล: {
+                ดีขึ้น_Improve: { จำนวน: improved, ร้อยละ: p(improved) },
+                เสียชีวิต_Dead: { จำนวน: dead, ร้อยละ: p(dead) },
+            },
+            EKG_AF: af,
+            NIHSS_เฉลี่ย: avgNIHSS,
+            แยกตามแผนก: deptStats.map(d => ({
+                แผนก: d.name, ทั้งหมด: d.total, FAST: d.fast, rtPA: d.rtpa,
+                EMS: d.ems, IMC: d.imc, Improve: d.improved, เสียชีวิต: d.dead,
+                AF: d.af, NIHSS_เฉลี่ย: d.avgNIHSS,
+            })),
+            แยกตามเขต: Object.fromEntries(districtData.map(d => [d.name, d.value])),
+            ช่วงอายุ: Object.fromEntries(ageData.map(d => [d.name, d.value])),
+            แนวโน้มรายเดือน: monthData.map(m => ({ เดือน: m.label, FAST: m.fast, NonFAST: m.nonFast, รวม: m.total })),
+        };
+    }, [data, search, fYear, fType, fDept, fDistrict, fOutcome, fEMS, fIMC,
+        total, fast, rtpa, ems, imc, improved, dead, af, avgNIHSS, deptStats, districtData, ageData, monthData]);
 
     const handleSort = (key: keyof StrokeSheetRow) => {
         if (sortKey === key) setSortAsc(p => !p);
@@ -708,6 +747,13 @@ export default function StrokeDashboardPage() {
                     <p className="text-[11px] text-gray-400 font-mono">Sheet: {data.sheetName}</p>
                 </div>
             )}
+
+            {/* ── AI สรุป + แชท (ปุ่มลอยมุมขวาล่าง + modal กลางจอ) ── */}
+            <AiSummaryCard
+                summary={aiSummary}
+                context="Dashboard ผู้ป่วยโรคหลอดเลือดสมอง (Stroke) ห้องฉุกเฉิน รพ.พลับพลาชัย — ติดตาม Stroke Fast Track, การให้ยาละลายลิ่มเลือด rtPA, การมาด้วย EMS 1669, ผลการรักษา (Improve/Dead), NIHSS, ภาวะ AF จาก EKG และตัวชี้วัดแยกรายแผนก ข้อมูลสรุปตามตัวกรองที่ผู้ใช้เลือก"
+                disabled={!aiSummary}
+            />
         </div>
     );
 }

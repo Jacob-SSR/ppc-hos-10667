@@ -15,6 +15,7 @@ import {
 } from "@/app/components/dashboard/live";
 import { usePagination } from "@/hooks/usePagination";
 import type { DrugDashboardSummary, DrugSheetsDashboardData } from "@/app/api/drug-sheets/route";
+import AiSummaryCard from "@/app/components/ai/AiSummaryCard";
 
 // ─── Colors ───────────────────────────────────────────────────────────────────
 const C = {
@@ -313,6 +314,13 @@ export default function DrugDashboardPage() {
           <p className="text-[11px] text-gray-400 font-mono mt-1">Sheet: {data.sheetName}</p>
         </div>
       )}
-    </div>
+
+      {/* AI */}
+      <AiSummaryCard
+        summary={s}
+        context="Dashboard ผู้ป่วยยาเสพติด โรงพยาบาลพลับพลาชัย (สถานะการบำบัด ระดับความรุนแรง โปรแกรมบำบัด คะแนน V2 กลุ่มอายุ ตำบล)"
+        disabled={!s}
+      />
+    </div >
   );
 }

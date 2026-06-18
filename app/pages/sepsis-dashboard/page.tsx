@@ -14,6 +14,7 @@ import {
     useAutoRefresh, timeAgo, CountdownRing, KpiCard, HBarList,
     SectionCard, MiniPagination, LiveBadge, ConnectionStatus, RefreshButton,
 } from "@/app/components/dashboard/live";
+import AiSummaryCard from "@/app/components/ai/AiSummaryCard";
 import { usePagination } from "@/hooks/usePagination";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -351,6 +352,39 @@ export default function SepsisDashboardPage() {
 
     const tip = { contentStyle: { fontSize: 12, borderRadius: 8, border: "1px solid #e5e7eb" } };
 
+    // ─── สรุปสำหรับ AI — สถิติรวมตามปีที่เลือก (ไม่ส่งรายชื่อ/HN ผู้ป่วย) ──────────────
+    const aiSummary = useMemo(() => {
+        if (!data || kpiTotal === 0) return null;
+        return {
+            ปีที่เลือก: selectedYear === "all" ? "ทุกปีงบประมาณ" : `ปีงบประมาณ ${selectedYear}`,
+            ผู้ป่วยทั้งหมด: kpiTotal,
+            Improve: kpiImprove,
+            เสียชีวิต: kpiDead,
+            MortalityRate_ร้อยละ: parseFloat(kpiMortality),
+            SepticShock: kpiShock,
+            อายุเฉลี่ย: kpiAvgAge,
+            SepsisTimeBundle: {
+                หมายเหตุ: "นับเฉพาะ Admit/Refer ไม่รวม Refer Back; ปี 2565–2566 ไม่มีคอลัมน์เวลา",
+                มาถึงรพถึงDx_ภายใน30นาที_ร้อยละ: timeKpis.door30.pct,
+                มาถึงรพถึงDx_ภายใน60นาที_ร้อยละ: timeKpis.door60.pct,
+                มาถึงรพถึงDx_เฉลี่ยนาที: timeKpis.door60.avg,
+                DxถึงATB_ภายใน60นาที_ร้อยละ: timeKpis.atb60.pct,
+                DxถึงATB_เฉลี่ยนาที: timeKpis.atb60.avg,
+                มาถึงรพถึงATB_เฉลี่ยนาที: timeKpis.doorToAtb.avg,
+                จำนวนเคสที่มีข้อมูลเวลา: timeKpis.door60.n,
+            },
+            SiteOfInfection: Object.fromEntries(siteData.map(d => [d.name, d.value])),
+            TypeOfInfection: Object.fromEntries(typeData.map(d => [d.name, d.value])),
+            Pathogenที่พบบ่อย: Object.fromEntries(pathogenData),
+            แผนกที่วินิจฉัย: Object.fromEntries(deptData),
+            โรคประจำตัว: Object.fromEntries(comorbData.map(d => [d.name, d.value])),
+            ช่วงอายุ: Object.fromEntries(ageData.map(d => [d.name, d.value])),
+            เขตที่อยู่อาศัย: Object.fromEntries(zoneData),
+            แนวโน้มรายปี: selectedYear === "all" ? data.summary.yearlyTrend : undefined,
+        };
+    }, [data, selectedYear, kpiTotal, kpiImprove, kpiDead, kpiMortality, kpiShock, kpiAvgAge,
+        timeKpis, siteData, typeData, pathogenData, deptData, comorbData, ageData, zoneData]);
+
     return (
         <div className="space-y-4">
             {/* ── Header ── */}
@@ -621,6 +655,13 @@ export default function SepsisDashboardPage() {
                     </p>
                 </div>
             )}
+
+            {/* ── AI สรุป + แชท (ปุ่มลอยมุมขวาล่าง + modal กลางจอ) ── */}
+            <AiSummaryCard
+                summary={aiSummary}
+                context="Dashboard ผู้ป่วยติดเชื้อในกระแสเลือด (Sepsis) รพ.พลับพลาชัย — ติดตามอัตราเสียชีวิต (Mortality), Septic Shock, Sepsis Time Bundle (มาถึงรพ.→วินิจฉัย ≤30/60 นาที, วินิจฉัย→ได้ ATB ≤60 นาที), Site/Type of Infection, เชื้อก่อโรค (Pathogen), โรคประจำตัว และแนวโน้มรายปี ข้อมูลสรุปตามปีงบประมาณที่เลือก"
+                disabled={!aiSummary}
+            />
         </div>
     );
 }

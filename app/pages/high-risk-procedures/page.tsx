@@ -19,6 +19,7 @@ import { formatThaiDate } from "@/lib/dateUtils";
 import type {
     HighRiskProceduresData, HrpOpdRow, HrpIpdRow,
 } from "@/lib/highRiskProcedures.service";
+import AiSummaryCard from "@/app/components/ai/AiSummaryCard";
 
 // ─── meta สี/ไอคอนต่อหัตถการ ──────────────────────────────────────────────────
 const PROC_META: Record<string, { short: string; color: string; bg: string; Icon: React.ElementType }> = {
@@ -418,9 +419,34 @@ export default function HighRiskProceduresPage() {
                         )}
                 </SectionCard>
             )}
+
+            {/* AI */}
+            <AiSummaryCard
+                summary={
+                    s
+                        ? {
+                            ช่วงข้อมูล: rangeLabel,
+                            หัตถการทั้งหมด: s.grandTotal,
+                            ผู้ป่วยนอก_OPD_ER: s.opdTotal,
+                            ผู้ป่วยใน_IPD: s.ipdTotal,
+                            แยกตามหัตถการ: s.byProcedure.map((p) => ({
+                                รหัส_ICD9: p.code,
+                                ชื่อหัตถการ: p.name,
+                                ผู้ป่วยนอก: p.opd,
+                                ผู้ป่วยใน: p.ipd,
+                                รวม: p.total,
+                            })),
+                        }
+                        : null
+                }
+                context="Dashboard หัตถการเสี่ยงสูง (ETT, ICD, Thoracocentesis, Paracentesis, Lumbar Puncture) โรงพยาบาลพลับพลาชัย แยกผู้ป่วยนอก OPD/ER และผู้ป่วยใน IPD"
+                disabled={!s}
+            />
         </div>
     );
 }
+
+
 
 // ─── KPI box ───────────────────────────────────────────────────────────────
 function KpiBox({ Icon, label, value, sub, color, bg }: {
@@ -437,3 +463,4 @@ function KpiBox({ Icon, label, value, sub, color, bg }: {
         </div>
     );
 }
+

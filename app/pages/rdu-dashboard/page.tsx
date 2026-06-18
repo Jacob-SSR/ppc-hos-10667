@@ -15,6 +15,7 @@ import { DoctorTable } from "./_components/DoctorTable";
 import { DoctorProfile } from "./_components/DoctorProfile";
 import { useRduCharts } from "./_hooks/useRduCharts";
 import { resetDeptColors, getDeptColor } from "./_utils/deptColor";
+import AiSummaryCard from "@/app/components/ai/AiSummaryCard";
 
 const DISEASE_ICONS = { uri: Wind, dia: Droplets, wound: Scissors, peri: Baby } as const;
 
@@ -393,6 +394,41 @@ export default function RduDashboardPage() {
             <div className="text-center text-xs text-gray-400 py-2">
                 ข้อมูลจากระบบ HosXP · โรงพยาบาลพลับพลาชัย จ.บุรีรัมย์ · อ้างอิง: คู่มือ RDU Hospital, สปสช., WHO AWaRe
             </div>
+
+            <AiSummaryCard
+                summary={
+                    data
+                        ? {
+                            ช่วงข้อมูล: `${data.start} ถึง ${data.end}`,
+                            แผนก: depcode
+                                ? RDU_DEPARTMENTS.find((d) => d.depcode === depcode)?.label
+                                : "ทุกแผนก",
+                            โรคเป้าหมาย: data.diseases.map((d) => ({
+                                โรค: d.name,
+                                จำนวนผู้ป่วย: d.visits,
+                                ได้รับยาปฏิชีวนะ: d.rxN,
+                                เปอร์เซ็นต์การสั่ง: `${d.current}%`,
+                                เป้าหมาย: `≤ ${d.target}%`,
+                                ผ่านเป้า: d.current <= d.target ? "ผ่าน" : "เกินเป้า",
+                            })),
+                            ยาปฏิชีวนะที่ใช้บ่อย: data.topAtb
+                                .slice(0, 8)
+                                .map((a) => ({ ยา: a.drug_name, จำนวนใบสั่ง: a.rx_count })),
+                            แพทย์ผู้สั่งจ่าย: data.doctors.slice(0, 10).map((dr) => ({
+                                ชื่อ: dr.doctor_name,
+                                ตำแหน่ง: dr.dept,
+                                จำนวนเคส: dr.visits,
+                                URI: `${dr.uri_pct}%`,
+                                Diarrhea: `${dr.dia_pct}%`,
+                                แผลสด: `${dr.wound_pct}%`,
+                                แผลฝีเย็บ: `${dr.peri_pct}%`,
+                            })),
+                        }
+                        : null
+                }
+                context="Dashboard RDU การใช้ยาปฏิชีวนะอย่างสมเหตุผล 4 โรคเป้าหมาย (URI, Diarrhea, แผลสด, แผลฝีเย็บ) โรงพยาบาลพลับพลาชัย"
+                disabled={!data}
+            />
         </div>
     );
 }

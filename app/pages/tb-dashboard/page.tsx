@@ -12,6 +12,7 @@ import {
     AlertTriangle, HeartPulse, MapPin, Stethoscope,
 } from "lucide-react";
 import type { TBDashboardData, TBRow, TBByYear } from "@/app/api/tb-dashboard/route";
+import AiSummaryCard from "@/app/components/ai/AiSummaryCard";
 
 // ─── Colors ───────────────────────────────────────────────────────────────────
 const C = {
@@ -606,6 +607,44 @@ export default function TBDashboardPage() {
 
     const s = data?.summary;
 
+    // สรุปสำหรับ AI — ใช้สถิติรวมตามปีที่เลือก (ไม่ส่งรายชื่อ/HN ผู้ป่วย)
+    const aiSummary = useMemo(() => {
+        if (!activeYD) return null;
+        const topN = (obj: Record<string, number>, n = 8) =>
+            Object.fromEntries(
+                Object.entries(obj).filter(([k]) => k !== "ไม่ระบุ").sort(([, a], [, b]) => b - a).slice(0, n),
+            );
+        return {
+            ปีงบที่เลือก: selectedYear === "all" ? "ทุกปีงบ" : `ปีงบ ${selectedYear}`,
+            ผู้ป่วยทั้งหมด: activeYD.total,
+            อายุเฉลี่ย: activeYD.avgAge,
+            ผลการรักษา: {
+                Cured: activeYD.cured,
+                Completed: activeYD.completed,
+                กำลังรักษา: activeYD.onTreatment,
+                เสียชีวิต: activeYD.died,
+                ขาดการรักษา_LTFU: activeYD.ltfu,
+                ส่งต่อ: activeYD.transferred,
+                ล้มเหลว: activeYD.failed,
+            },
+            ตัวชี้วัด_WHO: {
+                SuccessRate_ร้อยละ: activeYD.successRate,
+                เป้าหมาย_SuccessRate: "≥ 85%",
+                MortalityRate_ร้อยละ: activeYD.mortalityRate,
+                เป้าหมาย_Death: "≤ 5%",
+                LTFU_ร้อยละ: activeYD.total > 0 ? Math.round((activeYD.ltfu / activeYD.total) * 1000) / 10 : 0,
+                เป้าหมาย_LTFU: "≤ 5%",
+            },
+            ประเภทการขึ้นทะเบียน: activeYD.byRegType,
+            ผลAFB: activeYD.byAFB,
+            HIVstatus: activeYD.byHIV,
+            GeneXpert: activeYD.byGeneXpert,
+            โรคประจำตัว: topN(activeYD.byUD),
+            สูตรยาที่ใช้บ่อย: topN(activeYD.byRegimen, 6),
+            ตำบลที่พบมาก: topN(activeYD.byTambon),
+        };
+    }, [activeYD, selectedYear]);
+
     return (
         <div className="space-y-4">
             {/* Header */}
@@ -687,6 +726,13 @@ export default function TBDashboardPage() {
 
             {/* Patient table */}
             {!loading && activeRows.length > 0 && <PatientTable rows={activeRows} />}
+
+            {/* ── AI สรุป + แชท (ปุ่มลอยมุมขวาล่าง + modal กลางจอ) ── */}
+            <AiSummaryCard
+                summary={aiSummary}
+                context="แดชบอร์ดผู้ป่วยวัณโรค (TB) รพ.พลับพลาชัย จ.บุรีรัมย์ — วิเคราะห์ผลการรักษาตามมาตรฐาน WHO/กรมควบคุมโรค (Success Rate ≥ 85%, Death ≤ 5%, LTFU ≤ 5%) ครอบคลุมผลการรักษา ตัวชี้วัด การคัดกรอง AFB/HIV/Gene Xpert โรคประจำตัว และสูตรยา"
+                disabled={!aiSummary}
+            />
         </div>
     );
 }
