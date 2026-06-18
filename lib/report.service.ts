@@ -234,8 +234,9 @@ export async function getDeathNotDischarged() {
         FROM person p
         LEFT JOIN village v ON v.village_id = p.village_id
         LEFT JOIN house h ON p.house_id = h.house_id
-        INNER JOIN death_nhso d ON p.cid = d.cid
-        WHERE p.village_id <> '13'
+        INNER JOIN ok_10909 d ON p.cid = d.PID
+        WHERE d.death = 'เสียชีวิต'
+          AND p.village_id <> '13'
           AND p.death <> 'Y'
           AND p.person_discharge_id = '9'
           AND p.nationality = '99'

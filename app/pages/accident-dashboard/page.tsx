@@ -13,6 +13,7 @@ import {
   useAutoRefresh, timeAgo, CountdownRing, KpiCard, HBarList,
   SectionCard, LiveBadge, ConnectionStatus, RefreshButton,
 } from "@/app/components/dashboard/live";
+import AiSummaryCard from "@/app/components/ai/AiSummaryCard";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 interface AccidentSummary {
@@ -334,11 +335,15 @@ export default function AccidentDashboardPage() {
           <Info size={32} className="text-amber-500" />
           <p className="text-sm font-bold text-amber-800">ยังไม่มีข้อมูลใน Spreadsheet</p>
           <p className="text-xs text-amber-700">เพิ่มข้อมูลลงใน Google Sheets แล้ว Dashboard จะอัปเดตอัตโนมัติทุก 30 วินาที</p>
-          <p className="text-[11px] text-gray-400 font-mono mt-1">
-            ID: 1XlHb3jU93RzZ7kkE-LY1vL2sFRTiesh2nxRw9vGDeWY
-          </p>
         </div>
       )}
+
+      {/* AI SUMMARY */}
+      <AiSummaryCard
+        summary={s}
+        context="Dashboard อุบัติเหตุทางถนน โรงพยาบาลพลับพลาชัย"
+        disabled={!s}
+      />
     </div>
   );
 }
