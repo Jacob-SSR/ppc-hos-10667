@@ -193,7 +193,7 @@ export default function Sidebar() {
   // =========================
   if (isGuest === null) {
     return (
-      <aside className="flex flex-col w-60 h-full bg-white border-r border-gray-300 overflow-hidden">
+      <aside className="flex flex-col w-60 h-full bg-white border-r-2 shadow-[2px_0_12px_rgba(0,0,0,0.06)] overflow-hidden" style={{ borderColor: "#d6f0e0" }}>
         <nav className="flex-1 px-4 py-6">
           <div className="h-10 bg-gray-100 rounded-md animate-pulse" />
         </nav>
@@ -202,7 +202,7 @@ export default function Sidebar() {
   }
 
   return (
-    <aside className="flex flex-col w-60 h-full bg-white border-r border-gray-300 overflow-hidden">
+    <aside className="flex flex-col w-60 h-full bg-white border-r-2 shadow-[2px_0_12px_rgba(0,0,0,0.06)] overflow-hidden" style={{ borderColor: "#d6f0e0" }}>
       {/* ========================= */}
       {/* Menu */}
       {/* ========================= */}

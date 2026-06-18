@@ -9,14 +9,24 @@ import { SidebarSubGroup } from "./types";
 
 type Props = {
   label: string;
-  icon: React.ComponentType<{
-    size?: number;
-  }>;
+  icon: React.ComponentType<{ size?: number }>;
   groups: SidebarSubGroup[];
   isOpen: boolean;
   onToggle: () => void;
   isActive: boolean;
 };
+
+// ── ธีมเขียว รวมไว้ที่เดียว แก้ทีเดียวเปลี่ยนทั้งเมนู ──
+const T = {
+  primary: "#1a5233",
+  mid: "#3aa36a",
+  soft: "#a8d5ba",
+  bg: "#d6f0e0",
+  hover: "#e8f5ee",
+  active: "#c2e8d4",
+};
+
+const EASE = [0.4, 0, 0.2, 1] as const;
 
 export default function NavGroup({
   label,
@@ -28,154 +38,99 @@ export default function NavGroup({
 }: Props) {
   const pathname = usePathname();
 
-  // =========================
-  // Sub Dropdown State
-  // =========================
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({
-    "DASHBOARD หลัก": true, // กำหนดให้เปิดอันนี้เป็นค่าเริ่มต้น
+    "DASHBOARD หลัก": true,
   });
 
-  const toggleSubGroup = (title: string) => {
-    setOpenGroups((prev) => {
-      // เปลี่ยนจาก ?? true เป็น ?? false เพื่อให้ตรงกับค่าเริ่มต้นตอน render
-      const currentState = prev[title] ?? false;
+  const toggleSubGroup = (title: string) =>
+    setOpenGroups((prev) => ({ ...prev, [title]: !(prev[title] ?? false) }));
 
-      return {
-        ...prev,
-        [title]: !currentState,
-      };
-    });
-  };
-
-  // =========================
-  // Active Check
-  // =========================
   const isItemActive = (href: string) =>
     pathname === href || pathname?.startsWith(href + "/");
 
+  const headerActive = isActive || isOpen;
+
   return (
     <div className="pt-1">
-      {/* ========================= */}
-      {/* Main Header */}
-      {/* ========================= */}
+      {/* ───────── Main Header ───────── */}
       <button
         onClick={onToggle}
-        className="
-          w-full
-          flex items-center gap-3
-          px-3 py-2
-          rounded-md
-          transition-all
-          text-left
-        "
+        className="w-full flex items-center gap-2.5 px-2.5 py-2.5 rounded-xl transition-colors duration-200"
         style={
-          isActive || isOpen
-            ? {
-              backgroundColor: "#d6f0e0",
-              color: "#1a5233",
-              fontWeight: 600,
-            }
-            : {
-              color: "#4b5563",
-            }
+          headerActive
+            ? { backgroundColor: T.bg, color: T.primary, fontWeight: 600 }
+            : { color: "#4b5563" }
         }
+        onMouseEnter={(e) => {
+          if (!headerActive) e.currentTarget.style.backgroundColor = T.hover;
+        }}
+        onMouseLeave={(e) => {
+          if (!headerActive) e.currentTarget.style.backgroundColor = "transparent";
+        }}
       >
-        <Icon size={18} />
-
-        <span className="flex-1 text-sm">{label}</span>
-
-        <motion.span
-          animate={{
-            rotate: isOpen ? 180 : 0,
-          }}
+        <span
+          className="flex items-center justify-center w-8 h-8 rounded-lg shrink-0 transition-colors"
+          style={{ backgroundColor: headerActive ? "rgba(255,255,255,0.6)" : "transparent" }}
         >
+          <Icon size={18} />
+        </span>
+        <span className="flex-1 text-sm text-left">{label}</span>
+        <motion.span animate={{ rotate: isOpen ? 180 : 0 }} transition={{ duration: 0.25 }}>
           <ChevronDown size={16} />
         </motion.span>
       </button>
 
-      {/* ========================= */}
-      {/* Main Dropdown */}
-      {/* ========================= */}
-      <AnimatePresence>
+      {/* ───────── Main Dropdown ───────── */}
+      <AnimatePresence initial={false}>
         {isOpen && (
           <motion.div
-            initial={{
-              height: 0,
-            }}
-            animate={{
-              height: "auto",
-            }}
-            exit={{
-              height: 0,
-            }}
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: "auto", opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.28, ease: EASE }}
             className="overflow-hidden"
           >
             <div
-              className="
-                mt-1 ml-3 pl-3
-                border-l-2
-                space-y-2
-              "
-              style={{
-                borderColor: "#a8d5ba",
-              }}
+              className="mt-1.5 ml-4 pl-3 border-l-2 space-y-1"
+              style={{ borderColor: T.soft }}
             >
-              {groups.map((group) => {
-                // เปลี่ยนจาก ?? true เป็น ?? false เพื่อให้เมนูอื่นๆ ปิดไว้ก่อน
+              {groups.map((group, gi) => {
                 const subOpen = openGroups[group.title] ?? false;
+                const isLast = gi === groups.length - 1;
 
                 return (
-                  <div key={group.title}>
-                    {/* ========================= */}
-                    {/* Sub Group Header */}
-                    {/* ========================= */}
+                  <div
+                    key={group.title}
+                    className={isLast ? "" : "pb-2.5 mb-1"}
+                    style={isLast ? {} : { borderBottom: `2px solid ${T.soft}55` }}
+                  >
+                    {/* ── Sub Group Header ── */}
                     <button
                       onClick={() => toggleSubGroup(group.title)}
-                      className="
-                        w-full
-                        flex items-center
-                        gap-2
-                        px-2 py-1.5
-                        rounded-md
-                        text-left
-                        text-[11px]
-                        font-semibold
-                        uppercase
-                        tracking-wide
-                        text-gray-500
-                        hover:bg-[#edf7f1]
-                        transition-all
-                      "
+                      className="w-full flex items-center gap-2 px-2.5 py-2 rounded-lg text-left transition-colors"
+                      style={{ color: subOpen ? T.primary : "#6b7280" }}
+                      onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = T.hover)}
+                      onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "transparent")}
                     >
-                      <span className="flex-1">{group.title}</span>
-
-                      <motion.span
-                        animate={{
-                          rotate: subOpen ? 180 : 0,
-                        }}
-                      >
+                      <span className="flex-1 text-[11px] font-bold uppercase tracking-wider">
+                        {group.title}
+                      </span>
+                      <motion.span animate={{ rotate: subOpen ? 180 : 0 }} transition={{ duration: 0.2 }}>
                         <ChevronDown size={13} />
                       </motion.span>
                     </button>
 
-                    {/* ========================= */}
-                    {/* Sub Group Items */}
-                    {/* ========================= */}
-                    <AnimatePresence>
+                    {/* ── Sub Group Items ── */}
+                    <AnimatePresence initial={false}>
                       {subOpen && (
                         <motion.div
-                          initial={{
-                            height: 0,
-                          }}
-                          animate={{
-                            height: "auto",
-                          }}
-                          exit={{
-                            height: 0,
-                          }}
+                          initial={{ height: 0, opacity: 0 }}
+                          animate={{ height: "auto", opacity: 1 }}
+                          exit={{ height: 0, opacity: 0 }}
+                          transition={{ duration: 0.22, ease: EASE }}
                           className="overflow-hidden"
                         >
-                          <div className="space-y-1 mt-1">
+                          <div className="space-y-0.5 mt-1 pb-0.5">
                             {group.items.map((item) => {
                               const active = isItemActive(item.href);
                               const ItemIcon = item.icon;
@@ -184,43 +139,33 @@ export default function NavGroup({
                                 <Link
                                   key={item.href}
                                   href={item.href}
-                                  className="
-                                    flex items-start gap-2
-                                    px-2 py-2
-                                    rounded-md
-                                    transition-all
-                                  "
+                                  className="relative flex items-start gap-2.5 pl-3.5 pr-2 py-2 rounded-lg transition-all duration-150"
                                   style={
                                     active
-                                      ? {
-                                        backgroundColor: "#c2e8d4",
-                                        color: "#1a5233",
-                                        fontWeight: 600,
-                                      }
-                                      : {
-                                        color: "#4b5563",
-                                      }
+                                      ? { backgroundColor: T.active, color: T.primary, fontWeight: 600 }
+                                      : { color: "#4b5563" }
                                   }
                                   onMouseEnter={(e) => {
-                                    if (!active) {
-                                      e.currentTarget.style.backgroundColor =
-                                        "#e8f5ee";
-                                    }
+                                    if (!active) e.currentTarget.style.backgroundColor = T.hover;
                                   }}
                                   onMouseLeave={(e) => {
-                                    if (!active) {
-                                      e.currentTarget.style.backgroundColor =
-                                        "transparent";
-                                    }
+                                    if (!active) e.currentTarget.style.backgroundColor = "transparent";
                                   }}
                                 >
-                                  <ItemIcon size={16} />
-
-                                  <div>
-                                    <div className="text-xs">{item.label}</div>
-
+                                  {/* แถบเขียวบอกหน้าที่กำลังเปิด */}
+                                  {active && (
+                                    <motion.span
+                                      initial={{ scaleY: 0 }}
+                                      animate={{ scaleY: 1 }}
+                                      className="absolute left-0 top-1.5 bottom-1.5 w-1 rounded-full origin-center"
+                                      style={{ backgroundColor: T.mid }}
+                                    />
+                                  )}
+                                  <ItemIcon size={16} className="mt-0.5 shrink-0" />
+                                  <div className="min-w-0">
+                                    <div className="text-xs leading-snug">{item.label}</div>
                                     {item.desc && (
-                                      <div className="text-[10px] text-gray-400">
+                                      <div className="text-[10px] text-gray-400 leading-snug mt-0.5">
                                         {item.desc}
                                       </div>
                                     )}
