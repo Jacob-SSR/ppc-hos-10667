@@ -76,7 +76,7 @@ export async function POST(req: Request) {
 
   // คนที่ยังไม่ได้ตั้ง role (คอลัมน์เพิ่งเพิ่ม) → ถือเป็น "USER" ธรรมดา
   // ⚠️ ต้อง fallback เสมอ ไม่งั้น role เป็น undefined แล้ว proxy ที่เช็ค role จะปฏิเสธ
-  const role = user.role ?? "USER";
+  const role = (user.role ?? "USER").toUpperCase();
 
   const token = jwt.sign(
     { username: user.user, role },
@@ -84,11 +84,16 @@ export async function POST(req: Request) {
     { expiresIn: "8h" },
   );
 
+  // ⚠️ secure cookie ส่งได้เฉพาะผ่าน HTTPS — ตอนนี้ยังเป็น HTTP จึงคุมด้วย env
+  //    ตั้ง COOKIE_SECURE=false ระหว่างยังไม่มี HTTPS ; พอขึ้น HTTPS แล้วเปลี่ยนเป็น true
+  //    (ถ้า true บน HTTP browser จะไม่เก็บ cookie → login แล้วกลายเป็น guest)
+  const secureCookie = process.env.COOKIE_SECURE === "true";
+
   // ส่ง role กลับให้ client ใช้ตัดสินใจ redirect หลัง login
   const res = NextResponse.json({ message: "Login success", role });
   res.cookies.set("token", token, {
     httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
+    secure: secureCookie,
     sameSite: "lax",
     path: "/",
     maxAge: 60 * 60 * 8,
