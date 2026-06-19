@@ -8,6 +8,8 @@ import {
   type GeminiContentResponse,
   type GeminiErrorResponse,
 } from "@/lib/gemini";
+import { getClientIp, rateLimit, tooManyRequests } from "@/lib/rateLimit";
+import { getUsername } from "@/lib/getUsername";
 
 const GEMINI_MODEL = "gemini-2.5-flash";
 const GEMINI_URL = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`;
@@ -136,6 +138,16 @@ async function callGemini(
 
 export async function POST(req: Request) {
   try {
+    // ── Rate limit: ตาม user (fallback IP) — 15 ครั้ง / 5 นาที ──
+    const user = await getUsername();
+    const rlKey = user
+      ? `ai:summarize:${user}`
+      : `ai:summarize:ip:${getClientIp(req)}`;
+    const rl = rateLimit(rlKey, 15, 5 * 60_000);
+    if (!rl.ok) {
+      return tooManyRequests(rl, "เรียกใช้ AI บ่อยเกินไป กรุณารอสักครู่");
+    }
+
     const { summary } = (await req.json()) as { summary: unknown };
 
     const prompt = `

@@ -7,6 +7,8 @@ import {
   type GeminiContentResponse,
   type GeminiErrorResponse,
 } from "@/lib/gemini";
+import { getClientIp, rateLimit, tooManyRequests } from "@/lib/rateLimit";
+import { getUsername } from "@/lib/getUsername";
 
 const GEMINI_MODEL = "gemini-2.5-flash";
 const GEMINI_URL = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`;
@@ -119,6 +121,14 @@ async function callGeminiChat(
 
 export async function POST(req: Request) {
   try {
+    // ── Rate limit: chat ถี่กว่า summarize ได้ — 30 ครั้ง / 5 นาที ──
+    const user = await getUsername();
+    const rlKey = user ? `ai:chat:${user}` : `ai:chat:ip:${getClientIp(req)}`;
+    const rl = rateLimit(rlKey, 30, 5 * 60_000);
+    if (!rl.ok) {
+      return tooManyRequests(rl, "ส่งคำถามบ่อยเกินไป กรุณารอสักครู่");
+    }
+
     const { summary, context, messages } = (await req.json()) as {
       summary: unknown;
       context?: string;

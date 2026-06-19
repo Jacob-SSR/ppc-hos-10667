@@ -4,20 +4,43 @@ import bcrypt from "bcrypt";
 import md5 from "md5";
 import { db2 } from "@/lib/db";
 import { RowDataPacket } from "mysql2";
+import { rateLimit, getClientIp, tooManyRequests } from "@/lib/rateLimit";
 
 type UserRow = RowDataPacket & {
   user: string;
   passweb: string;
 };
 
-export async function POST(req: Request) {
-  const body = await req.json();
+const MINUTE = 60_000;
 
+export async function POST(req: Request) {
+  const ip = getClientIp(req);
+
+  // ── ชั้นที่ 1: จำกัดตาม IP — 10 ครั้ง / 5 นาที ──
+  const ipLimit = rateLimit(`login:ip:${ip}`, 10, 5 * MINUTE);
+  if (!ipLimit.ok) {
+    return tooManyRequests(ipLimit, "พยายาม login บ่อยเกินไป กรุณารอสักครู่");
+  }
+
+  const body = await req.json();
   const username = body.username?.trim();
   const password = body.password?.trim();
 
   if (!username || !password) {
     return NextResponse.json({ message: "Invalid" }, { status: 400 });
+  }
+
+  // ── ชั้นที่ 2: จำกัดตาม username — 5 ครั้ง / 15 นาที ──
+  const userLimit = rateLimit(
+    `login:user:${username.toLowerCase()}`,
+    5,
+    15 * MINUTE,
+  );
+  if (!userLimit.ok) {
+    return tooManyRequests(
+      userLimit,
+      "บัญชีนี้ถูกพยายามเข้าสู่ระบบหลายครั้งเกินไป กรุณารอสักครู่",
+    );
   }
 
   const [rows] = await db2.query<UserRow[]>(
@@ -37,7 +60,6 @@ export async function POST(req: Request) {
     isValid = await bcrypt.compare(password, user.passweb);
   } else {
     isValid = md5(password).toLowerCase() === user.passweb.toLowerCase();
-
     if (isValid) {
       const newHash = await bcrypt.hash(password, 12);
       await db2.query("UPDATE ppchos.users SET passweb = ? WHERE `user` = ?", [
