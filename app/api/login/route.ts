@@ -9,6 +9,7 @@ import { rateLimit, getClientIp, tooManyRequests } from "@/lib/rateLimit";
 type UserRow = RowDataPacket & {
   user: string;
   passweb: string;
+  role: string | null; // เพิ่งเพิ่มคอลัมน์ — คนเก่าจะเป็น NULL
 };
 
 const MINUTE = 60_000;
@@ -44,7 +45,7 @@ export async function POST(req: Request) {
   }
 
   const [rows] = await db2.query<UserRow[]>(
-    "SELECT `user`, passweb FROM ppchos.users WHERE `user` = ? LIMIT 1",
+    "SELECT `user`, passweb, role FROM ppchos.users WHERE `user` = ? LIMIT 1",
     [username],
   );
 
@@ -73,11 +74,18 @@ export async function POST(req: Request) {
     return NextResponse.json({ message: "Invalid" }, { status: 401 });
   }
 
-  const token = jwt.sign({ username: user.user }, process.env.JWT_SECRET!, {
-    expiresIn: "8h",
-  });
+  // คนที่ยังไม่ได้ตั้ง role (คอลัมน์เพิ่งเพิ่ม) → ถือเป็น "USER" ธรรมดา
+  // ⚠️ ต้อง fallback เสมอ ไม่งั้น role เป็น undefined แล้ว proxy ที่เช็ค role จะปฏิเสธ
+  const role = user.role ?? "USER";
 
-  const res = NextResponse.json({ message: "Login success" });
+  const token = jwt.sign(
+    { username: user.user, role },
+    process.env.JWT_SECRET!,
+    { expiresIn: "8h" },
+  );
+
+  // ส่ง role กลับให้ client ใช้ตัดสินใจ redirect หลัง login
+  const res = NextResponse.json({ message: "Login success", role });
   res.cookies.set("token", token, {
     httpOnly: true,
     secure: process.env.NODE_ENV === "production",
