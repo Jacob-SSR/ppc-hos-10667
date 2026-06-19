@@ -24,8 +24,8 @@ import type {
 
 /**
  * รับประกันว่า string เป็นรูปแบบวันที่ YYYY-MM-DD ล้วนๆ
- * ใช้กับ start/end ก่อนนำไปต่อใน SQL string (atbSubquery)
- * ถ้ารูปแบบผิด throw ทันที — กัน SQL injection ที่ระดับต้นทาง
+ * ตอนนี้ start/end ถูกส่งเป็น parameter (?) แล้วทุกจุด แต่ยังคง assertDate ไว้เป็น
+ * defense-in-depth + ให้ error ชัดเจนตั้งแต่ต้นทางถ้าได้ค่าวันที่ผิดรูปแบบ
  */
 function assertDate(s: string): string {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) {
@@ -35,6 +35,9 @@ function assertDate(s: string): string {
 }
 
 // ─── SQL condition builders ───────────────────────────────────────────────────
+// ⚠️ ฟังก์ชันด้านล่างนี้ "สร้าง SQL จาก constant เท่านั้น" (URI_ICD10, ATB_ICODES_SQL ฯลฯ
+//    ซึ่งมาจาก rdu.constants.ts ไม่ใช่ค่าจาก request) ห้ามส่งค่าจาก user/request เข้ามาเด็ดขาด
+//    ถ้าต้องใช้ค่าจาก request ให้ใช้ placeholder (?) + parameter เสมอ
 
 function inList(arr: readonly string[], col: string) {
   return `${col} IN (${arr.map((s) => `'${s}'`).join(",")})`;
@@ -58,15 +61,17 @@ const PERI_COND = `(${inList(PERI_ICD10, "od.icd10")})`;
 
 /**
  * ATB subquery — VN ที่ได้รับยาปฏิชีวนะ
- * NOTE: start/end ถูก concat เข้า string ตรงนี้ ผู้เรียก *ต้อง* ผ่าน assertDate() มาก่อน
- * (ทุก exported function ด้านล่างเรียก assertDate ที่ต้นทางแล้ว)
+ * start/end ใช้ placeholder (?) — ไม่มีการ concat ค่าตัวแปรเข้า SQL อีกต่อไป
+ *
+ * ⚠️ ลำดับ param: subquery นี้ถูกวางใน LEFT JOIN ซึ่งอยู่ "ก่อน" WHERE ในตัว query หลัก
+ *    ดังนั้นผู้เรียกต้องใส่ [start, end] ของ subquery ไว้ "ก่อน" param ของ WHERE เสมอ
  */
-function atbSubquery(start: string, end: string) {
+function atbSubquery() {
   return `
     SELECT DISTINCT op.vn
     FROM opitemrece op
     WHERE op.icode IN (${ATB_ICODES_SQL})
-      AND op.vstdate BETWEEN '${start}' AND '${end}'
+      AND op.vstdate BETWEEN ? AND ?
   `;
 }
 
@@ -83,8 +88,10 @@ export async function queryDiseaseSummary(
   assertDate(start);
   assertDate(end);
 
+  // คง whitelist ไว้ (defense-in-depth + รับประกันว่าเป็น depcode ที่มีจริง)
+  // แล้วส่งค่าเป็น parameter แทนการ concat
   const safeDep = depcode && VALID_DEPCODES.has(depcode) ? depcode : undefined;
-  const deptFilter = safeDep ? `AND o.main_dep = '${safeDep}'` : "";
+  const deptFilter = safeDep ? "AND o.main_dep = ?" : "";
 
   const diseaseConds: Record<string, string> = {
     uri: URI_COND,
@@ -98,6 +105,11 @@ export async function queryDiseaseSummary(
   for (const meta of DISEASE_META) {
     const cond = diseaseConds[meta.key];
 
+    // ลำดับ param: [subquery.start, subquery.end, where.start, where.end, (safeDep?)]
+    const params: (string | undefined)[] = safeDep
+      ? [start, end, start, end, safeDep]
+      : [start, end, start, end];
+
     const [rows] = await db.query<RowDataPacket[]>(
       `
       SELECT
@@ -108,13 +120,13 @@ export async function queryDiseaseSummary(
       INNER JOIN ovstdiag od
         ON od.vn = v.vn
         AND od.diagtype = '1'
-      LEFT JOIN (${atbSubquery(start, end)}) atb ON atb.vn = v.vn
+      LEFT JOIN (${atbSubquery()}) atb ON atb.vn = v.vn
       WHERE v.vstdate BETWEEN ? AND ?
         AND o.an IS NULL
         AND ${cond}
         ${deptFilter}
     `,
-      [start, end],
+      params,
     );
 
     const row = rows[0];
@@ -136,6 +148,7 @@ export async function queryTrend(
   assertDate(start);
   assertDate(end);
 
+  // ลำดับ param: [subquery.start, subquery.end, where.start, where.end]
   const [rows] = await db.query<RowDataPacket[]>(
     `
     SELECT
@@ -153,13 +166,13 @@ export async function queryTrend(
     INNER JOIN ovstdiag od
       ON od.vn = v.vn
       AND od.diagtype = '1'
-    LEFT JOIN (${atbSubquery(start, end)}) atb ON atb.vn = v.vn
+    LEFT JOIN (${atbSubquery()}) atb ON atb.vn = v.vn
     WHERE v.vstdate BETWEEN ? AND ?
       AND o.an IS NULL
     GROUP BY DATE_FORMAT(v.vstdate, '%Y-%m')
     ORDER BY month ASC
   `,
-    [start, end],
+    [start, end, start, end],
   );
 
   return rows.map((r) => {
@@ -189,6 +202,7 @@ export async function queryDoctors(
   assertDate(start);
   assertDate(end);
 
+  // ลำดับ param: [subquery.start, subquery.end, where.start, where.end]
   const [rows] = await db.query<RowDataPacket[]>(
     `
     SELECT
@@ -220,7 +234,7 @@ export async function queryDoctors(
       AND od.diagtype = '1'
     LEFT JOIN doctor d ON d.code = o.doctor
     LEFT JOIN doctor_position dp ON dp.id = d.position_id
-    LEFT JOIN (${atbSubquery(start, end)}) atb ON atb.vn = v.vn
+    LEFT JOIN (${atbSubquery()}) atb ON atb.vn = v.vn
     WHERE v.vstdate BETWEEN ? AND ?
       AND o.an IS NULL
       AND o.doctor IS NOT NULL
@@ -230,7 +244,7 @@ export async function queryDoctors(
     HAVING visits > 0
     ORDER BY pos_rank ASC, visits DESC
   `,
-    [start, end],
+    [start, end, start, end],
   );
 
   const pct = (total: number, rx: number) =>
