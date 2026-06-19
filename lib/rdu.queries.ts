@@ -11,6 +11,7 @@ import {
   PERI_ICD10,
   DISEASE_META,
   THAI_MONTHS_SHORT,
+  RDU_DEPARTMENTS,
 } from "@/lib/rdu.constants";
 import type {
   RduDiseaseRow,
@@ -18,6 +19,20 @@ import type {
   RduDoctorRow,
   RduAtbRow,
 } from "@/lib/rdu.types";
+
+// ─── Input validation ─────────────────────────────────────────────────────────
+
+/**
+ * รับประกันว่า string เป็นรูปแบบวันที่ YYYY-MM-DD ล้วนๆ
+ * ใช้กับ start/end ก่อนนำไปต่อใน SQL string (atbSubquery)
+ * ถ้ารูปแบบผิด throw ทันที — กัน SQL injection ที่ระดับต้นทาง
+ */
+function assertDate(s: string): string {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) {
+    throw new Error(`Invalid date format: ${JSON.stringify(s)}`);
+  }
+  return s;
+}
 
 // ─── SQL condition builders ───────────────────────────────────────────────────
 
@@ -41,7 +56,11 @@ const WOUND_COND = likeOr(WOUND_ICD10_PREFIXES, "od.icd10");
 /** แผลฝีเย็บ: exact ICD10 list */
 const PERI_COND = `(${inList(PERI_ICD10, "od.icd10")})`;
 
-/** ATB subquery — VN ที่ได้รับยาปฏิชีวนะ */
+/**
+ * ATB subquery — VN ที่ได้รับยาปฏิชีวนะ
+ * NOTE: start/end ถูก concat เข้า string ตรงนี้ ผู้เรียก *ต้อง* ผ่าน assertDate() มาก่อน
+ * (ทุก exported function ด้านล่างเรียก assertDate ที่ต้นทางแล้ว)
+ */
 function atbSubquery(start: string, end: string) {
   return `
     SELECT DISTINCT op.vn
@@ -51,13 +70,21 @@ function atbSubquery(start: string, end: string) {
   `;
 }
 
+const VALID_DEPCODES = new Set<string>(
+  RDU_DEPARTMENTS.map((d) => d.depcode).filter(Boolean),
+);
+
 // ─── Query 1: สรุปรายโรค ──────────────────────────────────────────────────────
 export async function queryDiseaseSummary(
   start: string,
   end: string,
   depcode?: string,
 ): Promise<RduDiseaseRow[]> {
-  const deptFilter = depcode ? `AND o.main_dep = '${depcode}'` : "";
+  assertDate(start);
+  assertDate(end);
+
+  const safeDep = depcode && VALID_DEPCODES.has(depcode) ? depcode : undefined;
+  const deptFilter = safeDep ? `AND o.main_dep = '${safeDep}'` : "";
 
   const diseaseConds: Record<string, string> = {
     uri: URI_COND,
@@ -106,6 +133,9 @@ export async function queryTrend(
   start: string,
   end: string,
 ): Promise<RduTrendRow[]> {
+  assertDate(start);
+  assertDate(end);
+
   const [rows] = await db.query<RowDataPacket[]>(
     `
     SELECT
@@ -156,6 +186,9 @@ export async function queryDoctors(
   start: string,
   end: string,
 ): Promise<RduDoctorRow[]> {
+  assertDate(start);
+  assertDate(end);
+
   const [rows] = await db.query<RowDataPacket[]>(
     `
     SELECT
@@ -231,6 +264,9 @@ export async function queryTopAtb(
   start: string,
   end: string,
 ): Promise<RduAtbRow[]> {
+  assertDate(start);
+  assertDate(end);
+
   const [rows] = await db.query<RowDataPacket[]>(
     `
     SELECT
@@ -264,6 +300,9 @@ export async function queryAtbByDisease(
   start: string,
   end: string,
 ): Promise<Record<string, RduAtbRow[]>> {
+  assertDate(start);
+  assertDate(end);
+
   const conds: Record<string, string> = {
     uri: URI_COND,
     dia: DIA_COND,
