@@ -84,11 +84,12 @@ export default function Sidebar() {
       .then((res) => res.json())
       .then((data) => {
         if (!cancelled) {
+          // role จาก API เป็นตัวพิมพ์ใหญ่เสมอ (GUEST/USER/IT/ADMIN) → normalize กันพลาด
           const role =
-            data.user?.role;
+            data.user?.role?.toUpperCase();
 
           setIsGuest(
-            role === "guest"
+            role === "GUEST"
           );
 
           setIsIT(

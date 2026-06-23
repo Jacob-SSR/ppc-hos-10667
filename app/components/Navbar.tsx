@@ -20,7 +20,8 @@ export default function Navbar() {
       .then((data) => {
         if (data.user) {
           setUsername(data.user.username);
-          setIsGuest(data.user.role === "guest");
+          // role จาก API เป็นตัวพิมพ์ใหญ่เสมอ (GUEST/USER/IT/ADMIN) → normalize กันพลาด
+          setIsGuest(data.user.role?.toUpperCase() === "GUEST");
         }
       })
       .catch(() => { setUsername(null); setIsGuest(true); });
