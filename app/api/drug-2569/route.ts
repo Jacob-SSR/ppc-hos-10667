@@ -29,7 +29,7 @@ export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
 const SHEET_ID =
-  process.env.DRUG_2569_SPREADSHEET_ID || process.env.DRUG_SPREADSHEET_ID || "";
+  process.env.DRUG_2569_SPREADSHEET_ID ;
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 export interface Drug2569Row {
