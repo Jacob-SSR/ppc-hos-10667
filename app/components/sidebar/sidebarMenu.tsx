@@ -189,12 +189,6 @@ export const DASHBOARD_GROUPS: SidebarSubGroup[] = [
         group: "disease",
       },
       {
-        label: "จิตเวชยาเสพติด",
-        href: "/pages/drug-dashboard-2569",
-        icon: Brain,
-        group: "disease",
-      },
-      {
         label: "หัตถการเสี่ยงสูง",
         href: "/pages/high-risk-procedures",
         icon: Scissors,
