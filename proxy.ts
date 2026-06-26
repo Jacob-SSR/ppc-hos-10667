@@ -110,5 +110,6 @@ export const config = {
     "/api/ttm-dashboard/:path*",
     "/api/uc-outside/:path*",
     "/api/uc-outside-dental/:path*",
+    "/api/drug-2569/:path*",
   ],
 };
