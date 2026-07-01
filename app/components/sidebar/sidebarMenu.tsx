@@ -207,6 +207,12 @@ export const DASHBOARD_GROUPS: SidebarSubGroup[] = [
         group: "disease",
       },
       {
+        label: "มินิธัญญารักษ์",
+        href: "/pages/minithan-dashboard",
+        icon: HeartHandshake,
+        group: "disease",
+      },
+      {
         label: "RDU Antibiotic Smart Use",
         href: "/pages/rdu-dashboard",
         icon: Pill,
