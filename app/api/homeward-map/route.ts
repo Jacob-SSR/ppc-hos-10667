@@ -95,7 +95,8 @@ function parseLatLng(s: string): { lat: number; lng: number } | null {
   const lat = parseFloat((a || "").trim());
   const lng = parseFloat((b || "").trim());
   if (Number.isNaN(lat) || Number.isNaN(lng)) return null;
-  if (lat < -90 || lat > 90 || lng < -180 || lng > 180) return null;
+  // กรอบประเทศไทย — กันพิกัดกรอกผิด (เช่น lat==lng ทำให้จุดไปตกต่างประเทศ)
+  if (lat < 5.4 || lat > 20.6 || lng < 97.2 || lng > 105.8) return null;
   return { lat, lng };
 }
 
