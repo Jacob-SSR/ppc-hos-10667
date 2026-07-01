@@ -1,12 +1,6 @@
-// app/api/homeward-sheets/route.ts
-// ดึงข้อมูล Home Ward ยาเสพติดจาก Google Sheets แบบ real-time
-// Spreadsheet ID: 1yeHSn7ZM2APIk21LULNYS1ctT8UE-tteYZeTYj1xiPU
-// แต่ละ sheet = รายเดือน เช่น "พฤศจิกายน 2568", "ธันวาคม 2568" ฯลฯ
-
 import { NextResponse } from "next/server";
 import {
   getSheetClient,
-  getAllSheetTitles,
   getValues,
   toStr,
   toNum,
@@ -15,9 +9,12 @@ import {
   sheetsError,
 } from "@/lib/sheets";
 
-const SPREADSHEET_ID =
-  process.env.HOMEWARD_SPREADSHEET_ID ||
-  "1yeHSn7ZM2APIk21LULNYS1ctT8UE-tteYZeTYj1xiPU";
+const SPREADSHEET_ID = process.env.HOMEWARD_SPREADSHEET_ID!;
+
+// ชื่อ sheet เดียวที่รวมข้อมูลทุกเดือน (Home Ward + พลับพลารักษ์)
+const SHEET_NAME =
+  process.env.HOMEWARD_SHEET_NAME ||
+  "ชดเชย Home Ward +พลับพลารักษ์ By Natchanan";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 export interface HomeWardSheetRow {
@@ -81,26 +78,28 @@ function parseDate(raw: string): string {
   return parseDateShared(raw, { serial: false });
 }
 
-// แปลงชื่อ sheet เป็น "YYYY-MM" (CE)
-const MONTH_ORDER: Record<string, string> = {
-  พฤศจิกายน: "11",
-  ธันวาคม: "12",
-  มกราคม: "01",
-  กุมภาพันธ์: "02",
-  มีนาคม: "03",
-  เมษายน: "04",
-  พฤษภาคม: "05",
-  มิถุนายน: "06",
-  กรกฎาคม: "07",
-  สิงหาคม: "08",
-  กันยายน: "09",
-  ตุลาคม: "10",
+// แปลงค่าในคอลัมน์ "เดือน/ปีที่รับบริการ" เช่น "พ.ย. 2025", "มี.ค. 2026" → "YYYY-MM"
+// (คอลัมน์นี้เป็นเดือนย่อไทย + ปี ค.ศ. อยู่แล้ว ไม่ต้องแปลง พ.ศ.)
+const MONTH_SHORT_ORDER: Record<string, string> = {
+  "ม.ค.": "01",
+  "ก.พ.": "02",
+  "มี.ค.": "03",
+  "เม.ย.": "04",
+  "พ.ค.": "05",
+  "มิ.ย.": "06",
+  "ก.ค.": "07",
+  "ส.ค.": "08",
+  "ก.ย.": "09",
+  "ต.ค.": "10",
+  "พ.ย.": "11",
+  "ธ.ค.": "12",
 };
 
-function sheetToMonthKey(sheetName: string): string {
-  for (const [th, mm] of Object.entries(MONTH_ORDER)) {
-    if (sheetName.includes(th)) {
-      const match = sheetName.match(/(\d{4})/);
+function monthYearToKey(raw: string): string {
+  const s = toStr(raw);
+  for (const [th, mm] of Object.entries(MONTH_SHORT_ORDER)) {
+    if (s.includes(th)) {
+      const match = s.match(/(\d{4})/);
       if (match) {
         const y = parseInt(match[1]);
         const ce = y > 2500 ? y - 543 : y;
@@ -108,7 +107,7 @@ function sheetToMonthKey(sheetName: string): string {
       }
     }
   }
-  return sheetName;
+  return s;
 }
 
 const THAI_MONTHS_SHORT: Record<string, string> = {
@@ -147,68 +146,53 @@ function classifyDrug(pdx: string): string {
   return "ไม่ระบุ";
 }
 
-// ─── Parse one sheet ──────────────────────────────────────────────────────────
+// ─── Parse sheet เดียว (รวมทุกเดือน) ────────────────────────────────────────────
+// คอลัมน์ของ sheet "ชดเชย Home Ward +พลับพลารักษ์ By Natchanan":
+// 0=ลำดับ, 1=เดือน/ปีที่รับบริการ, 2=Status, 3=วันที่รักษา, 4=วันที่จำหน่าย,
+// 5=จำนวนวันนอน, 6=ward, 7=สิทธิ, 8=AN, 9=ชื่อ_นามสกุล, 10=วินิจฉัยหลัก,
+// 11=ตำบล, 12=อายุ, 13=รพสต, 14=ยอดชดเชยสุทธิ Invoice, 15=AdjRw HOSxP,
+// 16=AdjRw2 จากrep, 17=AdjRw จากrep, 18=วันที่ส่งเคลม, 19=resource,
+// 20=ระยะเวลาส่งเคลม, 21=รหัสสถานพยาบาลรอง
 function parseSheet(
   sheetName: string,
   rawRows: string[][],
 ): HomeWardSheetRow[] {
   if (rawRows.length < 2) return [];
 
-  const monthKey = sheetToMonthKey(sheetName);
-
-  // Header row 0 — detect column offsets
+  // Header row 0 — detect column offsets ตามชื่อคอลัมน์ (กันกรณี sheet ขยับคอลัมน์)
   const header = rawRows[0].map((h) => toStr(h));
 
-  // helper: find col index by keyword
-  const col = (kws: string[]) => {
+  const col = (kws: string[], fallback: number) => {
     for (const kw of kws) {
       const i = header.findIndex((h) =>
         h.toLowerCase().includes(kw.toLowerCase()),
       );
       if (i >= 0) return i;
     }
-    return -1;
+    return fallback;
   };
 
-  // คอลัมน์จากที่เห็นใน homeward-dashboard route:
-  // 0=no, 1=admitDate, 2=dcDate, 3=daysStay, 4=ward, 5=sitthi, 6=an, 7=name
-  // 8=pdx, 9=tambon, 10=age, 11=rpsst, 12=chodchey, 13+offset=preAdjRw, 14=adjRw
-  // ถ้า dynamic ให้ fallback ไปใช้ position
-
-  const cNo = col(["ลำดับ", "no"]) >= 0 ? col(["ลำดับ", "no"]) : 0;
-  const cAdmit =
-    col(["admit", "วันที่รับ", "วันเข้า"]) >= 0
-      ? col(["admit", "วันที่รับ", "วันเข้า"])
-      : 1;
-  const cDc =
-    col(["d/c", "dc", "จำหน่าย", "วันออก"]) >= 0
-      ? col(["d/c", "dc", "จำหน่าย", "วันออก"])
-      : 2;
-  const cDays = col(["วัน", "day"]) >= 0 ? col(["วัน", "day"]) : 3;
-  const cWard = col(["ward"]) >= 0 ? col(["ward"]) : 4;
-  const cSitthi = col(["สิทธิ"]) >= 0 ? col(["สิทธิ"]) : 5;
-  const cAn = col(["an"]) >= 0 ? col(["an"]) : 6;
-  const cName = col(["ชื่อ", "name"]) >= 0 ? col(["ชื่อ", "name"]) : 7;
-  const cPdx =
-    col(["pdx", "วินิจฉัย", "dx"]) >= 0 ? col(["pdx", "วินิจฉัย", "dx"]) : 8;
-  const cTambon = col(["ตำบล", "tambon"]) >= 0 ? col(["ตำบล", "tambon"]) : 9;
-  const cAge = col(["อายุ", "age"]) >= 0 ? col(["อายุ", "age"]) : 10;
-  const cRpsst =
-    col(["รพ.สต", "rpsst", "สต."]) >= 0 ? col(["รพ.สต", "rpsst", "สต."]) : 11;
-  const cChod = col(["ชดเชย"]) >= 0 ? col(["ชดเชย"]) : 12;
-
-  // detect double ชดเชย col (บางเดือน)
-  const col13Label = toStr(header[13]).toLowerCase();
-  const hasDoubleChod =
-    col13Label.includes("ชดเชย") || col13Label.includes("pre");
-  const offset = hasDoubleChod ? 1 : 0;
-
-  const cPreAdj = 13 + offset;
-  const cAdj = 14 + offset;
-  const cRwPost = 15 + offset;
-  const cClaim = 16 + offset;
-  const cChannel = 17 + offset;
-  const cSubmit = 18 + offset;
+  const cNo = col(["ลำดับ", "no"], 0);
+  const cMonthYear = col(["เดือน/ปี", "เดือน"], 1);
+  const cStatus = col(["status"], 2);
+  const cAdmit = col(["วันที่รักษา", "admit"], 3);
+  const cDc = col(["วันที่จำหน่าย", "d/c", "dc"], 4);
+  const cDays = col(["จำนวนวันนอน", "วันนอน", "day"], 5);
+  const cWard = col(["ward"], 6);
+  const cSitthi = col(["สิทธิ"], 7);
+  const cAn = col(["an"], 8);
+  const cName = col(["ชื่อ", "name"], 9);
+  const cPdx = col(["วินิจฉัยหลัก", "pdx", "dx"], 10);
+  const cTambon = col(["ตำบล", "tambon"], 11);
+  const cAge = col(["อายุ", "age"], 12);
+  const cRpsst = col(["รพสต", "รพ.สต", "rpsst"], 13);
+  const cChod = col(["ยอดชดเชยสุทธิ", "ชดเชย"], 14);
+  const cPreAdj = col(["adjrw\n hosxp", "hosxp"], 15);
+  const cRwPost = col(["adjrw2"], 16);
+  const cAdj = col(["adjrw\nจากrep", "จากrep"], 17);
+  const cClaim = col(["วันที่ส่งเคลม", "ส่งเคลม"], 18);
+  const cChannel = col(["resource"], 19);
+  const cSubmit = col(["ระยะเวลา"], 20);
 
   const rows: HomeWardSheetRow[] = [];
   for (let i = 1; i < rawRows.length; i++) {
@@ -216,21 +200,18 @@ function parseSheet(
     const name = toStr(r[cName]);
     if (!name || name === "") continue; // skip empty rows
 
-    const chodRaw = toStr(r[cChod]);
-    const isCompensated =
-      chodRaw !== "" &&
-      chodRaw !== "-" &&
-      chodRaw !== "0" &&
-      chodRaw !== "0.00";
+    const status = toStr(r[cStatus]);
+    const isCompensated = status === "ชดเชย";
     const chodchey = toNumForce(r[cChod]);
 
     const pdx = toStr(r[cPdx]);
     const anRaw = toStr(r[cAn]);
+    const monthTh = toStr(r[cMonthYear]) || sheetName;
 
     rows.push({
       no: toNumOrNull(r[cNo]) ?? i,
-      month: monthKey,
-      monthTh: sheetName,
+      month: monthYearToKey(monthTh),
+      monthTh,
       admitDate: parseDate(toStr(r[cAdmit])),
       dcDate: parseDate(toStr(r[cDc])),
       daysStay: toNumOrNull(r[cDays]),
@@ -313,41 +294,32 @@ export async function GET(req: Request) {
   try {
     const sheets = await getSheetClient();
 
-    // ดึงรายชื่อ sheet ทั้งหมด
-    const sheetNames = await getAllSheetTitles(sheets, SPREADSHEET_ID);
+    // ดึงข้อมูลจาก sheet เดียวที่รวมทุกเดือน (Home Ward + พลับพลารักษ์)
+    const raw = await getValues(sheets, SPREADSHEET_ID, `${SHEET_NAME}!A:V`);
 
-    const allRows: HomeWardSheetRow[] = [];
-    let firstDebug:
-      | { sheetName: string; headers: string[]; sampleRow: string[] }
-      | undefined;
-
-    for (const sheetName of sheetNames) {
-      const raw = await getValues(sheets, SPREADSHEET_ID, `${sheetName}!A:V`);
-      if (raw.length < 2) continue;
-
-      if (debug && !firstDebug) {
-        firstDebug = {
-          sheetName,
-          headers: raw[0] ?? [],
-          sampleRow: raw[1] ?? [],
-        };
-      }
-
-      const rows = parseSheet(sheetName, raw);
-      allRows.push(...rows);
-    }
+    const allRows: HomeWardSheetRow[] =
+      raw.length >= 2 ? parseSheet(SHEET_NAME, raw) : [];
 
     const summary = buildSummary(allRows);
 
+    // รายชื่อเดือนที่มีข้อมูลจริง (เรียงตามลำดับเวลา) ใช้แสดงเป็น pills แทนชื่อ sheet เดิม
+    const monthPills = [...new Set(allRows.map((r) => r.monthTh))].sort(
+      (a, b) => monthYearToKey(a).localeCompare(monthYearToKey(b)),
+    );
+
     const response: HomeWardSheetsData = {
       updatedAt: new Date().toISOString(),
-      sheets: sheetNames,
+      sheets: monthPills,
       rows: allRows,
       summary,
     };
 
-    if (debug && firstDebug) {
-      response.debug = firstDebug;
+    if (debug) {
+      response.debug = {
+        sheetName: SHEET_NAME,
+        headers: raw[0] ?? [],
+        sampleRow: raw[1] ?? [],
+      };
     }
 
     return NextResponse.json(response);

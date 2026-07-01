@@ -1,6 +1,3 @@
-// app/api/imc-sheets/route.ts  — IMC (Intermediate Care) Dashboard
-// ดึงข้อมูลทะเบียน IMC จาก Google Sheets แบบ real-time แล้วสรุปแยกรายปีงบประมาณ
-// Spreadsheet ID: 1GleVxFop5b1GyFOraUlIfoVGSkQLxnIYw8PwZa4fgjo
 import { NextResponse } from "next/server";
 import {
   getSheetClient,
@@ -13,9 +10,7 @@ import {
   sheetsError,
 } from "@/lib/sheets";
 
-const SPREADSHEET_ID =
-  process.env.IMC_SPREADSHEET_ID ??
-  "1GleVxFop5b1GyFOraUlIfoVGSkQLxnIYw8PwZa4fgjo";
+const SPREADSHEET_ID = process.env.IMC_SPREADSHEET_ID!;
 
 // ─── Column map (ตรงกับ header จริงในชีต) ────────────────────────────────────
 const COLUMN_MAP: Record<string, keyof ImcRow> = {
