@@ -11,7 +11,7 @@ import {
     RefreshCw,
     HeartHandshake,
 } from "lucide-react";
-import { useAutoRefresh } from "@/app/components/dashboard/live/useAutoRefresh";
+import { useFetchOnce } from "@/app/components/dashboard/live/useFetchOnce";
 import { timeAgo } from "@/app/components/dashboard/live/timeAgo";
 import type {
     MiniThanMapData,
@@ -28,7 +28,6 @@ const COLOR_HEX: Record<string, string> = {
 };
 const colorHex = (c: string) => COLOR_HEX[c] ?? "#8b8b8b";
 
-const REFRESH_MS = 60_000;
 const HOSPITAL_CENTER: [number, number] = [14.6774, 103.129];
 
 type LeafletNS = typeof import("leaflet");
@@ -91,8 +90,7 @@ function FilterChips({
 }
 
 export default function MiniThanMapPage() {
-    const { data, loading, error, connected, refetch } =
-        useAutoRefresh<MiniThanMapData>("/api/minithan-map", REFRESH_MS);
+    const { data, loading, error } = useFetchOnce<MiniThanMapData>("/api/minithan-map");
 
     const [q, setQ] = useState("");
     const [fTambon, setFTambon] = useState<Set<string>>(new Set());
@@ -278,22 +276,9 @@ export default function MiniThanMapPage() {
                                     ไม่พบพิกัด <b className="text-amber-600">{s.unmatched}</b>
                                 </span>
                             )}
-                            <span className="text-gray-400">
-                                อัปเดต {timeAgo(s.updatedAt)}
-                            </span>
+
                         </>
                     )}
-                    <button
-                        onClick={refetch}
-                        className="p-1.5 rounded-md hover:bg-gray-100 text-gray-500"
-                        title="รีเฟรช"
-                    >
-                        <RefreshCw size={14} className={loading ? "animate-spin" : ""} />
-                    </button>
-                    <span
-                        className={`w-2 h-2 rounded-full ${connected ? "bg-emerald-500" : "bg-red-400"}`}
-                        title={connected ? "เชื่อมต่อ" : "ขาดการเชื่อมต่อ"}
-                    />
                 </div>
             </div>
 

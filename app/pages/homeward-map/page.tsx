@@ -12,7 +12,7 @@ import {
     RefreshCw,
     BedDouble,
 } from "lucide-react";
-import { useAutoRefresh } from "@/app/components/dashboard/live/useAutoRefresh";
+import { useFetchOnce } from "@/app/components/dashboard/live/useFetchOnce";
 import { timeAgo } from "@/app/components/dashboard/live/timeAgo";
 import type {
     HomeWardMapData,
@@ -34,7 +34,6 @@ const DRUG_HEX: Record<string, string> = {
 };
 const drugHex = (t: string) => DRUG_HEX[t] ?? "#8b8b8b";
 
-const REFRESH_MS = 60_000;
 const HOSPITAL_CENTER: [number, number] = [14.6774, 103.129];
 const fmtBaht = (n: number) =>
     n.toLocaleString("th-TH", { maximumFractionDigits: 0 });
@@ -80,8 +79,8 @@ function FilterChips({
                             key={opt}
                             onClick={() => onToggle(opt)}
                             className={`px-2.5 py-1 rounded-full text-[11px] font-medium border transition-colors flex items-center gap-1 ${active
-                                    ? "text-white border-transparent"
-                                    : "bg-white text-gray-600 border-gray-200 hover:border-[#1ca887]"
+                                ? "text-white border-transparent"
+                                : "bg-white text-gray-600 border-gray-200 hover:border-[#1ca887]"
                                 }`}
                             style={active ? { background: "#1ca887" } : undefined}
                         >
@@ -102,8 +101,7 @@ function FilterChips({
 
 // ─── Page ──────────────────────────────────────────────────────────────────────
 export default function HomeWardMapPage() {
-    const { data, loading, error, connected, refetch } =
-        useAutoRefresh<HomeWardMapData>("/api/homeward-map", REFRESH_MS);
+    const { data, loading, error } = useFetchOnce<HomeWardMapData>("/api/homeward-map");
 
     const [q, setQ] = useState("");
     const [fTambon, setFTambon] = useState<Set<string>>(new Set());
@@ -297,22 +295,9 @@ export default function HomeWardMapPage() {
                                     ไม่พบพิกัด <b className="text-amber-600">{s.unmatched}</b>
                                 </span>
                             )}
-                            <span className="text-gray-400">
-                                อัปเดต {timeAgo(s.updatedAt)}
-                            </span>
+
                         </>
                     )}
-                    <button
-                        onClick={refetch}
-                        className="p-1.5 rounded-md hover:bg-gray-100 text-gray-500"
-                        title="รีเฟรช"
-                    >
-                        <RefreshCw size={14} className={loading ? "animate-spin" : ""} />
-                    </button>
-                    <span
-                        className={`w-2 h-2 rounded-full ${connected ? "bg-emerald-500" : "bg-red-400"}`}
-                        title={connected ? "เชื่อมต่อ" : "ขาดการเชื่อมต่อ"}
-                    />
                 </div>
             </div>
 
