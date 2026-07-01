@@ -70,8 +70,8 @@ function FilterChips({
                             key={opt}
                             onClick={() => onToggle(opt)}
                             className={`px-2.5 py-1 rounded-full text-[11px] font-medium border transition-colors flex items-center gap-1 ${active
-                                ? "text-white border-transparent"
-                                : "bg-white text-gray-600 border-gray-200 hover:border-[#1ca887]"
+                                    ? "text-white border-transparent"
+                                    : "bg-white text-gray-600 border-gray-200 hover:border-[#1ca887]"
                                 }`}
                             style={active ? { background: "#1ca887" } : undefined}
                         >
@@ -104,6 +104,7 @@ export default function DrugMapPage() {
     const [fTreat, setFTreat] = useState<Set<string>>(new Set());
     const [fProgram, setFProgram] = useState<Set<string>>(new Set());
     const [fReferral, setFReferral] = useState<Set<string>>(new Set());
+    const [fMonth, setFMonth] = useState<Set<string>>(new Set());
     const [showFilters, setShowFilters] = useState(true);
     const [selectedId, setSelectedId] = useState<number | null>(null);
 
@@ -123,10 +124,16 @@ export default function DrugMapPage() {
         setFTreat(new Set());
         setFProgram(new Set());
         setFReferral(new Set());
+        setFMonth(new Set());
     };
 
     const activeFilterCount =
-        fTambon.size + fColor.size + fTreat.size + fProgram.size + fReferral.size;
+        fTambon.size +
+        fColor.size +
+        fTreat.size +
+        fProgram.size +
+        fReferral.size +
+        fMonth.size;
 
     // ── จุดที่ผ่านตัวกรอง ──
     const filtered = useMemo<DrugMapPoint[]>(() => {
@@ -138,6 +145,7 @@ export default function DrugMapPage() {
             if (fTreat.size && !fTreat.has(p.treatStatus)) return false;
             if (fProgram.size && !fProgram.has(p.program)) return false;
             if (fReferral.size && !fReferral.has(p.referral)) return false;
+            if (fMonth.size && !fMonth.has(p.serviceMonth)) return false;
             if (term) {
                 const hay =
                     `${p.fullName} ${p.hn} ${p.address} ${p.tambon}`.toLowerCase();
@@ -145,7 +153,7 @@ export default function DrugMapPage() {
             }
             return true;
         });
-    }, [data, q, fTambon, fColor, fTreat, fProgram, fReferral]);
+    }, [data, q, fTambon, fColor, fTreat, fProgram, fReferral, fMonth]);
 
     // ── Leaflet refs ──
     const mapElRef = useRef<HTMLDivElement | null>(null);
@@ -387,6 +395,12 @@ export default function DrugMapPage() {
                                     options={s.filters.referral}
                                     selected={fReferral}
                                     onToggle={toggle(setFReferral)}
+                                />
+                                <FilterChips
+                                    label="เดือนที่รับบริการ"
+                                    options={s.filters.month}
+                                    selected={fMonth}
+                                    onToggle={toggle(setFMonth)}
                                 />
                             </>
                         )}

@@ -99,6 +99,7 @@ export default function MiniThanMapPage() {
     const [fColor, setFColor] = useState<Set<string>>(new Set());
     const [fTreat, setFTreat] = useState<Set<string>>(new Set());
     const [fReferral, setFReferral] = useState<Set<string>>(new Set());
+    const [fMonth, setFMonth] = useState<Set<string>>(new Set());
     const [showFilters, setShowFilters] = useState(true);
     const [selectedId, setSelectedId] = useState<number | null>(null);
 
@@ -117,10 +118,11 @@ export default function MiniThanMapPage() {
         setFColor(new Set());
         setFTreat(new Set());
         setFReferral(new Set());
+        setFMonth(new Set());
     };
 
     const activeFilterCount =
-        fTambon.size + fColor.size + fTreat.size + fReferral.size;
+        fTambon.size + fColor.size + fTreat.size + fReferral.size + fMonth.size;
 
     const filtered = useMemo<MiniThanMapPoint[]>(() => {
         if (!data) return [];
@@ -130,6 +132,7 @@ export default function MiniThanMapPage() {
             if (fColor.size && !fColor.has(p.color)) return false;
             if (fTreat.size && !fTreat.has(p.treatStatus)) return false;
             if (fReferral.size && !fReferral.has(p.referral)) return false;
+            if (fMonth.size && !fMonth.has(p.serviceMonth)) return false;
             if (term) {
                 const hay =
                     `${p.fullName} ${p.hn} ${p.address} ${p.tambon}`.toLowerCase();
@@ -137,7 +140,7 @@ export default function MiniThanMapPage() {
             }
             return true;
         });
-    }, [data, q, fTambon, fColor, fTreat, fReferral]);
+    }, [data, q, fTambon, fColor, fTreat, fReferral, fMonth]);
 
     const mapElRef = useRef<HTMLDivElement | null>(null);
     const LRef = useRef<LeafletNS | null>(null);
@@ -364,6 +367,12 @@ export default function MiniThanMapPage() {
                                     options={s.filters.referral}
                                     selected={fReferral}
                                     onToggle={toggle(setFReferral)}
+                                />
+                                <FilterChips
+                                    label="เดือนที่รับบริการ"
+                                    options={s.filters.month}
+                                    selected={fMonth}
+                                    onToggle={toggle(setFMonth)}
                                 />
                             </>
                         )}

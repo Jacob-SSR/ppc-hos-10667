@@ -150,6 +150,19 @@ function monthSortVal(m: string): number {
   return ce * 100 + mm;
 }
 
+/** "พ.ย. 2025" หรือ "พ.ย. 2568" → "พ.ย. 2568" (ปี พ.ศ. เสมอ) */
+function toBELabel(raw: string): string {
+  const s = toStr(raw);
+  const ym = s.match(/(\d{4})/);
+  if (!ym) return s;
+  const year = parseInt(ym[1]);
+  const be = year > 2500 ? year : year + 543;
+  for (const th of Object.keys(MONTH_ORDER)) {
+    if (s.includes(th)) return `${th} ${be}`;
+  }
+  return s;
+}
+
 // ─── อ่านชีตพิกัด → Map<ชื่อ(normalize), {lat,lng,mapLink}> ───────────────────
 async function buildCoordIndexByName(): Promise<
   Map<string, { lat: number; lng: number; mapLink: string }>
@@ -299,6 +312,7 @@ export async function GET() {
         unmatchedList.push({ name: a.name, tambon: a.tambon });
         continue;
       }
+      const beMonths = sortedMonths.map(toBELabel);
       points.push({
         id: points.length + 1,
         name: a.name,
@@ -309,8 +323,8 @@ export async function GET() {
         sitthi: a.sitthi,
         age: a.age,
         admissions: a.admissions,
-        months: sortedMonths,
-        latestMonth: sortedMonths[0] ?? "",
+        months: beMonths,
+        latestMonth: beMonths[0] ?? "",
         totalChodchey: Math.round(a.totalChodchey * 100) / 100,
         isCompensated: a.isCompensated,
         an: a.an,

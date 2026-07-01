@@ -5,6 +5,7 @@ import {
   getValues,
   toStr,
   toNum,
+  parseDate,
   sheetsError,
 } from "@/lib/sheets";
 
@@ -34,6 +35,7 @@ export interface MiniThanMapPoint {
   v2Score: number;
   age: number;
   isNew: boolean;
+  serviceMonth: string; // เดือนที่รับบริการ (เริ่มมาจริง) เช่น "พ.ย. 2568"
   matchBy: "cid" | "name"; // วิธีจับคู่พิกัด
   lat: number;
   lng: number;
@@ -59,6 +61,7 @@ export interface MiniThanMapData {
     treatStatus: string[];
     program: string[];
     referral: string[];
+    month: string[];
   };
 }
 
@@ -115,6 +118,32 @@ function parseLatLng(s: string): { lat: number; lng: number } | null {
 
 function uniq(arr: string[]): string[] {
   return [...new Set(arr.filter(Boolean))];
+}
+
+// ── เดือนที่รับบริการ (ป้ายภาษาไทย ปี พ.ศ. เต็ม เช่น "พ.ย. 2568") ──
+const THAI_M = [
+  "ม.ค.",
+  "ก.พ.",
+  "มี.ค.",
+  "เม.ย.",
+  "พ.ค.",
+  "มิ.ย.",
+  "ก.ค.",
+  "ส.ค.",
+  "ก.ย.",
+  "ต.ค.",
+  "พ.ย.",
+  "ธ.ค.",
+];
+function monthLabelBE(ym: string): string {
+  const [y, m] = ym.split("-");
+  const idx = parseInt(m, 10) - 1;
+  if (!y || isNaN(idx) || idx < 0 || idx > 11) return "";
+  return `${THAI_M[idx]} ${parseInt(y) + 543}`;
+}
+function ymFromDate(v: unknown): string {
+  const d = parseDate(v, { validate: true });
+  return /^\d{4}-\d{2}/.test(d) ? d.slice(0, 7) : "";
 }
 
 // ─── อ่านชีตพิกัด → index ทั้งแบบ CID และแบบชื่อ ─────────────────────────────
@@ -195,11 +224,13 @@ export async function GET() {
     const cV2 = col(["คะแนน v2", "v2"], 17);
     const cColor = col(["สี"], 18);
     const cIsNew = col(["ใหม่"], 19);
+    const cStartDate = col(["เริ่มมาจริง", "เริ่มลงบสต"], 35);
 
     const { byCid, byName } = await buildCoordIndexes();
 
     const points: MiniThanMapPoint[] = [];
     const unmatchedList: MiniThanMapUnmatched[] = [];
+    const monthYm = new Map<string, string>();
     let total = 0;
 
     for (let i = 1; i < raw.length; i++) {
@@ -234,6 +265,20 @@ export async function GET() {
         continue;
       }
 
+      // เดือนที่รับบริการ: จาก "เริ่มมาจริง" → ถ้าว่าง สแกนทั้งแถวหาวันที่แรก
+      let ym = cStartDate >= 0 ? ymFromDate(r[cStartDate]) : "";
+      if (!ym) {
+        for (let j = 0; j < r.length; j++) {
+          const cand = ymFromDate(r[j]);
+          if (cand && cand >= "2020-") {
+            ym = cand;
+            break;
+          }
+        }
+      }
+      const serviceMonth = ym ? monthLabelBE(ym) : "";
+      if (serviceMonth) monthYm.set(serviceMonth, ym);
+
       points.push({
         id: points.length + 1,
         hn,
@@ -251,6 +296,7 @@ export async function GET() {
         v2Score: toNum(r[cV2]),
         age: toNum(r[cAge]),
         isNew: toStr(r[cIsNew]).trim() !== "",
+        serviceMonth,
         matchBy,
         lat: coord.lat,
         lng: coord.lng,
@@ -273,6 +319,9 @@ export async function GET() {
         treatStatus: uniq(points.map((p) => p.treatStatus)),
         program: uniq(points.map((p) => p.program)),
         referral: uniq(points.map((p) => p.referral)),
+        month: [...monthYm.keys()].sort((a, b) =>
+          (monthYm.get(b) ?? "").localeCompare(monthYm.get(a) ?? ""),
+        ),
       },
     };
 

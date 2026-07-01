@@ -5,6 +5,7 @@ import {
   getValues,
   toStr,
   toNum,
+  parseDate,
   sheetsError,
 } from "@/lib/sheets";
 
@@ -34,6 +35,7 @@ export interface DrugMapPoint {
   v2Score: number;
   age: number;
   isNew: boolean;
+  serviceMonth: string; // เดือนที่รับบริการ (เริ่มมาจริง) เช่น "พ.ย. 2568"
   lat: number;
   lng: number;
   mapLink: string;
@@ -58,6 +60,7 @@ export interface DrugMapData {
     treatStatus: string[];
     program: string[];
     referral: string[];
+    month: string[];
   };
 }
 
@@ -94,6 +97,34 @@ function parseLatLng(s: string): { lat: number; lng: number } | null {
 /** unique + ตัดค่าว่าง */
 function uniq(arr: string[]): string[] {
   return [...new Set(arr.filter(Boolean))];
+}
+
+// ── เดือนที่รับบริการ (ป้ายภาษาไทย ปี พ.ศ. เต็ม เช่น "พ.ย. 2568") ──
+const THAI_M = [
+  "ม.ค.",
+  "ก.พ.",
+  "มี.ค.",
+  "เม.ย.",
+  "พ.ค.",
+  "มิ.ย.",
+  "ก.ค.",
+  "ส.ค.",
+  "ก.ย.",
+  "ต.ค.",
+  "พ.ย.",
+  "ธ.ค.",
+];
+/** "2025-11" (ค.ศ.) → "พ.ย. 2568" */
+function monthLabelBE(ym: string): string {
+  const [y, m] = ym.split("-");
+  const idx = parseInt(m, 10) - 1;
+  if (!y || isNaN(idx) || idx < 0 || idx > 11) return "";
+  return `${THAI_M[idx]} ${parseInt(y) + 543}`;
+}
+/** parse วันที่ → "YYYY-MM" (ค.ศ.) ใช้จัดเรียงเดือน */
+function ymFromDate(v: unknown): string {
+  const d = parseDate(v, { validate: true });
+  return /^\d{4}-\d{2}/.test(d) ? d.slice(0, 7) : "";
 }
 
 // ─── อ่านชีตพิกัด → Map<เลข13หลัก, {lat,lng,mapLink}> ─────────────────────────
@@ -188,6 +219,13 @@ export async function GET() {
     const cV2 = col("คะแนนv2", "v2");
     const cColor = col("สี", "color", "ระดับ");
     const cIsNew = col("ใหม่", "isnew");
+    const cStartDate = col(
+      "เริ่มมาจริง",
+      "เริ่มลงบสต",
+      "วันที่รับ",
+      "บำบัด",
+      "start",
+    );
 
     // ── 3) อ่าน index พิกัดคู่ขนาน ──
     const coordIdx = await buildCoordIndex();
@@ -195,6 +233,7 @@ export async function GET() {
     // ── 4) วนแต่ละผู้ป่วย จับคู่พิกัด ──
     const points: DrugMapPoint[] = [];
     const unmatchedList: DrugMapUnmatched[] = [];
+    const monthYm = new Map<string, string>(); // label → "YYYY-MM" (ค.ศ.) สำหรับจัดเรียง
     let total = 0;
 
     for (let i = 1; i < raw.length; i++) {
@@ -219,6 +258,20 @@ export async function GET() {
         continue;
       }
 
+      // เดือนที่รับบริการ: จาก "เริ่มมาจริง" → ถ้าว่าง สแกนทั้งแถวหาวันที่แรก
+      let ym = cStartDate >= 0 ? ymFromDate(r[cStartDate]) : "";
+      if (!ym) {
+        for (let j = 0; j < r.length; j++) {
+          const cand = ymFromDate(r[j]);
+          if (cand && cand >= "2020-") {
+            ym = cand;
+            break;
+          }
+        }
+      }
+      const serviceMonth = ym ? monthLabelBE(ym) : "";
+      if (serviceMonth) monthYm.set(serviceMonth, ym);
+
       points.push({
         id: points.length + 1,
         hn,
@@ -241,6 +294,7 @@ export async function GET() {
                 toStr(r[cIsNew]).toLowerCase(),
               )
             : false,
+        serviceMonth,
         lat: coord.lat,
         lng: coord.lng,
         mapLink: coord.mapLink,
@@ -262,6 +316,9 @@ export async function GET() {
         treatStatus: uniq(points.map((p) => p.treatStatus)),
         program: uniq(points.map((p) => p.program)),
         referral: uniq(points.map((p) => p.referral)),
+        month: [...monthYm.keys()].sort((a, b) =>
+          (monthYm.get(b) ?? "").localeCompare(monthYm.get(a) ?? ""),
+        ),
       },
     };
 
