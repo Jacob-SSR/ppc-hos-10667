@@ -38,18 +38,25 @@ export default function NavGroup({
 }: Props) {
   const pathname = usePathname();
 
-  const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({
-    "DASHBOARD หลัก": true,
+  const isItemActive = (href: string) =>
+    pathname === href || pathname?.startsWith(href + "/");
+
+  const isGroupActive = (group: SidebarSubGroup) =>
+    group.items.some((item) => isItemActive(item.href));
+
+  // เปิด subgroup แรกไว้เป็น default + เปิด subgroup ที่มีหน้า active อยู่ด้วย
+  const [openGroups, setOpenGroups] = useState<Record<string, boolean>>(() => {
+    const initial: Record<string, boolean> = {};
+    groups.forEach((group, i) => {
+      initial[group.title] = i === 0 || isGroupActive(group);
+    });
+    return initial;
   });
 
   const toggleSubGroup = (title: string) =>
     setOpenGroups((prev) => ({ ...prev, [title]: !(prev[title] ?? false) }));
 
-  const isItemActive = (href: string) =>
-    pathname === href || pathname?.startsWith(href + "/");
-
   const headerActive = isActive || isOpen;
-
   return (
     <div className="pt-1">
       {/* ───────── Main Header ───────── */}

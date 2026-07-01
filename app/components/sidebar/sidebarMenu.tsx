@@ -162,42 +162,16 @@ export const DASHBOARD_GROUPS: SidebarSubGroup[] = [
         icon: Banknote,
         group: "claim",
       },
-
     ],
   },
 
   {
-    title: "งานโรค",
+    title: "จิตเวช / ยาเสพติด",
     items: [
-
-      {
-        label: "วัณโรค (TB)",
-        href: "/pages/tb-dashboard",
-        icon: Microscope,
-        group: "disease",
-      },
-      {
-        label: "งานการพยาบาลผู้คลอด (ANC)",
-        href: "/pages/anc-nursing-dashboard",
-        icon: Baby,
-        group: "disease"
-      },
       {
         label: "ผู้ป่วยยาเสพติด",
         href: "/pages/drug-dashboard",
         icon: Syringe,
-        group: "disease",
-      },
-      {
-        label: "หัตถการเสี่ยงสูง",
-        href: "/pages/high-risk-procedures",
-        icon: Scissors,
-        group: "disease",
-      },
-      {
-        label: "อุบัติเหตุ",
-        href: "/pages/accident-dashboard",
-        icon: Ambulance,
         group: "disease",
       },
       {
@@ -212,24 +186,64 @@ export const DASHBOARD_GROUPS: SidebarSubGroup[] = [
         icon: HeartHandshake,
         group: "disease",
       },
+    ],
+  },
+
+  {
+    title: "โรคติดเชื้อ",
+    items: [
       {
-        label: "RDU Antibiotic Smart Use",
-        href: "/pages/rdu-dashboard",
-        icon: Pill,
+        label: "วัณโรค (TB)",
+        href: "/pages/tb-dashboard",
+        icon: Microscope,
         group: "disease",
       },
-
       {
         label: "Sepsis",
         href: "/pages/sepsis-dashboard",
         icon: Droplets,
         group: "disease",
       },
+      {
+        label: "RDU Antibiotic Smart Use",
+        href: "/pages/rdu-dashboard",
+        icon: Pill,
+        group: "disease",
+      },
+    ],
+  },
 
+  {
+    title: "อุบัติเหตุ / ฉุกเฉิน / หัตถการ",
+    items: [
+      {
+        label: "อุบัติเหตุ",
+        href: "/pages/accident-dashboard",
+        icon: Ambulance,
+        group: "disease",
+      },
       {
         label: "Stroke Dashboard",
         href: "/pages/stroke-dashboard",
         icon: Brain,
+        group: "disease",
+      },
+      {
+        label: "หัตถการเสี่ยงสูง",
+        href: "/pages/high-risk-procedures",
+        icon: Scissors,
+        group: "disease",
+      },
+    ],
+  },
+
+  {
+    title: "แม่และเด็ก",
+    items: [
+      {
+        label: "งานการพยาบาลผู้คลอด (ANC)",
+        href: "/pages/anc-nursing-dashboard",
+        icon: Baby,
         group: "disease",
       },
     ],
