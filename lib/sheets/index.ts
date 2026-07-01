@@ -9,6 +9,7 @@ export {
   toStr,
   toNum,
   toNumOrNull,
+  toPercentOrNull,
   countBy,
   countValues,
   average,

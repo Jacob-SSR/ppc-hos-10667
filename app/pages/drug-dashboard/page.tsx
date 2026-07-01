@@ -1,20 +1,21 @@
 "use client";
 
 import { useState, memo } from "react";
+import { motion } from "framer-motion";
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid,
   ResponsiveContainer, PieChart, Pie, Cell, Area, AreaChart,
 } from "recharts";
 import {
   Info, Clock, Users, Activity, ShieldCheck, TrendingUp,
-  AlertTriangle, CheckCircle2,
+  AlertTriangle, CheckCircle2, Target,
 } from "lucide-react";
 import {
   useAutoRefresh, timeAgo, CountdownRing, KpiCard, HBarList,
   SectionCard, MiniPagination, LiveBadge, ConnectionStatus, RefreshButton,
 } from "@/app/components/dashboard/live";
 import { usePagination } from "@/hooks/usePagination";
-import type { DrugDashboardSummary, DrugSheetsDashboardData } from "@/app/api/drug-sheets/route";
+import type { DrugDashboardSummary, DrugSheetsDashboardData, DrugKpiItem } from "@/app/api/drug-sheets/route";
 import AiSummaryCard from "@/app/components/ai/AiSummaryCard";
 
 // ─── Colors ───────────────────────────────────────────────────────────────────
@@ -64,6 +65,71 @@ function Donut({ data }: { data: { name: string; value: number; color: string }[
       </div>
       <Legend items={data.map((d) => ({ label: `${d.name} ${d.value}`, color: d.color }))} />
     </>
+  );
+}
+
+// ─── ตัวชี้วัด KPI (จากชีต "kpi") ────────────────────────────────────────────
+const THAI_MONTH_SHORT: Record<string, string> = {
+  มกราคม: "ม.ค.", กุมภาพันธ์: "ก.พ.", มีนาคม: "มี.ค.", เมษายน: "เม.ย.",
+  พฤษภาคม: "พ.ค.", มิถุนายน: "มิ.ย.", กรกฎาคม: "ก.ค.", สิงหาคม: "ส.ค.",
+  กันยายน: "ก.ย.", ตุลาคม: "ต.ค.", พฤศจิกายน: "พ.ย.", ธันวาคม: "ธ.ค.",
+};
+const shortMonth = (m: string) => THAI_MONTH_SHORT[m] ?? m;
+
+function kpiColor(percent: number | null): { accent: string; bg: string } {
+  if (percent == null) return { accent: C.gray, bg: C.grayL };
+  if (percent >= 90) return { accent: C.green, bg: C.greenL };
+  if (percent >= 70) return { accent: C.amber, bg: C.amberL };
+  return { accent: C.red, bg: C.redL };
+}
+
+function DrugKpiIndicatorCard({ item }: { item: DrugKpiItem }) {
+  // เดือนล่าสุดที่มีข้อมูล (ไล่จากท้ายมาหน้า)
+  const filled = [...item.months].reverse().find((m) => m.percent != null) ?? item.months[item.months.length - 1];
+  const { accent, bg } = kpiColor(filled?.percent ?? null);
+  const barWidth = filled?.percent != null ? Math.min(Math.max(filled.percent, 0), 100) : 0;
+
+  return (
+    <motion.div
+      className="rounded-2xl p-5 flex flex-col gap-3"
+      style={{ backgroundColor: bg }}
+      initial={{ opacity: 0, y: 12 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ type: "spring", stiffness: 260, damping: 22 }}
+    >
+      <div className="flex items-start justify-between gap-2">
+        <p className="text-xs font-bold leading-snug" style={{ color: accent }}>{item.name}</p>
+        <Target size={16} style={{ color: accent }} className="shrink-0 mt-0.5" />
+      </div>
+
+      <div className="flex items-end gap-2">
+        <p className="text-3xl font-extrabold tabular-nums" style={{ color: accent }}>
+          {filled?.percent != null ? `${filled.percent}%` : "-"}
+        </p>
+        {filled && (
+          <p className="text-[11px] pb-1" style={{ color: accent + "99" }}>{filled.month}</p>
+        )}
+      </div>
+
+      <div className="h-1.5 rounded-full bg-white/60 overflow-hidden">
+        <div className="h-full rounded-full transition-all" style={{ width: `${barWidth}%`, backgroundColor: accent }} />
+      </div>
+
+      {filled && (filled.numerator != null || filled.denominator != null) && (
+        <p className="text-[11px]" style={{ color: accent + "99" }}>
+          {filled.numerator ?? "-"} / {filled.denominator ?? "-"} ราย
+          {filled.formulaText ? ` · ${filled.formulaText}` : ""}
+        </p>
+      )}
+
+      <div className="flex flex-wrap gap-x-3 gap-y-1 pt-2 border-t" style={{ borderColor: accent + "22" }}>
+        {item.months.map((m) => (
+          <span key={m.month} className="text-[10px]" style={{ color: accent + "99" }}>
+            {shortMonth(m.month)} {m.percent != null ? `${m.percent}%` : "-"}
+          </span>
+        ))}
+      </div>
+    </motion.div>
   );
 }
 
@@ -284,6 +350,17 @@ export default function DrugDashboardPage() {
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
           {Array.from({ length: 5 }).map((_, i) => <div key={i} className="h-[130px] rounded-2xl bg-gray-100 animate-pulse" />)}
         </div>
+      )}
+
+      {/* ตัวชี้วัดผลการดำเนินงาน (KPI กระทรวงสาธารณสุข) */}
+      {data?.kpi && data.kpi.items.length > 0 && (
+        <SectionCard title={data.kpi.title} icon={Target} titleColor="#1a5233">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            {data.kpi.items.map((item) => (
+              <DrugKpiIndicatorCard key={item.name} item={item} />
+            ))}
+          </div>
+        </SectionCard>
       )}
 
       {/* KPI Cards */}

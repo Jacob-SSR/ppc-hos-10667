@@ -5,6 +5,8 @@ import {
   getValues,
   toStr,
   toNum,
+  toNumOrNull,
+  toPercentOrNull,
   countBy,
   parseDate,
   sheetsError,
@@ -63,7 +65,32 @@ export interface DrugSheetsDashboardData {
   sheetName: string;
   summary: DrugDashboardSummary;
   rows: DrugSheetRow[];
+  kpi: DrugKpiData | null;
   debug?: { headers: string[]; sampleRow: string[] };
+}
+
+// ─── Types: ตัวชี้วัด KPI (จากชีต "kpi") ───────────────────────────────────────
+// รูปแบบชีต: แถวหัวตาราง = [ชื่อรายงาน, เดือน1, เดือน2, ...]
+// ตามด้วยบล็อก KPI ทีละ 4 แถว: [ชื่อตัวชี้วัด(ร้อยละ), สูตร, ตัวตั้ง(A), ตัวหาร(B)]
+export interface DrugKpiMonthValue {
+  month: string;
+  percent: number | null; // ร้อยละ เช่น 94.1
+  numerator: number | null; // ตัวตั้ง (A)
+  denominator: number | null; // ตัวหาร (B)
+  formulaText: string; // เช่น "( 48 / 51 ) x 100"
+}
+
+export interface DrugKpiItem {
+  name: string;
+  numeratorLabel: string;
+  denominatorLabel: string;
+  months: DrugKpiMonthValue[];
+}
+
+export interface DrugKpiData {
+  title: string;
+  months: string[];
+  items: DrugKpiItem[];
 }
 
 // ─── Helpers เฉพาะ drug ───────────────────────────────────────────────────────
@@ -304,6 +331,56 @@ function buildSummary(rows: DrugSheetRow[]): DrugDashboardSummary {
   };
 }
 
+// ─── Parse ชีต "kpi" (ตัวชี้วัดรายเดือน) ───────────────────────────────────────
+function parseKpiSheet(raw: string[][]): DrugKpiData | null {
+  if (raw.length < 2) return null;
+
+  const headerRow = raw[0] ?? [];
+  const title = toStr(headerRow[0]) || "ตัวชี้วัดผลการดำเนินงาน";
+
+  // คอลัมน์เดือน: ทุก cell ที่ไม่ว่างตั้งแต่ B เป็นต้นไปในแถวหัวตาราง
+  const monthCols: { idx: number; month: string }[] = [];
+  for (let c = 1; c < headerRow.length; c++) {
+    const m = toStr(headerRow[c]);
+    if (m) monthCols.push({ idx: c, month: m });
+  }
+  if (monthCols.length === 0) return null;
+
+  // แต่ละ KPI กินพื้นที่ 4 แถว: ชื่อ(ร้อยละ) / สูตร / ตัวตั้ง(A) / ตัวหาร(B)
+  const items: DrugKpiItem[] = [];
+  let i = 1;
+  while (i + 3 < raw.length) {
+    const nameRow = raw[i] ?? [];
+    const formulaRow = raw[i + 1] ?? [];
+    const numRow = raw[i + 2] ?? [];
+    const denRow = raw[i + 3] ?? [];
+
+    const name = toStr(nameRow[0]);
+    if (!name) break; // เจอแถวว่าง = หมดบล็อก KPI แล้ว
+
+    const months: DrugKpiMonthValue[] = monthCols.map(({ idx, month }) => ({
+      month,
+      percent: toPercentOrNull(nameRow[idx]),
+      numerator: toNumOrNull(numRow[idx]),
+      denominator: toNumOrNull(denRow[idx]),
+      formulaText: toStr(formulaRow[idx]),
+    }));
+
+    items.push({
+      name,
+      numeratorLabel: toStr(numRow[0]),
+      denominatorLabel: toStr(denRow[0]),
+      months,
+    });
+
+    i += 4;
+  }
+
+  return items.length > 0
+    ? { title, months: monthCols.map((m) => m.month), items }
+    : null;
+}
+
 // ─── GET ──────────────────────────────────────────────────────────────────────
 export async function GET(req: Request) {
   try {
@@ -339,11 +416,31 @@ export async function GET(req: Request) {
     const rows = parseRows(raw);
     const summary = buildSummary(rows);
 
+    // ─── ชีต "kpi" — ตัวชี้วัดผลการดำเนินงานรายเดือน ───────────────────────────
+    let kpi: DrugKpiData | null = null;
+    const kpiSheetTitle = allTitles.find((t) => {
+      const tl = t.toLowerCase().trim();
+      return tl === "kpi" || tl.includes("kpi") || t.includes("ตัวชี้วัด");
+    });
+    if (kpiSheetTitle) {
+      try {
+        const kpiRaw = await getValues(
+          sheets,
+          SPREADSHEET_ID,
+          `${kpiSheetTitle}!A1:R200`,
+        );
+        kpi = parseKpiSheet(kpiRaw);
+      } catch (e) {
+        console.error("DrugSheets: อ่านชีต kpi ไม่สำเร็จ", e);
+      }
+    }
+
     const result: DrugSheetsDashboardData = {
       updatedAt: new Date().toISOString(),
       sheetName: targetSheet,
       summary,
       rows,
+      kpi,
     };
 
     // Debug mode: ส่ง header + sample row กลับมาด้วย

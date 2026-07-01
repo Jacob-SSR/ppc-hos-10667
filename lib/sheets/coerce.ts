@@ -21,6 +21,17 @@ export function toNumOrNull(v: unknown): number | null {
 }
 
 /**
+ * unknown → ร้อยละ (number) | null — สำหรับ cell ตัวชี้วัด KPI ที่ format เป็น "94.11%"
+ * (Sheets API คืนค่าตาม format ของ cell มาเป็น formatted string)
+ * ถ้า cell ไม่ได้ format เป็น % ให้ใส่ตัวเลขร้อยละตรงๆ ในชีต (เช่น 94.1)
+ */
+export function toPercentOrNull(v: unknown): number | null {
+  if (v == null || v === "") return null;
+  const n = Number(String(v).replace(/,/g, "").replace(/%/g, "").trim());
+  return isNaN(n) || !isFinite(n) ? null : Math.round(n * 10) / 10;
+}
+
+/**
  * นับจำนวนตาม key — แทนที่ countBy/count ที่ซ้ำใน buildSummary ทุก route
  * ค่าว่างนับเป็น "ไม่ระบุ"
  */
