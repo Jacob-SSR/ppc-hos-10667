@@ -1,0 +1,272 @@
+import { NextResponse } from "next/server";
+import {
+  getSheetClient,
+  getAllSheetTitles,
+  getValues,
+  toStr,
+  toNum,
+  sheetsError,
+} from "@/lib/sheets";
+
+// ─── แหล่งข้อมูล ───────────────────────────────────────────────────────────────
+// ชีตผู้ป่วยยาเสพติด (ชุดเดียวกับ /api/drug-sheets)
+const DRUG_SPREADSHEET_ID = process.env.DRUG_SPREADSHEET_ID!;
+// ชีตพิกัดหลังคาเรือน (มี ละติจูด/ลองจิจูด + เลข 13 หลัก)
+const PIKAD_SPREADSHEET_ID =
+  process.env.PIKAD_SPREADSHEET_ID ??
+  "12tU32ntRHsBVWHRUMGh0CfHpclpQplghH__6yh08wp4";
+
+// ─── Types ────────────────────────────────────────────────────────────────────
+export interface DrugMapPoint {
+  id: number;
+  hn: string;
+  prefix: string;
+  firstName: string;
+  lastName: string;
+  fullName: string;
+  address: string;
+  tambon: string;
+  color: string; // ระดับความรุนแรง: เขียว/เหลือง/ส้ม/แดง
+  treatStatus: string; // ติดตาม/บำบัด/จำหน่าย
+  detailStatus: string; // treat ครบ/Metrix/Dropout/IMC/Homeword
+  program: string; // HW/IMC/MP ...
+  referral: string; // วิธีการมาบำบัด
+  v2Score: number;
+  age: number;
+  isNew: boolean;
+  lat: number;
+  lng: number;
+  mapLink: string;
+}
+
+export interface DrugMapUnmatched {
+  hn: string;
+  fullName: string;
+  tambon: string;
+}
+
+export interface DrugMapData {
+  updatedAt: string;
+  total: number; // ผู้ป่วยยาเสพติดทั้งหมด
+  matched: number; // จับคู่พิกัดได้
+  unmatched: number; // ไม่พบพิกัด
+  points: DrugMapPoint[];
+  unmatchedList: DrugMapUnmatched[];
+  filters: {
+    tambon: string[];
+    color: string[];
+    treatStatus: string[];
+    program: string[];
+    referral: string[];
+  };
+}
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+/** เหลือเฉพาะตัวเลข (เลขบัตรมาได้ทั้งแบบมีขีด/ไม่มีขีด) */
+function normId(v: unknown): string {
+  return toStr(v).replace(/\D/g, "");
+}
+
+/** normalize สี — sheet มีทั้งพิมพ์ถูกและพิมพ์ผิด (เขึยว) */
+function normalizeColor(raw: string): string {
+  const r = raw.trim();
+  if (!r) return "ไม่ระบุ";
+  if (r.includes("เขี") || r.includes("เขึ") || r.toLowerCase() === "green")
+    return "เขียว";
+  if (r.includes("ส้ม") || r.toLowerCase() === "orange") return "ส้ม";
+  if (r.includes("เหลือง") || r.toLowerCase() === "yellow") return "เหลือง";
+  if (r.includes("แดง") || r.toLowerCase() === "red") return "แดง";
+  return r;
+}
+
+/** "14.6668/103.1029" หรือ "14.6668,103.1029" → {lat,lng} */
+function parseLatLng(s: string): { lat: number; lng: number } | null {
+  if (!s) return null;
+  const sep = s.includes("/") ? "/" : ",";
+  const [a, b] = s.split(sep);
+  const lat = parseFloat((a || "").trim());
+  const lng = parseFloat((b || "").trim());
+  if (Number.isNaN(lat) || Number.isNaN(lng)) return null;
+  if (lat < -90 || lat > 90 || lng < -180 || lng > 180) return null;
+  return { lat, lng };
+}
+
+/** unique + ตัดค่าว่าง */
+function uniq(arr: string[]): string[] {
+  return [...new Set(arr.filter(Boolean))];
+}
+
+// ─── อ่านชีตพิกัด → Map<เลข13หลัก, {lat,lng,mapLink}> ─────────────────────────
+async function buildCoordIndex(): Promise<
+  Map<string, { lat: number; lng: number; mapLink: string }>
+> {
+  const sheets = await getSheetClient();
+  const first =
+    (await getAllSheetTitles(sheets, PIKAD_SPREADSHEET_ID))[0] ?? "Sheet1";
+  // A=ละติจูด/ลองจิจูด  B=ชื่อ-นามสกุล  C=เลข13หลัก  D=วันเกิด  E=ลิ้งพิกัด
+  const raw = await getValues(sheets, PIKAD_SPREADSHEET_ID, `${first}!A2:E`);
+
+  const idx = new Map<string, { lat: number; lng: number; mapLink: string }>();
+  for (const row of raw) {
+    if (!row || row.length < 3) continue;
+    const id = normId(row[2]);
+    if (id.length !== 13) continue;
+    if (idx.has(id)) continue; // ใช้พิกัดแรกที่เจอ
+    const c = parseLatLng(toStr(row[0]));
+    if (!c) continue;
+    idx.set(id, { lat: c.lat, lng: c.lng, mapLink: toStr(row[4]) });
+  }
+  return idx;
+}
+
+// ─── GET ──────────────────────────────────────────────────────────────────────
+export async function GET() {
+  try {
+    if (!DRUG_SPREADSHEET_ID) {
+      return NextResponse.json(
+        { error: "ไม่ได้ตั้งค่า DRUG_SPREADSHEET_ID ใน .env" },
+        { status: 500 },
+      );
+    }
+
+    const sheets = await getSheetClient();
+
+    // ── 1) เลือกชีตผู้ป่วย (เหมือน /api/drug-sheets) ──
+    const titles = await getAllSheetTitles(sheets, DRUG_SPREADSHEET_ID);
+    const patientSheet =
+      titles.find((t) => {
+        const tl = t.toLowerCase();
+        return (
+          tl.includes("ผู้ป่วย") ||
+          tl.includes("patient") ||
+          tl.includes("ข้อมูล") ||
+          tl.includes("data") ||
+          tl.includes("drug")
+        );
+      }) ??
+      titles[0] ??
+      "Sheet1";
+
+    const raw = await getValues(
+      sheets,
+      DRUG_SPREADSHEET_ID,
+      `${patientSheet}!A:AJ`,
+    );
+
+    if (raw.length < 2) {
+      return NextResponse.json(
+        { error: "ชีตผู้ป่วยยาเสพติดไม่มีข้อมูล" },
+        { status: 500 },
+      );
+    }
+
+    // ── 2) หา index คอลัมน์แบบ fuzzy ──
+    const header = raw[0].map((h) =>
+      toStr(h).toLowerCase().replace(/\s+/g, ""),
+    );
+    const col = (...kw: string[]): number => {
+      for (const k of kw) {
+        const kn = k.toLowerCase().replace(/\s+/g, "");
+        const i = header.findIndex((h) => h.includes(kn));
+        if (i >= 0) return i;
+      }
+      return -1;
+    };
+
+    const cCid = col("เลขบัตร", "เลข13", "เลข 13", "cid", "บัตรประชาชน");
+    const cTreat = col("สถานะการติดตาม", "สถานะ");
+    const cDetail = col("สถานะการรักษา", "รายละเอียด");
+    const cProgram = col("hw/imc", "hw/mp", "โปรแกรม", "program");
+    const cReferral = col("วิธีการมาบำบัด", "ส่งต่อ", "นำส่ง", "referral");
+    const cTambon = col("ตำบล", "tambon");
+    const cHN = col("hn");
+    const cPrefix = col("คำนำ", "prefix");
+    const cFirst = col("ชื่อ", "firstname", "fname");
+    const cLast = col("สกุล", "นามสกุล", "lastname", "lname");
+    const cAddr = col("ที่อยู่", "address", "บ้านเลขที่");
+    const cAge = col("อายุ", "age");
+    const cV2 = col("คะแนนv2", "v2");
+    const cColor = col("สี", "color", "ระดับ");
+    const cIsNew = col("ใหม่", "isnew");
+
+    // ── 3) อ่าน index พิกัดคู่ขนาน ──
+    const coordIdx = await buildCoordIndex();
+
+    // ── 4) วนแต่ละผู้ป่วย จับคู่พิกัด ──
+    const points: DrugMapPoint[] = [];
+    const unmatchedList: DrugMapUnmatched[] = [];
+    let total = 0;
+
+    for (let i = 1; i < raw.length; i++) {
+      const r = raw[i];
+      if (!r || r.every((c) => !toStr(c).trim())) continue;
+
+      const firstName = cFirst >= 0 ? toStr(r[cFirst]) : "";
+      const hn = cHN >= 0 ? toStr(r[cHN]) : "";
+      if (!firstName && !hn) continue;
+      total++;
+
+      const prefix = cPrefix >= 0 ? toStr(r[cPrefix]) : "";
+      const lastName = cLast >= 0 ? toStr(r[cLast]) : "";
+      const fullName = `${prefix}${firstName} ${lastName}`.trim();
+      const tambon = cTambon >= 0 ? toStr(r[cTambon]) : "";
+
+      const id13 = cCid >= 0 ? normId(r[cCid]) : "";
+      const coord = id13.length === 13 ? coordIdx.get(id13) : undefined;
+
+      if (!coord) {
+        unmatchedList.push({ hn, fullName, tambon });
+        continue;
+      }
+
+      points.push({
+        id: points.length + 1,
+        hn,
+        prefix,
+        firstName,
+        lastName,
+        fullName,
+        address: cAddr >= 0 ? toStr(r[cAddr]) : "",
+        tambon,
+        color: cColor >= 0 ? normalizeColor(toStr(r[cColor])) : "ไม่ระบุ",
+        treatStatus: cTreat >= 0 ? toStr(r[cTreat]) : "",
+        detailStatus: cDetail >= 0 ? toStr(r[cDetail]) : "",
+        program: cProgram >= 0 ? toStr(r[cProgram]) : "",
+        referral: cReferral >= 0 ? toStr(r[cReferral]) : "",
+        v2Score: cV2 >= 0 ? toNum(r[cV2]) : 0,
+        age: cAge >= 0 ? toNum(r[cAge]) : 0,
+        isNew:
+          cIsNew >= 0
+            ? ["ใหม่", "new", "y", "yes", "1", "true", "√"].includes(
+                toStr(r[cIsNew]).toLowerCase(),
+              )
+            : false,
+        lat: coord.lat,
+        lng: coord.lng,
+        mapLink: coord.mapLink,
+      });
+    }
+
+    const result: DrugMapData = {
+      updatedAt: new Date().toISOString(),
+      total,
+      matched: points.length,
+      unmatched: unmatchedList.length,
+      points,
+      unmatchedList,
+      filters: {
+        tambon: uniq(points.map((p) => p.tambon)).sort((a, b) =>
+          a.localeCompare(b, "th"),
+        ),
+        color: uniq(points.map((p) => p.color)),
+        treatStatus: uniq(points.map((p) => p.treatStatus)),
+        program: uniq(points.map((p) => p.program)),
+        referral: uniq(points.map((p) => p.referral)),
+      },
+    };
+
+    return NextResponse.json(result);
+  } catch (err) {
+    return sheetsError(err, "DrugMap");
+  }
+}

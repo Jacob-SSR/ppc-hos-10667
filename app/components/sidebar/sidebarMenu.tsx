@@ -33,6 +33,7 @@ import {
   HeartHandshake,
   Syringe,
   Activity,
+  MapPinned,
 } from "lucide-react";
 
 import { SidebarItem, SidebarGroup, SidebarSubGroup } from "./types";
@@ -175,15 +176,33 @@ export const DASHBOARD_GROUPS: SidebarSubGroup[] = [
         group: "disease",
       },
       {
+        label: "แผนที่บ้านผู้ป่วยยาเสพติด",
+        href: "/pages/drug-map",
+        icon: MapPinned,
+        group: "disease",
+      },
+      {
         label: "Home Ward ยาเสพติด",
         href: "/pages/homeward-dashboard",
         icon: BedDouble,
         group: "disease",
       },
       {
+        label: "แผนที่บ้าน Home Ward",
+        href: "/pages/homeward-map",
+        icon: MapPinned,
+        group: "disease",
+      },
+      {
         label: "มินิธัญญารักษ์",
         href: "/pages/minithan-dashboard",
         icon: HeartHandshake,
+        group: "disease",
+      },
+      {
+        label: "แผนที่บ้านมินิธัญญารักษ์",
+        href: "/pages/minithan-map",
+        icon: MapPinned,
         group: "disease",
       },
     ],
