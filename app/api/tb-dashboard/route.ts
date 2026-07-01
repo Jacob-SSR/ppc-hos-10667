@@ -33,6 +33,9 @@ export interface TBRow {
   outcome: string;
   concludeDate: string;
   note: string;
+  // ผู้ป่วยดื้อยา RR/MDR/XDR (ตรวจจาก outcome/regType/regimen/note ตอน parse)
+  // ใช้ตัดออกจากตัวหาร Success Rate ตามข้อ 7.1.2
+  drugResistant: boolean;
 }
 
 export interface TBByYear {
@@ -48,6 +51,12 @@ export interface TBByYear {
   other: number;
   successRate: number;
   mortalityRate: number;
+  // Success Rate ตามเกณฑ์ตัวชี้วัดจังหวัด: คำนวณเฉพาะผู้ป่วยที่ขึ้นทะเบียนใน
+  // ไตรมาสที่ 1 ของปีงบประมาณ (เดือน 10-12 = ต.ค.-ธ.ค.) เป้าหมาย ≥ ร้อยละ 88
+  q1Total: number;
+  q1Cured: number;
+  q1Completed: number;
+  successRateQ1: number;
   avgAge: number;
   byRegType: Record<string, number>;
   byTambon: Record<string, number>;
@@ -201,6 +210,78 @@ function toNumOrNull(v: unknown): number | null {
   return isNaN(n) ? null : n;
 }
 
+// ไตรมาสที่ 1 ของปีงบประมาณ = เดือน ต.ค.-ธ.ค. (เดือน 10, 11, 12)
+function isQ1Start(dateStr: string): boolean {
+  if (!dateStr || dateStr.length < 7) return false;
+  const m = parseInt(dateStr.slice(5, 7));
+  return m === 10 || m === 11 || m === 12;
+}
+
+// ─── ตัวช่วยจำแนกตามเงื่อนไขการคำนวณ Success Rate (ข้อ 7 ของตัวชี้วัด) ──────────
+// 7.1.1 นับเฉพาะ "รายใหม่ (New)" — ตัดผู้ป่วยที่ไม่ใช่รายใหม่ออกจากตัวหาร
+// ครอบคลุมค่าจริงในชีต: Relapse, Treatment After Failure, TB ระยะแฝง (latent), ฯลฯ
+function isNotNewCase(regType: string): boolean {
+  const r = regType.toLowerCase();
+  return (
+    r.includes("relapse") ||
+    r.includes("กลับเป็นซ้ำ") ||
+    r.includes("กลับซ้ำ") ||
+    r.includes("รักษาซ้ำ") ||
+    /\bre[- ]?treat/.test(r) ||
+    r.includes("treatment after failure") ||
+    r.includes("treatment after loss") ||
+    r.includes("after failure") ||
+    r.includes("after default") ||
+    r.includes("transfer in") ||
+    r.includes("รับโอน") ||
+    // Latent TB / TB ระยะแฝง — ไม่ใช่วัณโรคปอด active
+    r.includes("ระยะแฝง") ||
+    r.includes("latent") ||
+    /\bltbi\b/.test(r)
+  );
+}
+
+// 7.1.1 ตัดวัณโรค "นอกปอด" (extrapulmonary) — นับเฉพาะวัณโรคปอด
+function isExtrapulmonary(regType: string, note: string): boolean {
+  const t = `${regType} ${note}`.toLowerCase();
+  return (
+    t.includes("extrapulmonary") ||
+    t.includes("extra-pulmonary") ||
+    t.includes("นอกปอด") ||
+    /\bep[- ]?tb\b/.test(t)
+  );
+}
+
+// 7.1.2 ตรวจ RR-TB / MDR-TB / XDR-TB (ดื้อยา) จากข้อความในหลายคอลัมน์
+function detectDrugResistant(
+  outcome: string,
+  regType: string,
+  regimen: string,
+  note: string,
+): boolean {
+  const t = `${outcome} ${regType} ${regimen} ${note}`.toUpperCase();
+  return (
+    /\bRR[\/ -]?MDR\b/.test(t) ||
+    /\bRR[- ]?TB\b/.test(t) ||
+    /\bMDR[- ]?TB\b/.test(t) ||
+    /\bXDR[- ]?TB\b/.test(t) ||
+    /\bPRE[- ]?XDR\b/.test(t) ||
+    /\bRR\b/.test(t) ||
+    /\bMDR\b/.test(t) ||
+    /\bXDR\b/.test(t) ||
+    t.includes("ดื้อยา") ||
+    t.includes("RIFAMPICIN RESISTANT")
+  );
+}
+
+// ผู้ป่วยเข้าเกณฑ์นับ Success Rate (ตัวหาร) หรือไม่: รายใหม่/วัณโรคปอด/ไม่ดื้อยา
+function isQ1Denominator(r: TBRow): boolean {
+  if (isNotNewCase(r.regType)) return false;
+  if (isExtrapulmonary(r.regType, r.note)) return false;
+  if (r.drugResistant) return false;
+  return true;
+}
+
 // ─── เลือกชีตข้อมูลผู้ป่วย ─────────────────────────────────────────────────────
 async function pickPatientSheet(
   sheets: Awaited<ReturnType<typeof getSheetClient>>,
@@ -260,6 +341,11 @@ function parseRows(raw: string[][]): TBRow[] {
     const name = get(r, cName);
     if (!hn && !name) continue;
 
+    const rawOutcome = get(r, cOutcome);
+    const rawRegType = get(r, cRegType);
+    const rawRegimen = get(r, cRegimen);
+    const rawNote = get(r, cNote);
+
     rows.push({
       year: (get(r, cYear) || "2568").replace(/\.0$/, ""),
       hn,
@@ -268,8 +354,8 @@ function parseRows(raw: string[][]): TBRow[] {
       age: toNumOrNull(get(r, cAge)),
       tambon: normTambon(get(r, cTambon)),
       ud: get(r, cUD),
-      regimen: get(r, cRegimen),
-      regType: get(r, cRegType),
+      regimen: rawRegimen,
+      regType: rawRegType,
       cxr: normCXR(get(r, cCXR)),
       afb: normAFB(get(r, cAFB)),
       culture: get(r, cCulture),
@@ -278,9 +364,15 @@ function parseRows(raw: string[][]): TBRow[] {
       lft: get(r, cLFT),
       bunCr: get(r, cBunCr),
       startDate: parseThaiDateStr(get(r, cStart)),
-      outcome: normOutcome(get(r, cOutcome)),
+      outcome: normOutcome(rawOutcome),
       concludeDate: parseThaiDateStr(get(r, cConclude)),
-      note: get(r, cNote),
+      note: rawNote,
+      drugResistant: detectDrugResistant(
+        rawOutcome,
+        rawRegType,
+        rawRegimen,
+        rawNote,
+      ),
     });
   }
   return rows;
@@ -315,6 +407,19 @@ function buildYearSummary(year: string, rows: TBRow[]): TBByYear {
   const successRate =
     total > 0 ? Math.round(((cured + completed) / total) * 1000) / 10 : 0;
   const mortalityRate = total > 0 ? Math.round((died / total) * 1000) / 10 : 0;
+
+  // Success Rate เฉพาะผู้ป่วยที่ขึ้นทะเบียนไตรมาส 1 (ต.ค.-ธ.ค.) ตามเกณฑ์ตัวชี้วัด
+  // ตัวหาร (ข้อ 7): นับเฉพาะ "รายใหม่ วัณโรคปอด" — ตัด Relapse / นอกปอด / RR-MDR-XDR ออก
+  const q1Rows = rows.filter(
+    (r) => isQ1Start(r.startDate) && isQ1Denominator(r),
+  );
+  const q1Total = q1Rows.length;
+  const q1Cured = q1Rows.filter((r) => r.outcome === "Cured").length;
+  const q1Completed = q1Rows.filter((r) => r.outcome === "Completed").length;
+  const successRateQ1 =
+    q1Total > 0
+      ? Math.round(((q1Cured + q1Completed) / q1Total) * 1000) / 10
+      : 0;
 
   const ages = rows
     .map((r) => r.age)
@@ -370,6 +475,10 @@ function buildYearSummary(year: string, rows: TBRow[]): TBByYear {
     other: Math.max(0, other),
     successRate,
     mortalityRate,
+    q1Total,
+    q1Cured,
+    q1Completed,
+    successRateQ1,
     avgAge,
     byRegType: countBy(rows, "regType"),
     byTambon: countBy(rows, "tambon"),
@@ -397,7 +506,7 @@ function buildSummary(rows: TBRow[]): TBSummary {
     total: y.total,
     cured: y.cured,
     died: y.died,
-    successRate: y.successRate,
+    successRate: y.successRateQ1,
   }));
 
   const allTambon: Record<string, number> = {};
