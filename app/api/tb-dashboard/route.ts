@@ -57,6 +57,9 @@ export interface TBByYear {
   q1Cured: number;
   q1Completed: number;
   successRateQ1: number;
+  // Death rate ตามเกณฑ์ข้อ 3: นับเฉพาะ cohort ไตรมาส 1 (ไม่รวมตายจากอุบัติเหตุ)
+  q1Died: number;
+  mortalityRateQ1: number;
   avgAge: number;
   byRegType: Record<string, number>;
   byTambon: Record<string, number>;
@@ -104,6 +107,13 @@ function normOutcome(raw: string): string {
     return "Failed";
   if (!raw.trim()) return "ไม่ระบุ";
   return raw.trim();
+}
+
+// จำแนกผลการรักษาโดยดูหมายเหตุด้วย: การตายจากอุบัติเหตุแยกจากการตายจาก TB (ข้อ 3)
+function classifyOutcome(raw: string, note: string): string {
+  const o = normOutcome(raw);
+  if (o === "Died" && isAccidentalDeath(note)) return "เสียชีวิต (อุบัติเหตุ)";
+  return o;
 }
 
 function normAFB(v: string): string {
@@ -172,24 +182,61 @@ function normUD(v: string): string[] {
 function parseThaiDateStr(v: unknown): string {
   if (!v) return "";
   const s = String(v).trim();
-  const m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
-  if (!m) return s;
-  const d = m[1].padStart(2, "0");
-  const mo = m[2].padStart(2, "0");
-  let y = parseInt(m[3]);
-  if (y > 2400) y -= 543;
-  if (y < 1900 || y > 2100) return s;
+  let y: number;
+  let mo: string;
+  let d: string;
+
+  // รูปแบบ dd/mm/yyyy (เช่น 19/04/2569)
+  const m1 = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  if (m1) {
+    d = m1[1].padStart(2, "0");
+    mo = m1[2].padStart(2, "0");
+    y = parseInt(m1[3]);
+  } else {
+    // รูปแบบ yyyy-mm-dd (อาจมีเวลาต่อท้าย) เช่น "2569-04-19 00:00:00"
+    const m2 = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+    if (!m2) return s;
+    y = parseInt(m2[1]);
+    mo = m2[2].padStart(2, "0");
+    d = m2[3].padStart(2, "0");
+  }
+
+  // แก้ปีพิมพ์ผิด: 19xx ในบริบทวันที่ พ.ศ. มักหมายถึง 25xx (เช่น 1969 → 2569)
+  if (y >= 1900 && y <= 1999) y += 600;
+  if (y > 2400) y -= 543; // พ.ศ. → ค.ศ.
+  // ข้อมูลลงทะเบียน TB ควรอยู่ในช่วงที่สมเหตุสมผล (ค.ศ. 2015-2100)
+  if (y < 2015 || y > 2100) return s;
   return `${y}-${mo}-${d}`;
+}
+
+// เรียงลำดับ label เดือน (เช่น "ต.ค. 68") ตามลำดับเวลา
+export function monthSortKey(label: string): number {
+  const parts = label.split(" ");
+  if (parts.length < 2) return 0;
+  const IDX: Record<string, number> = {
+    "ม.ค.": 1,
+    "ก.พ.": 2,
+    "มี.ค.": 3,
+    "เม.ย.": 4,
+    "พ.ค.": 5,
+    "มิ.ย.": 6,
+    "ก.ค.": 7,
+    "ส.ค.": 8,
+    "ก.ย.": 9,
+    "ต.ค.": 10,
+    "พ.ย.": 11,
+    "ธ.ค.": 12,
+  };
+  const y = parseInt(parts[1]) || 0;
+  return y * 100 + (IDX[parts[0]] || 0);
 }
 
 function monthLabelFromDate(dateStr: string): string {
   if (!dateStr || dateStr.length < 7) return "";
   const y = parseInt(dateStr.slice(0, 4));
   const m = parseInt(dateStr.slice(5, 7));
+  // เรียงตามเดือนปฏิทิน (ม.ค.=1 ... ธ.ค.=12) ให้ตรงกับเลขเดือนที่ใช้ index
   const MONTHS = [
-    "ต.ค.",
-    "พ.ย.",
-    "ธ.ค.",
     "ม.ค.",
     "ก.พ.",
     "มี.ค.",
@@ -199,6 +246,9 @@ function monthLabelFromDate(dateStr: string): string {
     "ก.ค.",
     "ส.ค.",
     "ก.ย.",
+    "ต.ค.",
+    "พ.ย.",
+    "ธ.ค.",
   ];
   const thY = String(y + 543).slice(2);
   return MONTHS[m - 1] ? `${MONTHS[m - 1]} ${thY}` : `${m}/${thY}`;
@@ -280,6 +330,20 @@ function isQ1Denominator(r: TBRow): boolean {
   if (isExtrapulmonary(r.regType, r.note)) return false;
   if (r.drugResistant) return false;
   return true;
+}
+
+// ข้อ 3: การเสียชีวิต "ไม่นับรวม เสียชีวิตด้วยอุบัติเหตุ"
+function isAccidentalDeath(note: string): boolean {
+  const t = note.toLowerCase();
+  return (
+    t.includes("อุบัติเหตุ") ||
+    t.includes("จมน้ำ") ||
+    t.includes("จราจร") ||
+    t.includes("รถชน") ||
+    t.includes("รถคว่ำ") ||
+    t.includes("accident") ||
+    /\brta\b/.test(t)
+  );
 }
 
 // ─── เลือกชีตข้อมูลผู้ป่วย ─────────────────────────────────────────────────────
@@ -364,7 +428,7 @@ function parseRows(raw: string[][]): TBRow[] {
       lft: get(r, cLFT),
       bunCr: get(r, cBunCr),
       startDate: parseThaiDateStr(get(r, cStart)),
-      outcome: normOutcome(rawOutcome),
+      outcome: classifyOutcome(rawOutcome, rawNote),
       concludeDate: parseThaiDateStr(get(r, cConclude)),
       note: rawNote,
       drugResistant: detectDrugResistant(
@@ -421,6 +485,13 @@ function buildYearSummary(year: string, rows: TBRow[]): TBByYear {
       ? Math.round(((q1Cured + q1Completed) / q1Total) * 1000) / 10
       : 0;
 
+  // Death rate (ข้อ 3): เฉพาะ cohort Q1 เดียวกัน ไม่นับตายด้วยอุบัติเหตุ
+  const q1Died = q1Rows.filter(
+    (r) => r.outcome === "Died" && !isAccidentalDeath(r.note),
+  ).length;
+  const mortalityRateQ1 =
+    q1Total > 0 ? Math.round((q1Died / q1Total) * 1000) / 10 : 0;
+
   const ages = rows
     .map((r) => r.age)
     .filter((a): a is number => a != null && a > 0 && a < 120);
@@ -434,10 +505,9 @@ function buildYearSummary(year: string, rows: TBRow[]): TBByYear {
     const lbl = monthLabelFromDate(r.startDate);
     if (lbl) monthMap[lbl] = (monthMap[lbl] || 0) + 1;
   });
-  const byMonth = Object.entries(monthMap).map(([month, count]) => ({
-    month,
-    count,
-  }));
+  const byMonth = Object.entries(monthMap)
+    .map(([month, count]) => ({ month, count }))
+    .sort((a, b) => monthSortKey(a.month) - monthSortKey(b.month));
 
   const cohortMap: Record<string, Record<string, number>> = {};
   rows.forEach((r) => {
@@ -479,6 +549,8 @@ function buildYearSummary(year: string, rows: TBRow[]): TBByYear {
     q1Cured,
     q1Completed,
     successRateQ1,
+    q1Died,
+    mortalityRateQ1,
     avgAge,
     byRegType: countBy(rows, "regType"),
     byTambon: countBy(rows, "tambon"),
@@ -505,7 +577,7 @@ function buildSummary(rows: TBRow[]): TBSummary {
     year: y.year,
     total: y.total,
     cured: y.cured,
-    died: y.died,
+    died: y.q1Died,
     successRate: y.successRateQ1,
   }));
 

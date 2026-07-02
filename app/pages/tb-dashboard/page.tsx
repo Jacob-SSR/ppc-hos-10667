@@ -30,7 +30,7 @@ const C = {
 const OUTCOME_COLOR: Record<string, string> = {
     "Cured": C.teal, "Completed": C.cyan, "On treatment": C.amber,
     "Died": C.red, "LTFU": C.purple, "Transferred out": C.blue,
-    "Failed": C.coral, "ไม่ระบุ": C.gray, "อื่นๆ": C.gray,
+    "Failed": C.coral, "เสียชีวิต (อุบัติเหตุ)": C.gray, "ไม่ระบุ": C.gray, "อื่นๆ": C.gray,
 };
 
 const PALETTE = [C.teal, C.blue, C.amber, C.coral, C.purple, C.green, C.cyan, C.red, C.gray];
@@ -39,7 +39,7 @@ const PALETTE = [C.teal, C.blue, C.amber, C.coral, C.purple, C.green, C.cyan, C.
 const WHO_INDICATORS = [
     { key: "success", label: "Treatment Success Rate", desc: "Cured+Completed (เฉพาะ Q1 ต.ค.-ธ.ค.)", target: 88, dir: "up" as const },
     { key: "cure", label: "Cure Rate", desc: "Cured / Total", target: 85, dir: "up" as const },
-    { key: "death", label: "Death Rate", desc: "เสียชีวิต", target: 5, dir: "down" as const },
+    { key: "death", label: "Death Rate", desc: "เสียชีวิต (เฉพาะ Q1)", target: 7, dir: "down" as const },
     { key: "ltfu", label: "LTFU Rate", desc: "ขาดการรักษา", target: 5, dir: "down" as const },
     { key: "failure", label: "Failure Rate", desc: "รักษาล้มเหลว/MDR", target: 3, dir: "down" as const },
 ];
@@ -132,7 +132,7 @@ function WhoCards({ yd }: { yd: TBByYear }) {
     const vals: Record<string, number> = {
         success: yd.successRateQ1,
         cure: yd.total > 0 ? Math.round((yd.cured / yd.total) * 1000) / 10 : 0,
-        death: yd.mortalityRate,
+        death: yd.mortalityRateQ1,
         ltfu: yd.total > 0 ? Math.round((yd.ltfu / yd.total) * 1000) / 10 : 0,
         failure: yd.total > 0 ? Math.round((yd.failed / yd.total) * 1000) / 10 : 0,
     };
@@ -259,7 +259,17 @@ function PatientTable({ rows }: { rows: TBRow[] }) {
 
 // ─── Cohort Table ─────────────────────────────────────────────────────────────
 function CohortTable({ yd }: { yd: TBByYear }) {
-    const months = Object.keys(yd.byCohort).sort();
+    const monthSortKey = (label: string): number => {
+        const parts = label.split(" ");
+        if (parts.length < 2) return 0;
+        const IDX: Record<string, number> = {
+            "ม.ค.": 1, "ก.พ.": 2, "มี.ค.": 3, "เม.ย.": 4, "พ.ค.": 5, "มิ.ย.": 6,
+            "ก.ค.": 7, "ส.ค.": 8, "ก.ย.": 9, "ต.ค.": 10, "พ.ย.": 11, "ธ.ค.": 12,
+        };
+        const y = parseInt(parts[1]) || 0;
+        return y * 100 + (IDX[parts[0]] || 0);
+    };
+    const months = Object.keys(yd.byCohort).sort((a, b) => monthSortKey(a) - monthSortKey(b));
     if (!months.length) return <p className="text-sm text-gray-400 text-center py-6">ไม่มีข้อมูล cohort</p>;
 
     return (
@@ -575,6 +585,7 @@ export default function TBDashboardPage() {
             const q1Total = all.reduce((s, y) => s + y.q1Total, 0);
             const q1Cured = all.reduce((s, y) => s + y.q1Cured, 0);
             const q1Completed = all.reduce((s, y) => s + y.q1Completed, 0);
+            const q1Died = all.reduce((s, y) => s + y.q1Died, 0);
             const ages = activeRows.map((r) => r.age).filter((a): a is number => a != null && a > 0);
             const avgAge = ages.length > 0 ? Math.round(ages.reduce((s, a) => s + a, 0) / ages.length) : 0;
 
@@ -599,6 +610,8 @@ export default function TBDashboardPage() {
                 mortalityRate: total > 0 ? Math.round((died / total) * 1000) / 10 : 0,
                 q1Total, q1Cured, q1Completed,
                 successRateQ1: q1Total > 0 ? Math.round(((q1Cured + q1Completed) / q1Total) * 1000) / 10 : 0,
+                q1Died,
+                mortalityRateQ1: q1Total > 0 ? Math.round((q1Died / q1Total) * 1000) / 10 : 0,
                 avgAge,
                 byRegType: merge("byRegType"), byTambon: merge("byTambon"), byAFB: merge("byAFB"),
                 byHIV: merge("byHIV"), byCXR: merge("byCXR"), byGeneXpert: merge("byGeneXpert"),
@@ -636,8 +649,9 @@ export default function TBDashboardPage() {
                 SuccessRate_ร้อยละ: activeYD.successRateQ1,
                 SuccessRate_เฉพาะQ1: `${activeYD.q1Cured + activeYD.q1Completed}/${activeYD.q1Total} ราย (รายใหม่ปอด ขึ้นทะเบียน ต.ค.-ธ.ค. ไม่รวม Relapse/นอกปอด/ดื้อยา)`,
                 เป้าหมาย_SuccessRate: "≥ 88%",
-                MortalityRate_ร้อยละ: activeYD.mortalityRate,
-                เป้าหมาย_Death: "≤ 5%",
+                MortalityRate_ร้อยละ: activeYD.mortalityRateQ1,
+                Death_เฉพาะQ1: `${activeYD.q1Died}/${activeYD.q1Total} ราย (ไม่รวมตายจากอุบัติเหตุ)`,
+                เป้าหมาย_Death: "≤ 7%",
                 LTFU_ร้อยละ: activeYD.total > 0 ? Math.round((activeYD.ltfu / activeYD.total) * 1000) / 10 : 0,
                 เป้าหมาย_LTFU: "≤ 5%",
             },
@@ -702,8 +716,8 @@ export default function TBDashboardPage() {
                                 sub={`Q1 ต.ค.-ธ.ค. · รายใหม่ปอด ${fmt(activeYD.q1Cured + activeYD.q1Completed)}/${fmt(activeYD.q1Total)} ราย (เป้า ≥ 88%)`}
                                 accent={activeYD.successRateQ1 >= 88 ? C.teal : C.amber}
                                 accentBg={activeYD.successRateQ1 >= 88 ? C.tealL : C.amberL} />
-                            <KpiCard icon={Skull} label="เสียชีวิต" value={`${fmt(activeYD.died)} ราย`}
-                                sub={`${activeYD.mortalityRate}% (เป้า ≤ 5%)`} accent={C.red} accentBg={C.redL} highlight={activeYD.died > 0} />
+                            <KpiCard icon={Skull} label="เสียชีวิต" value={`${fmt(activeYD.q1Died)} ราย`}
+                                sub={`Q1 · ${activeYD.mortalityRateQ1}% (เป้า ≤ 7%)`} accent={C.red} accentBg={C.redL} highlight={activeYD.q1Died > 0} />
                             <KpiCard icon={AlertTriangle} label="ขาดการรักษา (LTFU)" value={`${fmt(activeYD.ltfu)} ราย`}
                                 sub={pct(activeYD.ltfu, activeYD.total)} accent={C.purple} accentBg={C.purpleL} />
                             <KpiCard icon={HeartPulse} label="อายุเฉลี่ย" value={`${activeYD.avgAge} ปี`}
@@ -737,7 +751,7 @@ export default function TBDashboardPage() {
             {/* ── AI สรุป + แชท (ปุ่มลอยมุมขวาล่าง + modal กลางจอ) ── */}
             <AiSummaryCard
                 summary={aiSummary}
-                context="แดชบอร์ดผู้ป่วยวัณโรค (TB) รพ.พลับพลาชัย จ.บุรีรัมย์ — วิเคราะห์ผลการรักษาตามมาตรฐาน WHO/กรมควบคุมโรค (Success Rate ≥ 88% เฉพาะผู้ป่วยขึ้นทะเบียน Q1 ต.ค.-ธ.ค., Death ≤ 5%, LTFU ≤ 5%) ครอบคลุมผลการรักษา ตัวชี้วัด การคัดกรอง AFB/HIV/Gene Xpert โรคประจำตัว และสูตรยา"
+                context="แดชบอร์ดผู้ป่วยวัณโรค (TB) รพ.พลับพลาชัย จ.บุรีรัมย์ — วิเคราะห์ผลการรักษาตามมาตรฐาน WHO/กรมควบคุมโรค (Success Rate ≥ 88%, Death ≤ 7% เฉพาะผู้ป่วยขึ้นทะเบียน Q1 ต.ค.-ธ.ค., LTFU ≤ 5%) ครอบคลุมผลการรักษา ตัวชี้วัด การคัดกรอง AFB/HIV/Gene Xpert โรคประจำตัว และสูตรยา"
                 disabled={!aiSummary}
             />
         </div>
