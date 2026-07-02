@@ -176,7 +176,7 @@ function PatientTable({ rows }: { rows: MiniThanRow[] }) {
                 <table className="min-w-full text-xs border-collapse">
                     <thead>
                         <tr className="sticky top-0" style={{ backgroundColor: C.dark }}>
-                            {["#", "HN", "ชื่อ-สกุล", "อายุ", "ตำบล", "โปรแกรม", "สถานะ", "รายละเอียด", "สี", "V2",
+                            {["#", "HN", "ชื่อ-สกุล", "อายุ", "ตำบล", "โปรแกรม", "ประเภท", "สถานะ", "รายละเอียด", "สี", "V2",
                                 "บำบัด (สัปดาห์)", "ติดตาม", "เริ่มบำบัด"].map((h) => (
                                     <th key={h} className="px-3 py-2.5 text-left text-white font-semibold border-r border-[#236b43] whitespace-nowrap">{h}</th>
                                 ))}
@@ -191,6 +191,13 @@ function PatientTable({ rows }: { rows: MiniThanRow[] }) {
                                 <td className="px-3 py-2 text-gray-600 text-center">{r.age ?? "-"}</td>
                                 <td className="px-3 py-2 text-gray-600 whitespace-nowrap">{r.tambon}</td>
                                 <td className="px-3 py-2 text-gray-600 whitespace-nowrap">{r.program || "-"}</td>
+                                <td className="px-3 py-2">
+                                    <span className="inline-flex px-2 py-0.5 rounded-full text-[10px] font-medium whitespace-nowrap"
+                                        style={{
+                                            background: r.patientType === "ใหม่" ? C.blueL : r.patientType === "เก่าจบ" ? C.greenL : r.patientType === "เก่า Drop out" ? C.redL : C.grayL,
+                                            color: r.patientType === "ใหม่" ? "#185FA5" : r.patientType === "เก่าจบ" ? C.dark : r.patientType === "เก่า Drop out" ? C.red : C.gray,
+                                        }}>{r.patientType}</span>
+                                </td>
                                 <td className="px-3 py-2">
                                     <span className="inline-flex px-2 py-0.5 rounded-full text-[10px] font-semibold"
                                         style={{
@@ -243,7 +250,7 @@ export default function MiniThanDashboardPage() {
                             <LiveBadge />
                         </div>
                         <p className="text-xs mt-0.5" style={{ color: C.midL }}>
-                            รพ.พลับพลาชัย · โปรแกรม MP · อัปเดตทุก 30 วินาที
+                            รพ.พลับพลาชัย · โปรแกรม IMC · อัปเดตทุก 30 วินาที
                             {data && <span className="ml-2">· อัปเดต {timeAgo(data.updatedAt)}</span>}
                         </p>
                     </div>
@@ -280,8 +287,8 @@ export default function MiniThanDashboardPage() {
             {/* KPI Cards */}
             {s && (
                 <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
-                    <KpiCard icon={Users} label="ผู้ป่วยทั้งหมด" value={`${fmt(s.total)} ราย`}
-                        sub={`ใหม่ ${s.newPatients} · เก่า ${s.oldPatients}`} accent={C.dark} bg={C.darkL} />
+                    <KpiCard icon={Users} label="ผู้ป่วยมินิธัญญารักษ์" value={`${fmt(s.total)} ราย`}
+                        sub={`ใหม่ ${s.newPatients} · เก่าจบ ${s.oldDone} · Drop out ${s.oldDropout}`} accent={C.dark} bg={C.darkL} />
                     <KpiCard icon={Activity} label="กำลังบำบัด" value={`${fmt(s.inTreatment)} ราย`}
                         sub={`ติดตาม ${s.followUp} · จำหน่าย ${s.discharged}`} accent={C.green} bg={C.greenL} />
                     <KpiCard icon={CheckCircle2} label="บำบัดครบ" value={`${fmt(s.treatComplete)} ราย`}
@@ -302,8 +309,8 @@ export default function MiniThanDashboardPage() {
             {!loading && !error && data && s?.total === 0 && (
                 <div className="bg-[#f0faf4] border border-[#d6f0e0] rounded-2xl p-8 flex flex-col items-center gap-2 text-center">
                     <Info size={24} style={{ color: C.green }} />
-                    <p className="text-sm font-semibold" style={{ color: C.dark }}>ยังไม่มีข้อมูลผู้ป่วยมินิธัญญารักษ์ (MP)</p>
-                    <p className="text-xs text-gray-500">ตรวจสอบว่าคอลัมน์ HW/IMC/MP ในชีตมีค่า MP และ Service Account มีสิทธิ์เข้าถึง</p>
+                    <p className="text-sm font-semibold" style={{ color: C.dark }}>ยังไม่มีข้อมูลผู้ป่วยมินิธัญญารักษ์ (IMC)</p>
+                    <p className="text-xs text-gray-500">ตรวจสอบว่าคอลัมน์ HW/IMC/MP ในชีตมีค่า IMC และ Service Account มีสิทธิ์เข้าถึง</p>
                     <p className="text-[11px] text-gray-400 font-mono mt-1">Sheet: {data.sheetName}</p>
                 </div>
             )}
@@ -311,7 +318,7 @@ export default function MiniThanDashboardPage() {
             {/* AI */}
             <AiSummaryCard
                 summary={s}
-                context="Dashboard มินิธัญญารักษ์ (โปรแกรม MP) รพ.พลับพลาชัย — ติดตามผู้ป่วยยาเสพติดที่บำบัดแบบผู้ป่วยนอก เน้นการคงอยู่ในการบำบัด 16 สัปดาห์ (Retention) การติดตามหลังบำบัด 2สัปดาห์–1ปี (Remission) ระดับความรุนแรง (สี) และคะแนน V2"
+                context="Dashboard มินิธัญญารักษ์ (โปรแกรม IMC) รพ.พลับพลาชัย — ติดตามผู้ป่วยยาเสพติดที่ผ่านโปรแกรม IMC เน้นการคงอยู่ในการบำบัด 16 สัปดาห์ (Retention) การติดตามหลังบำบัด 2สัปดาห์–1ปี (Remission) ระดับความรุนแรง (สี) และคะแนน V2"
                 disabled={!s}
             />
         </div>

@@ -1,3 +1,8 @@
+// app/api/minithan-sheets/route.ts
+// ดึงข้อมูลผู้ป่วยมินิธัญญารักษ์ (โปรแกรม IMC) จาก Google Sheets แบบ real-time
+// Spreadsheet: "ผู้ป่วยยาเสพติด 2569" — กรองเฉพาะแถวที่คอลัมน์ HW/IMC/MP มีคำว่า "IMC"
+// (รวมเคส IMC/MP, IMC/MP/IMC, IMC ล้วน ฯลฯ)
+
 import { NextResponse } from "next/server";
 import {
   getSheetClient,
@@ -43,7 +48,7 @@ export interface MiniThanRow {
   age: number | null;
   v2Score: number | null;
   colorSeverity: string;
-  isNew: boolean;
+  patientType: string; // ประเภท: "ใหม่" / "เก่าจบ" / "เก่า Drop out" / "อื่นๆ"
   startDate: string; // เริ่มมาจริง
   bsotStartDate: string; // เริ่มลงบสต.
   treatEndDate: string; // ว.ด.ป.จบบำบัด
@@ -80,8 +85,9 @@ export interface MiniThanSummary {
   discharged: number;
   treatComplete: number;
   dropout: number;
-  newPatients: number;
-  oldPatients: number;
+  newPatients: number; // รายใหม่
+  oldDone: number; // รายเก่าที่จบบำบัดแล้ว
+  oldDropout: number; // รายเก่าที่ Drop out
   avgAge: number;
   avgV2: number;
   male: number;
@@ -91,6 +97,7 @@ export interface MiniThanSummary {
   byTambon: Record<string, number>;
   byReferral: Record<string, number>;
   byDetailStatus: Record<string, number>;
+  byPatientType: Record<string, number>;
   weeklyRetention: WeeklyRetentionPoint[];
   followUpMilestones: FollowUpMilestone[];
   byMonth: { month: string; count: number }[];
@@ -171,6 +178,8 @@ function parseRows(rawRows: string[][]): {
   const cV2 = col(["คะแนน v2", "v2"], 17);
   const cColor = col(["สี"], 18);
   const cIsNew = col(["ใหม่"], 19);
+  const cOldDropout = col(["เก่าDrop out", "เก่าdrop"], 20);
+  const cOldDone = col(["เก่าจบ"], 21);
   const cReferralSource = col(["การนำส่ง"], 22);
   const cNote1 = col(["หมายเหตุ"], 33); // หมายเหตุ ตัวแรก (มีคำว่า ถูกจับ/เสียชีวิต)
   const cStartDate = col(["เริ่มมาจริง"], 35);
@@ -193,7 +202,9 @@ function parseRows(rawRows: string[][]): {
     if (!r || r.every((c) => !c || !String(c).trim())) continue;
 
     const program = toStr(r[cProgram]);
-    if (!program.toUpperCase().includes("MP")) continue; // กรองเฉพาะมินิธัญญารักษ์
+    // มินิธัญญารักษ์ = แถวที่ผ่านโปรแกรม IMC (มี "IMC" อยู่ในคอลัมน์ HW/IMC/MP)
+    // รวมทุกเคสที่มี IMC เช่น IMC/MP, IMC/MP/IMC, IMC ล้วน ฯลฯ
+    if (!program.toUpperCase().includes("IMC")) continue;
 
     const firstName = toStr(r[cFirst]);
     const hn = toStr(r[cHN]);
@@ -239,6 +250,15 @@ function parseRows(rawRows: string[][]): {
     const note = [note1, note2].filter(Boolean).join(" · ");
     const noteBlob = `${detailStatus} ${note}`.toLowerCase();
 
+    // ประเภทผู้ป่วย: รายใหม่ (ติ๊ก "ใหม่") หรือรายเก่า (จบ/Drop out) หรืออื่นๆ
+    const patientType = isFilled(r[cIsNew])
+      ? "ใหม่"
+      : isFilled(r[cOldDone])
+        ? "เก่าจบ"
+        : isFilled(r[cOldDropout])
+          ? "เก่า Drop out"
+          : "อื่นๆ";
+
     rows.push({
       no: i,
       treatStatus: toStr(r[cTreatStatus]),
@@ -254,7 +274,7 @@ function parseRows(rawRows: string[][]): {
       age: toNumOrNull(r[cAge]),
       v2Score: toNumOrNull(r[cV2]),
       colorSeverity: normalizeColor(toStr(r[cColor])),
-      isNew: isFilled(r[cIsNew]),
+      patientType,
       startDate: parseDate(r[cStartDate], { validate: true }),
       bsotStartDate: parseDate(r[cBsotStart], { validate: true }),
       treatEndDate: parseDate(r[cTreatEnd], { validate: true }),
@@ -281,7 +301,11 @@ function buildSummary(rows: MiniThanRow[]): MiniThanSummary {
   const discharged = rows.filter((r) => r.treatStatus === "จำหน่าย").length;
   const treatComplete = rows.filter((r) => r.isTreatComplete).length;
   const dropout = rows.filter((r) => r.isDropout).length;
-  const newPatients = rows.filter((r) => r.isNew).length;
+  const newPatients = rows.filter((r) => r.patientType === "ใหม่").length;
+  const oldDone = rows.filter((r) => r.patientType === "เก่าจบ").length;
+  const oldDropout = rows.filter(
+    (r) => r.patientType === "เก่า Drop out",
+  ).length;
 
   const malePrefixes = ["นาย", "เด็กชาย", "ด.ช."];
   const femalePrefixes = ["นาง", "นางสาว", "น.ส.", "เด็กหญิง", "ด.ญ."];
@@ -369,7 +393,8 @@ function buildSummary(rows: MiniThanRow[]): MiniThanSummary {
     treatComplete,
     dropout,
     newPatients,
-    oldPatients: total - newPatients,
+    oldDone,
+    oldDropout,
     avgAge,
     avgV2,
     male,
@@ -379,6 +404,7 @@ function buildSummary(rows: MiniThanRow[]): MiniThanSummary {
     byTambon: countBy(rows, "tambon"),
     byReferral: countBy(rows, "referralSource"),
     byDetailStatus: countBy(rows, "detailStatus"),
+    byPatientType: countBy(rows, "patientType"),
     weeklyRetention,
     followUpMilestones,
     byMonth,
