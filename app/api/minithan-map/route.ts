@@ -239,7 +239,7 @@ export async function GET() {
       if (!r || r.every((c) => !toStr(c).trim())) continue;
 
       const program = toStr(r[cProgram]);
-      if (!program.toUpperCase().includes("MP")) continue; // เฉพาะมินิธัญญารักษ์
+      if (!program.toUpperCase().includes("IMC")) continue; // เฉพาะมินิธัญญารักษ์ (โปรแกรม IMC)
 
       const firstName = toStr(r[cFirst]);
       const hn = toStr(r[cHN]);
