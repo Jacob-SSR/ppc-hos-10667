@@ -34,6 +34,7 @@ import {
   Syringe,
   Activity,
   MapPinned,
+  Gauge,
 } from "lucide-react";
 
 import { SidebarItem, SidebarGroup, SidebarSubGroup } from "./types";
@@ -126,6 +127,12 @@ export const DASHBOARD_GROUPS: SidebarSubGroup[] = [
         href: "/pages/productivity-lr",
         icon: Baby,
         group: "main"
+      },
+      {
+        label: "R9 ระยะเวลารอคอย/ให้บริการ OPD",
+        href: "/pages/servicetime-dashboard",
+        icon: Gauge,
+        group: "main",
       },
     ],
   },

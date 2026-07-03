@@ -1,0 +1,83 @@
+// lib/servicetime.types.ts
+// TypeScript interfaces สำหรับ Service Time Dashboard (R9) — ใช้ร่วมกัน API ↔ Page
+// วัดระยะเวลารอคอย/ให้บริการ OPD: คัดกรอง → รอตรวจ → ตรวจ → รับยา + Lab/X-ray
+
+export type ServiceScope = "all" | "opd" | "er";
+export type VisitType = "all" | "appt" | "walkin";
+
+/** สถิติสรุปของ 1 กลุ่มค่า (นาที) */
+export interface StatBlock {
+  count: number; // จำนวน visit ที่มีค่าใช้คำนวณได้
+  avg: number | null; // ค่าเฉลี่ย (นาที)
+  median: number | null; // มัธยฐาน (นาที)
+  p90: number | null; // เปอร์เซ็นไทล์ที่ 90 (นาที)
+  min: number | null;
+  max: number | null;
+}
+
+/** 1 ขั้นตอนใน flow OPD */
+export interface StageStat {
+  key: string;
+  label: string;
+  target: number | null; // เป้าหมาย (นาที) — ปรับได้ตามเกณฑ์ R9
+  stat: StatBlock;
+  withinTargetPct: number | null; // % visit ที่ ≤ target
+}
+
+export interface ServiceTimeSummary {
+  totalVisits: number; // visit ทั้งหมดในเงื่อนไข
+  completeFlowVisits: number; // visit ที่มีทั้งจุดเริ่ม (คัดกรอง) และจุดจบ (รับยา)
+  appointmentVisits: number;
+  walkinVisits: number;
+  erVisits: number;
+  total: StageStat; // ระยะเวลารวม OPD (คัดกรอง → รับยา)
+}
+
+export interface TrendPoint {
+  date: string; // YYYY-MM-DD
+  label: string; // DD/MM
+  visits: number;
+  avgTotal: number | null;
+}
+
+export interface DistributionBucket {
+  label: string;
+  count: number;
+}
+
+export interface DepartmentRow {
+  department: string;
+  visits: number;
+  avgTotal: number | null;
+  medianTotal: number | null;
+}
+
+export interface HourlyRow {
+  hour: number; // 0-23
+  visits: number;
+}
+
+export interface AncillaryStat {
+  itemVisits: number; // จำนวน visit ที่มีรายการ (lab/xray)
+  wait: StatBlock; // สั่ง → รับ/ตรวจ
+  process: StatBlock; // รับ/ตรวจ → รายงานผล
+  total: StatBlock; // สั่ง → รายงานผล
+  target: number | null; // เป้าหมาย total (นาที)
+  withinTargetPct: number | null;
+}
+
+export interface ServiceTimeData {
+  updatedAt: string;
+  start: string;
+  end: string;
+  scope: ServiceScope;
+  visitType: VisitType;
+  summary: ServiceTimeSummary;
+  stages: StageStat[]; // รอคัดกรอง, คัดกรอง, รอตรวจ, ตรวจ, รอรับยา
+  trend: TrendPoint[];
+  distribution: DistributionBucket[];
+  byDepartment: DepartmentRow[];
+  hourly: HourlyRow[];
+  lab: AncillaryStat;
+  xray: AncillaryStat;
+}
