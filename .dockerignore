@@ -1,0 +1,21 @@
+node_modules
+.next
+.git
+.gitignore
+npm-debug.log*
+README.md
+Dockerfile
+.dockerignore
+docker-compose.yml
+
+# ignore env dev แต่ "ต้องเก็บ .env.production ไว้" ให้ next build อ่านตอน build
+.env
+.env.local
+.env.*.local
+
+# ไฟล์ dev/ข้อมูลที่ไม่ต้องเข้า image
+/data/*.csv
+/data/*.xlsx
+sync-sheets.bat
+hash.js
+importUsers.js
