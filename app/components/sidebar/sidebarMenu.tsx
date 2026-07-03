@@ -42,7 +42,7 @@ import { SidebarItem, SidebarGroup, SidebarSubGroup } from "./types";
 
 export const DASHBOARD_GROUPS: SidebarSubGroup[] = [
   {
-    title: "Dashboard หลัก",
+    title: "ภาพรวม",
     items: [
       {
         label: "Overview",
@@ -54,13 +54,31 @@ export const DASHBOARD_GROUPS: SidebarSubGroup[] = [
         label: "IP & Home Ward",
         href: "/pages/ip-homeward-dashboard",
         icon: BedDouble,
-        group: "main"
+        group: "main",
       },
+      {
+        label: "สถานะผู้ป่วยตามแผนก",
+        href: "/pages/dept-status",
+        icon: Building2,
+        group: "main",
+      },
+      {
+        label: "สถิติผู้รับบริการแยกเวร",
+        href: "/pages/shift-stats",
+        icon: BarChart3,
+        group: "main",
+      },
+    ],
+  },
+
+  {
+    title: "หน่วยบริการ",
+    items: [
       {
         label: "IMC",
         href: "/pages/imc-dashboard",
         icon: Stethoscope,
-        group: "main"
+        group: "main",
       },
       {
         label: "กายภาพบำบัด",
@@ -81,29 +99,17 @@ export const DASHBOARD_GROUPS: SidebarSubGroup[] = [
         group: "main",
       },
       {
-        label: "สถานะผู้ป่วยตามแผนก",
-        href: "/pages/dept-status",
-        icon: Building2,
-        group: "main"
-      },
-      {
-        label: "สถิติผู้รับบริการแยกเวร",
-        href: "/pages/shift-stats",
-        icon: BarChart3,
-        group: "main",
-      },
-      {
-        label: "บันทึกงาน IT",
-        href: "/pages/it-worklog",
-        icon: Monitor,
-        group: "main",
-      },
-      {
         label: "ตรวจสุขภาพประจำปี",
         href: "/pages/health-checkup",
         icon: HeartPulse,
         group: "main",
       },
+    ],
+  },
+
+  {
+    title: "ผลิตภาพ & เวลาบริการ",
+    items: [
       {
         label: "ผลิตภาพการพยาบาล OPD",
         href: "/pages/productivity-opd",
@@ -120,18 +126,30 @@ export const DASHBOARD_GROUPS: SidebarSubGroup[] = [
         label: "ผลิตภาพการพยาบาล IPD",
         href: "/pages/productivity-ipd",
         icon: BedDouble,
-        group: "main"
+        group: "main",
       },
       {
         label: "ผลิตภาพการพยาบาลห้องคลอด (LR)",
         href: "/pages/productivity-lr",
         icon: Baby,
-        group: "main"
+        group: "main",
       },
       {
         label: "R9 ระยะเวลารอคอย/ให้บริการ OPD",
         href: "/pages/servicetime-dashboard",
         icon: Gauge,
+        group: "main",
+      },
+    ],
+  },
+
+  {
+    title: "ระบบงาน",
+    items: [
+      {
+        label: "บันทึกงาน IT",
+        href: "/pages/it-worklog",
+        icon: Monitor,
         group: "main",
       },
     ],
