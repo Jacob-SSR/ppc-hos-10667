@@ -51,12 +51,6 @@ export const DASHBOARD_GROUPS: SidebarSubGroup[] = [
         group: "main",
       },
       {
-        label: "IP & Home Ward",
-        href: "/pages/ip-homeward-dashboard",
-        icon: BedDouble,
-        group: "main",
-      },
-      {
         label: "สถานะผู้ป่วยตามแผนก",
         href: "/pages/dept-status",
         icon: Building2,
@@ -68,6 +62,12 @@ export const DASHBOARD_GROUPS: SidebarSubGroup[] = [
         icon: BarChart3,
         group: "main",
       },
+      {
+        label: "IP & Home Ward",
+        href: "/pages/ip-homeward-dashboard",
+        icon: BedDouble,
+        group: "main",
+      },
     ],
   },
 
@@ -75,15 +75,15 @@ export const DASHBOARD_GROUPS: SidebarSubGroup[] = [
     title: "หน่วยบริการ",
     items: [
       {
-        label: "IMC",
-        href: "/pages/imc-dashboard",
-        icon: Stethoscope,
-        group: "main",
-      },
-      {
         label: "กายภาพบำบัด",
         href: "/pages/pt-dashboard",
         icon: Dumbbell,
+        group: "main",
+      },
+      {
+        label: "ตรวจสุขภาพประจำปี",
+        href: "/pages/health-checkup",
+        icon: HeartPulse,
         group: "main",
       },
       {
@@ -99,9 +99,9 @@ export const DASHBOARD_GROUPS: SidebarSubGroup[] = [
         group: "main",
       },
       {
-        label: "ตรวจสุขภาพประจำปี",
-        href: "/pages/health-checkup",
-        icon: HeartPulse,
+        label: "IMC",
+        href: "/pages/imc-dashboard",
+        icon: Stethoscope,
         group: "main",
       },
     ],
@@ -111,9 +111,9 @@ export const DASHBOARD_GROUPS: SidebarSubGroup[] = [
     title: "ผลิตภาพ & เวลาบริการ",
     items: [
       {
-        label: "ผลิตภาพการพยาบาล OPD",
-        href: "/pages/productivity-opd",
-        icon: Activity,
+        label: "ผลิตภาพการพยาบาลห้องคลอด (LR)",
+        href: "/pages/productivity-lr",
+        icon: Baby,
         group: "main",
       },
       {
@@ -129,9 +129,9 @@ export const DASHBOARD_GROUPS: SidebarSubGroup[] = [
         group: "main",
       },
       {
-        label: "ผลิตภาพการพยาบาลห้องคลอด (LR)",
-        href: "/pages/productivity-lr",
-        icon: Baby,
+        label: "ผลิตภาพการพยาบาล OPD",
+        href: "/pages/productivity-opd",
+        icon: Activity,
         group: "main",
       },
       {
@@ -207,9 +207,9 @@ export const DASHBOARD_GROUPS: SidebarSubGroup[] = [
         group: "disease",
       },
       {
-        label: "Home Ward ยาเสพติด",
-        href: "/pages/homeward-dashboard",
-        icon: BedDouble,
+        label: "แผนที่บ้านมินิธัญญารักษ์",
+        href: "/pages/minithan-map",
+        icon: MapPinned,
         group: "disease",
       },
       {
@@ -225,9 +225,9 @@ export const DASHBOARD_GROUPS: SidebarSubGroup[] = [
         group: "disease",
       },
       {
-        label: "แผนที่บ้านมินิธัญญารักษ์",
-        href: "/pages/minithan-map",
-        icon: MapPinned,
+        label: "Home Ward ยาเสพติด",
+        href: "/pages/homeward-dashboard",
+        icon: BedDouble,
         group: "disease",
       },
     ],
@@ -243,15 +243,15 @@ export const DASHBOARD_GROUPS: SidebarSubGroup[] = [
         group: "disease",
       },
       {
-        label: "Sepsis",
-        href: "/pages/sepsis-dashboard",
-        icon: Droplets,
-        group: "disease",
-      },
-      {
         label: "RDU Antibiotic Smart Use",
         href: "/pages/rdu-dashboard",
         icon: Pill,
+        group: "disease",
+      },
+      {
+        label: "Sepsis",
+        href: "/pages/sepsis-dashboard",
+        icon: Droplets,
         group: "disease",
       },
     ],
@@ -260,6 +260,12 @@ export const DASHBOARD_GROUPS: SidebarSubGroup[] = [
   {
     title: "อุบัติเหตุ / ฉุกเฉิน / หัตถการ",
     items: [
+      {
+        label: "หัตถการเสี่ยงสูง",
+        href: "/pages/high-risk-procedures",
+        icon: Scissors,
+        group: "disease",
+      },
       {
         label: "อุบัติเหตุ",
         href: "/pages/accident-dashboard",
@@ -270,12 +276,6 @@ export const DASHBOARD_GROUPS: SidebarSubGroup[] = [
         label: "Stroke Dashboard",
         href: "/pages/stroke-dashboard",
         icon: Brain,
-        group: "disease",
-      },
-      {
-        label: "หัตถการเสี่ยงสูง",
-        href: "/pages/high-risk-procedures",
-        icon: Scissors,
         group: "disease",
       },
     ],
@@ -311,12 +311,6 @@ export const REPORT_ITEMS: SidebarItem[] = [
     group: "report",
   },
   {
-    label: "UC ต่างจังหวัดที่มาทำฟัน",
-    href: "/pages/uc-outside-dental",
-    icon: Smile,
-    group: "report",
-  },
-  {
     label: "ผู้ป่วยนอก UC สิทธิ์ต่างจังหวัด",
     href: "/pages/uc-outside",
     icon: UserRound,
@@ -329,15 +323,21 @@ export const REPORT_ITEMS: SidebarItem[] = [
     group: "report",
   },
   {
+    label: "รายการจ่ายถุงยางอนามัย OPD",
+    href: "/pages/condom-report",
+    icon: Receipt,
+    group: "report",
+  },
+  {
     label: "รายชื่อผู้ป่วยที่ไม่มี (CC/Diag/ICD10)",
     href: "/pages/incomplete-visit",
     icon: AlertTriangle,
     group: "report",
   },
   {
-    label: "รายการจ่ายถุงยางอนามัย OPD",
-    href: "/pages/condom-report",
-    icon: Receipt,
+    label: "UC ต่างจังหวัดที่มาทำฟัน",
+    href: "/pages/uc-outside-dental",
+    icon: Smile,
     group: "report",
   },
 ];
@@ -347,15 +347,9 @@ export const REPORT_ITEMS: SidebarItem[] = [
 // =========================
 export const PRIMARY_CARE_ITEMS: SidebarItem[] = [
   {
-    label: "DM/HT รายใหม่ ประจำปีงบประมาณ",
-    href: "/pages/dmht-new",
-    icon: HeartPulse,
-    group: "primarycare",
-  },
-  {
-    label: "รายชื่อผู้เสียชีวิต/จำหน่าย ที่ยังไม่ถูกจำหน่ายในบัญชี1",
-    href: "/pages/death-not-discharged",
-    icon: UserMinus,
+    label: "ผลัดตกหกล้ม (W00–W09)",
+    href: "/pages/fall-report",
+    icon: AlertTriangle,
     group: "primarycare",
   },
   {
@@ -365,15 +359,21 @@ export const PRIMARY_CARE_ITEMS: SidebarItem[] = [
     group: "primarycare",
   },
   {
-    label: "ผลัดตกหกล้ม (W00–W09)",
-    href: "/pages/fall-report",
-    icon: AlertTriangle,
-    group: "primarycare",
-  },
-  {
     label: "รายชื่อผู้ผิดนัดฉีดวัคซีนพิษสุนัขบ้า",
     href: "/pages/rabies-followup",
     icon: Syringe,
+    group: "primarycare",
+  },
+  {
+    label: "รายชื่อผู้เสียชีวิต/จำหน่าย ที่ยังไม่ถูกจำหน่ายในบัญชี1",
+    href: "/pages/death-not-discharged",
+    icon: UserMinus,
+    group: "primarycare",
+  },
+  {
+    label: "DM/HT รายใหม่ ประจำปีงบประมาณ",
+    href: "/pages/dmht-new",
+    icon: HeartPulse,
     group: "primarycare",
   },
 ];
@@ -387,20 +387,6 @@ export const PPA_ITEMS: SidebarItem[] = [
     href: "/pages/ppa/aging",
     icon: Users,
     desc: "คัดกรองสมอง/หกล้ม อายุ ≥ 50 ปี",
-    group: "ppa",
-  },
-  {
-    label: "NCD01 (คัดกรอง DM/HT)",
-    href: "/pages/ppa/ncd01",
-    icon: HeartPulse,
-    desc: "ข้อมูลการคัดกรองโรคเรื้อรัง",
-    group: "ppa",
-  },
-  {
-    label: "NCD02 (R73/R030)",
-    href: "/pages/ppa/ncd02",
-    icon: Droplet,
-    desc: "วินิจฉัย R73 หรือ R030",
     group: "ppa",
   },
   {
@@ -429,6 +415,20 @@ export const PPA_ITEMS: SidebarItem[] = [
     href: "/pages/ppa/mch04",
     icon: Baby,
     desc: "คัดกรองพัฒนาการเด็ก DSPM",
+    group: "ppa",
+  },
+  {
+    label: "NCD01 (คัดกรอง DM/HT)",
+    href: "/pages/ppa/ncd01",
+    icon: HeartPulse,
+    desc: "ข้อมูลการคัดกรองโรคเรื้อรัง",
+    group: "ppa",
+  },
+  {
+    label: "NCD02 (R73/R030)",
+    href: "/pages/ppa/ncd02",
+    icon: Droplet,
+    desc: "วินิจฉัย R73 หรือ R030",
     group: "ppa",
   },
 ];
