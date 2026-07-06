@@ -485,6 +485,10 @@ function PersonTable({
 }: { visits: PersonVisit[]; columns: StageColumn[]; total: number; truncated: boolean }) {
     const [q, setQ] = useState("");
 
+    const toDMY = (iso: string) => {
+        const [y, m, d] = iso.split("-");
+        return `${d}/${m}/${Number(y) + 543}`; // พ.ศ. — เช่น 05/07/2569
+    };
     const filtered = useMemo(() => {
         const s = q.trim();
         if (!s) return visits;
@@ -494,7 +498,7 @@ function PersonTable({
     const exportPersons = () => {
         const data = filtered.map((v) => {
             const o: Record<string, unknown> = {
-                VN: v.vn, HN: v.hn, คลินิก: v.department, มาถึง: toHM(v.arrivalMinute),
+                VN: v.vn, HN: v.hn, วันที่: toDMY(v.date), คลินิก: v.department, มาถึง: toHM(v.arrivalMinute),
             };
             for (const c of columns) o[`${c.short} (นาที)`] = v.values[c.key] ?? "";
             o["รวม (นาที)"] = v.total ?? "";
@@ -526,7 +530,7 @@ function PersonTable({
                     onClick={exportPersons}
                     className="inline-flex items-center gap-1.5 rounded-lg bg-green-700 px-3 py-1.5 text-xs font-semibold text-white hover:bg-green-800 transition-colors"
                 >
-                    <Download size={13} /> โหลด Excel
+                    <Download size={13} /> Excel
                 </button>
                 <span className="text-xs text-gray-500">
                     {fmt(filtered.length)}{q ? ` / ${fmt(visits.length)}` : ""} ราย
@@ -538,8 +542,9 @@ function PersonTable({
                 <table className="w-full text-xs">
                     <thead className="sticky top-0 z-10 bg-white">
                         <tr className="text-gray-400 border-b-2 border-gray-100 text-left whitespace-nowrap">
-                            <th className="py-2 pr-2 font-medium sticky left-0 bg-white">VN</th>
+                            <th className="py-2 pr-2 font-medium sticky left-0 bg-white z-20">VN</th>
                             <th className="py-2 px-2 font-medium">HN</th>
+                            <th className="py-2 px-2 font-medium">วันที่</th>
                             <th className="py-2 px-2 font-medium">คลินิก</th>
                             <th className="py-2 px-2 font-medium text-right">มาถึง</th>
                             {columns.map((c) => (
@@ -548,14 +553,15 @@ function PersonTable({
                                     {c.short}
                                 </th>
                             ))}
-                            <th className="py-2 pl-2 font-medium text-right">รวม</th>
+                            <th className="py-2 pl-2 pr-3 font-medium text-right sticky right-0 bg-green-50 text-green-800 z-20 shadow-[-4px_0_6px_-4px_rgba(0,0,0,0.15)]">รวม</th>
                         </tr>
                     </thead>
                     <tbody>
                         {filtered.map((v) => (
                             <tr key={v.vn} className="border-b border-gray-50 hover:bg-gray-50/60">
-                                <td className="py-1.5 pr-2 tabular-nums text-gray-700 sticky left-0 bg-white">{v.vn}</td>
+                                <td className="py-1.5 pr-2 tabular-nums text-gray-700 sticky left-0 bg-white z-10">{v.vn}</td>
                                 <td className="py-1.5 px-2 tabular-nums text-gray-500">{v.hn || "-"}</td>
+                                <td className="py-1.5 px-2 tabular-nums text-gray-600">{toDMY(v.date)}</td>
                                 <td className="py-1.5 px-2 text-gray-600 truncate max-w-[130px]" title={v.department}>{v.department}</td>
                                 <td className="py-1.5 px-2 text-right tabular-nums text-gray-500">{toHM(v.arrivalMinute)}</td>
                                 {columns.map((c) => (
@@ -563,13 +569,13 @@ function PersonTable({
                                         {v.values[c.key] == null ? "–" : Math.round(v.values[c.key]!)}
                                     </td>
                                 ))}
-                                <td className="py-1.5 pl-2 text-right tabular-nums font-bold text-gray-800">
+                                <td className="py-1.5 pl-2 pr-3 text-right tabular-nums font-bold text-green-800 sticky right-0 bg-green-50 z-10 shadow-[-4px_0_6px_-4px_rgba(0,0,0,0.15)]">
                                     {v.total == null ? "–" : Math.round(v.total)}
                                 </td>
                             </tr>
                         ))}
                         {filtered.length === 0 && (
-                            <tr><td colSpan={columns.length + 5} className="py-8 text-center text-gray-400">ไม่พบข้อมูล</td></tr>
+                            <tr><td colSpan={columns.length + 6} className="py-8 text-center text-gray-400">ไม่พบข้อมูล</td></tr>
                         )}
                     </tbody>
                 </table>
@@ -1018,7 +1024,7 @@ export default function ServiceTimeDashboardPage() {
                                 onClick={exportClinics}
                                 className="inline-flex items-center gap-1.5 rounded-lg bg-green-700 px-3 py-1.5 text-xs font-semibold text-white hover:bg-green-800 transition-colors shrink-0"
                             >
-                                <Download size={13} /> โหลด Excel
+                                <Download size={13} /> Excel
                             </button>
                         </div>
                         <ClinicStageTable

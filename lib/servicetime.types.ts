@@ -119,9 +119,10 @@ export interface PersonVisit {
   vn: string;
   hn: string;
   department: string;
-  arrivalMinute: number | null; // นาทีของวัน (สำหรับ HH:MM "มาถึง")
+  date: string; // YYYY-MM-DD — วันที่ของ visit นี้ (vstdate)
+  arrivalMinute: number | null;
   total: number | null;
-  values: Record<string, number | null>; // นาทีแต่ละขั้นตอน (คีย์ = StageColumn.key)
+  values: Record<string, number | null>;
 }
 
 export interface ServiceTimeData {

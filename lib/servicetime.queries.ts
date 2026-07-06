@@ -705,6 +705,7 @@ export async function getServiceTime(
       vn: r.vn,
       hn: r.hn ?? "",
       department: depOf(r.doctor_department),
+      date: String(r.vstdate).slice(0, 10),
       arrivalMinute: r.arrival_minute ?? null,
       total: isValid(r.total_opd_min) ? round1(r.total_opd_min!) : null,
       values,
