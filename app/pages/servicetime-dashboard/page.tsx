@@ -37,14 +37,14 @@ const fmt = (n: number) => n.toLocaleString("th-TH");
 const mins = (v: number | null) => (v == null ? "-" : `${v} นาที`);
 const tip = { contentStyle: { fontSize: 12, borderRadius: 8, border: "1px solid #e5e7eb" } };
 
-// สีตาม “เฉลี่ยเทียบเป้า” (ยิ่งน้อยยิ่งดี)
+// สีตาม "เฉลี่ยเทียบเป้า" (ยิ่งน้อยยิ่งดี)
 function timeColor(avg: number | null, target: number | null): { accent: string; bg: string } {
     if (avg == null || target == null) return { accent: C.gray, bg: C.grayL };
     if (avg <= target) return { accent: C.green, bg: C.greenL };
     if (avg <= target * 1.5) return { accent: C.amber, bg: C.amberL };
     return { accent: C.red, bg: C.redL };
 }
-// สีตาม “%ผ่านเกณฑ์” (ยิ่งมากยิ่งดี) — goal = เป้าหมาย % (ปรับได้)
+// สีตาม "%ผ่านเกณฑ์" (ยิ่งมากยิ่งดี) — goal = เป้าหมาย % (ปรับได้)
 function pctColor(pct: number | null, goal = 80): { accent: string; bg: string } {
     if (pct == null) return { accent: C.gray, bg: C.grayL };
     if (pct >= goal) return { accent: C.green, bg: C.greenL };
@@ -222,6 +222,11 @@ const stageShort = (key: string, fallback: string) => STAGE_META[key]?.short ?? 
 // นาทีของวัน → "HH:MM"
 const toHM = (m: number | null) =>
     m == null ? "-" : `${String(Math.floor(m / 60) % 24).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`;
+// ISO date (YYYY-MM-DD) → DD/MM/พ.ศ.
+const toDMY = (iso: string) => {
+    const [y, m, d] = iso.split("-");
+    return `${d}/${m}/${Number(y) + 543}`;
+};
 
 // ─── ตารางแยกรายคลินิก × รายขั้นตอน ───────────────────────────────────────────
 function ClinicStageTable({
@@ -484,16 +489,21 @@ function PersonTable({
     visits, columns, total, truncated,
 }: { visits: PersonVisit[]; columns: StageColumn[]; total: number; truncated: boolean }) {
     const [q, setQ] = useState("");
+    const [clinicFilter, setClinicFilter] = useState("all");
 
-    const toDMY = (iso: string) => {
-        const [y, m, d] = iso.split("-");
-        return `${d}/${m}/${Number(y) + 543}`; // พ.ศ. — เช่น 05/07/2569
-    };
+    const clinicOptions = useMemo(
+        () => [...new Set(visits.map((v) => v.department))].sort((a, b) => a.localeCompare(b, "th")),
+        [visits],
+    );
+
     const filtered = useMemo(() => {
         const s = q.trim();
-        if (!s) return visits;
-        return visits.filter((v) => v.vn.includes(s) || v.hn.includes(s));
-    }, [visits, q]);
+        return visits.filter((v) => {
+            const matchQ = !s || v.vn.includes(s) || v.hn.includes(s);
+            const matchClinic = clinicFilter === "all" || v.department === clinicFilter;
+            return matchQ && matchClinic;
+        });
+    }, [visits, q, clinicFilter]);
 
     const exportPersons = () => {
         const data = filtered.map((v) => {
@@ -526,14 +536,25 @@ function PersonTable({
                         className="rounded-lg border border-gray-200 bg-white pl-8 pr-3 py-1.5 text-sm text-gray-700 shadow-sm focus:outline-none focus:ring-2 focus:ring-green-600/30"
                     />
                 </div>
+                <select
+                    value={clinicFilter}
+                    onChange={(e) => setClinicFilter(e.target.value)}
+                    className="rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-sm text-gray-700 shadow-sm focus:outline-none focus:ring-2 focus:ring-green-600/30 min-w-[140px]"
+                    title="กรองคลินิก"
+                >
+                    <option value="all">ทุกคลินิก</option>
+                    {clinicOptions.map((c) => (
+                        <option key={c} value={c}>{c}</option>
+                    ))}
+                </select>
                 <button
                     onClick={exportPersons}
                     className="inline-flex items-center gap-1.5 rounded-lg bg-green-700 px-3 py-1.5 text-xs font-semibold text-white hover:bg-green-800 transition-colors"
                 >
-                    <Download size={13} /> Excel
+                    <Download size={13} /> โหลด Excel
                 </button>
                 <span className="text-xs text-gray-500">
-                    {fmt(filtered.length)}{q ? ` / ${fmt(visits.length)}` : ""} ราย
+                    {fmt(filtered.length)}{(q || clinicFilter !== "all") ? ` / ${fmt(visits.length)}` : ""} ราย
                     {truncated && <span className="text-amber-600"> · แสดง {fmt(visits.length)} จาก {fmt(total)} (ปรับตัวกรองให้แคบลงเพื่อดูครบ)</span>}
                 </span>
             </div>
