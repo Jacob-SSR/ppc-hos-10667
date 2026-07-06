@@ -31,6 +31,35 @@ export interface ServiceTimeSummary {
   walkinVisits: number;
   erVisits: number;
   total: StageStat; // ระยะเวลารวม OPD (คัดกรอง → รับยา)
+  within120Pct: number | null; // % visit ที่เวลารวม ≤ 120 นาที (เกณฑ์ตายตัว แยกจากเป้าหมายที่ปรับได้)
+  bottleneckKey: string | null; // ขั้นตอน "รอ" ที่เฉลี่ยนานสุด (ภาพรวม)
+  bottleneckLabel: string | null; // ป้ายสั้นของขั้นตอนคอขวด
+}
+
+/** จำนวนผู้ป่วยที่ "เริ่ม" แต่ละขั้นตอนในชั่วโมงนั้น ๆ — คีย์ = StageStat.key, ค่า = จำนวนคน */
+export interface HourlyStagePoint {
+  hour: number; // 0-23
+  [stageKey: string]: number;
+}
+
+export interface WaitBucketCell {
+  label: string; // ป้ายช่วงเวลา เช่น "≤15 นาที"
+  count: number;
+}
+
+/** การกระจายจำนวนคนตามช่วงเวลารอ ของ 1 ขั้นตอน */
+export interface WaitBucketRow {
+  key: string;
+  label: string;
+  total: number; // จำนวน visit ที่มีค่าคำนวณได้ (ผลรวมทุก bucket)
+  buckets: WaitBucketCell[];
+}
+
+/** ภาพรวมรายชั่วโมง — จำนวนผู้ป่วยมาถึง + เวลารวมเฉลี่ย ของผู้ป่วยที่มาถึงชั่วโมงนั้น */
+export interface HourlyOverviewPoint {
+  hour: number; // 0-23
+  visits: number;
+  avgTotal: number | null;
 }
 
 export interface TrendPoint {
@@ -107,11 +136,15 @@ export interface ServiceTimeData {
   targetTotal: number; // เป้าหมายเวลารวม (นาที) ที่ใช้คำนวณรอบนี้
   summary: ServiceTimeSummary;
   stages: StageStat[]; // ขั้นตอนหลักในเส้นทาง (แผงภาพรวม + กราฟองค์ประกอบ)
+  allStages: StageStat[]; // ทุกขั้นตอน รวม lab/xray (ใช้กราฟเวลาเฉลี่ยแนวนอน 1-N)
   stageColumns: StageColumn[]; // ทุกขั้นตอน (รวม lab/xray) สำหรับหัวตาราง
   trend: TrendPoint[];
   distribution: DistributionBucket[];
   byDepartment: DepartmentRow[]; // ทุกคลินิก (กรองตามเวร ไม่กรองตามคลินิก) — ใช้เป็นตัวนำทาง
   hourly: HourlyRow[];
+  hourlyStages: HourlyStagePoint[]; // จำนวนคนที่เริ่มแต่ละขั้นตอน แยกตามชั่วโมง (ใช้กราฟเส้นหลายเส้น)
+  waitBuckets: WaitBucketRow[]; // การกระจายช่วงเวลารอ แยกรายขั้นตอน (ใช้กราฟแท่งซ้อนแนวนอน)
+  hourlyOverview: HourlyOverviewPoint[]; // ผู้ป่วยมาถึง + เวลารวมเฉลี่ย แยกรายชั่วโมง (ใช้กราฟรวม แท่ง+เส้น)
   lab: AncillaryStat;
   xray: AncillaryStat;
   visits: PersonVisit[]; // ข้อมูลรายบุคคล (ตามตัวกรอง, cap 5000)

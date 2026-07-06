@@ -16,6 +16,9 @@ import type {
   DepartmentRow,
   HourlyRow,
   AncillaryStat,
+  HourlyStagePoint,
+  WaitBucketRow,
+  HourlyOverviewPoint,
 } from "@/lib/servicetime.types";
 
 // ─── เป้าหมาย (นาที) — ปรับได้ตามเอกสารตัวชี้วัด R9 ────────────────────────────
@@ -63,6 +66,8 @@ export const STAGE_DEFS: {
   isWait: boolean;
   inFlow: boolean;
   pick: (r: VisitRow) => number | null;
+  /** ชั่วโมงที่ "เริ่ม" ขั้นตอนนี้ (0-23) — ใช้กราฟจำนวนคนรายชั่วโมงแยกตามขั้นตอน */
+  pickHour: (r: VisitRow) => number | null;
 }[] = [
   {
     key: "wait_screening",
@@ -72,6 +77,7 @@ export const STAGE_DEFS: {
     isWait: true,
     inFlow: true,
     pick: (r) => r.wait_screening_min,
+    pickHour: (r) => r.arrival_hour,
   },
   {
     key: "screening",
@@ -81,6 +87,7 @@ export const STAGE_DEFS: {
     isWait: false,
     inFlow: true,
     pick: (r) => r.screening_min,
+    pickHour: (r) => r.screening_start_hour,
   },
   {
     key: "wait_doctor",
@@ -90,6 +97,7 @@ export const STAGE_DEFS: {
     isWait: true,
     inFlow: true,
     pick: (r) => r.wait_doctor_min,
+    pickHour: (r) => r.wait_doctor_start_hour,
   },
   {
     key: "consult",
@@ -99,6 +107,7 @@ export const STAGE_DEFS: {
     isWait: false,
     inFlow: true,
     pick: (r) => r.consult_min,
+    pickHour: (r) => r.consult_start_hour,
   },
   {
     key: "lab_wait",
@@ -108,6 +117,7 @@ export const STAGE_DEFS: {
     isWait: true,
     inFlow: false,
     pick: (r) => r.lab_wait_receive_minutes,
+    pickHour: (r) => r.lab_wait_start_hour,
   },
   {
     key: "lab_process",
@@ -117,6 +127,7 @@ export const STAGE_DEFS: {
     isWait: false,
     inFlow: false,
     pick: (r) => r.lab_process_minutes,
+    pickHour: (r) => r.lab_process_start_hour,
   },
   {
     key: "xray_wait",
@@ -126,6 +137,7 @@ export const STAGE_DEFS: {
     isWait: true,
     inFlow: false,
     pick: (r) => r.xray_wait_minutes,
+    pickHour: (r) => r.xray_wait_start_hour,
   },
   {
     key: "xray_process",
@@ -135,6 +147,7 @@ export const STAGE_DEFS: {
     isWait: false,
     inFlow: false,
     pick: (r) => r.xray_process_minutes,
+    pickHour: (r) => r.xray_process_start_hour,
   },
   {
     key: "wait_pharmacy",
@@ -144,6 +157,7 @@ export const STAGE_DEFS: {
     isWait: true,
     inFlow: true,
     pick: (r) => r.wait_pharmacy_min,
+    pickHour: (r) => r.wait_pharmacy_start_hour,
   },
 ];
 
@@ -185,6 +199,14 @@ SELECT
   TIMESTAMPDIFF(MINUTE, v.dt_call_doctor,     v.dt_end_doctor)       AS consult_min,
   TIMESTAMPDIFF(MINUTE, v.dt_arrive_pharmacy, v.dt_receive_drug)     AS wait_pharmacy_min,
   v.total_opd_minutes                                               AS total_opd_min,
+  HOUR(v.dt_start_screening)  AS screening_start_hour,
+  HOUR(v.dt_end_screening)    AS wait_doctor_start_hour,
+  HOUR(v.dt_call_doctor)      AS consult_start_hour,
+  HOUR(v.dt_arrive_pharmacy)  AS wait_pharmacy_start_hour,
+  v.lab_order_hour            AS lab_wait_start_hour,
+  v.lab_receive_hour          AS lab_process_start_hour,
+  v.xray_order_hour           AS xray_wait_start_hour,
+  v.xray_exam_hour            AS xray_process_start_hour,
   v.lab_item_count,
   v.lab_wait_receive_minutes,
   v.lab_process_minutes,
@@ -238,11 +260,15 @@ FROM (
     TIMESTAMPDIFF(MINUTE, lh.lab_order_time,   lh.lab_receive_time) AS lab_wait_receive_minutes,
     TIMESTAMPDIFF(MINUTE, lh.lab_receive_time, lh.lab_report_time)  AS lab_process_minutes,
     TIMESTAMPDIFF(MINUTE, lh.lab_order_time,   lh.lab_report_time)  AS lab_total_minutes,
+    HOUR(lh.lab_order_time)   AS lab_order_hour,
+    HOUR(lh.lab_receive_time) AS lab_receive_hour,
 
     xr.xray_item_count,
     TIMESTAMPDIFF(MINUTE, xr.xray_order_time, xr.xray_exam_time)   AS xray_wait_minutes,
     TIMESTAMPDIFF(MINUTE, xr.xray_exam_time,  xr.xray_report_time) AS xray_process_minutes,
-    TIMESTAMPDIFF(MINUTE, xr.xray_order_time, xr.xray_report_time) AS xray_total_minutes
+    TIMESTAMPDIFF(MINUTE, xr.xray_order_time, xr.xray_report_time) AS xray_total_minutes,
+    HOUR(xr.xray_order_time) AS xray_order_hour,
+    HOUR(xr.xray_exam_time)  AS xray_exam_hour
 
   FROM service_time st
   LEFT JOIN kskdepartment d5 ON d5.depcode = st.service5_dep
@@ -300,6 +326,14 @@ interface VisitRow extends RowDataPacket {
   consult_min: number | null;
   wait_pharmacy_min: number | null;
   total_opd_min: number | null;
+  screening_start_hour: number | null;
+  wait_doctor_start_hour: number | null;
+  consult_start_hour: number | null;
+  wait_pharmacy_start_hour: number | null;
+  lab_wait_start_hour: number | null;
+  lab_process_start_hour: number | null;
+  xray_wait_start_hour: number | null;
+  xray_process_start_hour: number | null;
   lab_item_count: number | null;
   lab_wait_receive_minutes: number | null;
   lab_process_minutes: number | null;
@@ -443,6 +477,9 @@ export async function getServiceTime(
   const stages: StageStat[] = STAGE_DEFS.filter((d) => d.inFlow).map((d) =>
     stageStat(d.key, d.label, d.target, rows.map(d.pick)),
   );
+  const allStages: StageStat[] = STAGE_DEFS.map((d) =>
+    stageStat(d.key, d.label, d.target, rows.map(d.pick)),
+  );
 
   const totalStage = stageStat(
     "total",
@@ -553,6 +590,81 @@ export async function getServiceTime(
     visits: hourMap.get(h) ?? 0,
   }));
 
+  // ── จำนวนคนที่ "เริ่ม" แต่ละขั้นตอน แยกตามชั่วโมง (กราฟเส้นหลายเส้น) ──
+  const hourlyStages: HourlyStagePoint[] = Array.from(
+    { length: 24 },
+    (_, h) => {
+      const point: HourlyStagePoint = { hour: h };
+      for (const d of STAGE_DEFS) {
+        point[d.key] = rows.filter(
+          (r) => isValid(d.pick(r)) && d.pickHour(r) === h,
+        ).length;
+      }
+      return point;
+    },
+  );
+
+  // ── การกระจายช่วงเวลารอ แยกรายขั้นตอน (กราฟแท่งซ้อนแนวนอน) ──
+  const WAIT_BUCKET_DEFS: { label: string; test: (v: number) => boolean }[] = [
+    { label: "≤15 นาที", test: (v) => v <= 15 },
+    { label: "16-30 นาที", test: (v) => v > 15 && v <= 30 },
+    { label: "31-60 นาที", test: (v) => v > 30 && v <= 60 },
+    { label: "61-120 นาที", test: (v) => v > 60 && v <= 120 },
+    { label: ">120 นาที", test: (v) => v > 120 },
+  ];
+  const waitBuckets: WaitBucketRow[] = STAGE_DEFS.map((d) => {
+    const vals = rows.map(d.pick).filter(isValid) as number[];
+    return {
+      key: d.key,
+      label: d.label,
+      total: vals.length,
+      buckets: WAIT_BUCKET_DEFS.map((b) => ({
+        label: b.label,
+        count: vals.filter(b.test).length,
+      })),
+    };
+  });
+
+  // ── ภาพรวมรายชั่วโมง: ผู้ป่วยมาถึง + เวลารวมเฉลี่ย ──
+  const totalByArrivalHour = new Map<number, number[]>();
+  for (const r of rows) {
+    if (r.arrival_hour == null) continue;
+    const h = Number(r.arrival_hour);
+    if (h < 0 || h > 23) continue;
+    if (!totalByArrivalHour.has(h)) totalByArrivalHour.set(h, []);
+    if (isValid(r.total_opd_min))
+      totalByArrivalHour.get(h)!.push(r.total_opd_min!);
+  }
+  const hourlyOverview: HourlyOverviewPoint[] = hourly.map((h) => {
+    const totals = totalByArrivalHour.get(h.hour) ?? [];
+    return {
+      hour: h.hour,
+      visits: h.visits,
+      avgTotal: totals.length
+        ? round1(totals.reduce((a, b) => a + b, 0) / totals.length)
+        : null,
+    };
+  });
+
+  // ── ตัวชี้วัดภาพรวม: %เสร็จภายใน 120 นาที (เกณฑ์ตายตัว) + จุดคอขวด ──
+  const within120Pct = withinPct(
+    rows.map((r) => r.total_opd_min),
+    120,
+  );
+  let bottleneckKey: string | null = null;
+  let bottleneckAvg = -1;
+  for (const d of STAGE_DEFS) {
+    if (!d.isWait || !d.inFlow) continue;
+    const s = stages.find((x) => x.key === d.key);
+    if (s?.stat.avg != null && s.stat.avg > bottleneckAvg) {
+      bottleneckAvg = s.stat.avg;
+      bottleneckKey = d.key;
+    }
+  }
+  const bottleneckLabel = bottleneckKey
+    ? (STAGE_DEFS.find((d) => d.key === bottleneckKey)?.short ?? null)
+    : null;
+
   // ── lab / xray ──
   const lab = ancillary(
     rows.map((r) => r.lab_wait_receive_minutes),
@@ -616,13 +728,20 @@ export async function getServiceTime(
       walkinVisits,
       erVisits,
       total: totalStage,
+      within120Pct,
+      bottleneckKey,
+      bottleneckLabel,
     },
     stages,
+    allStages,
     stageColumns,
     trend,
     distribution,
     byDepartment,
     hourly,
+    hourlyStages,
+    waitBuckets,
+    hourlyOverview,
     lab,
     xray,
     visits,

@@ -3,12 +3,12 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
     ComposedChart, Bar, Line, XAxis, YAxis, Tooltip, CartesianGrid,
-    ResponsiveContainer, BarChart, Cell,
+    ResponsiveContainer, BarChart, Cell, LineChart,
 } from "recharts";
 import {
     Users, Clock, Timer, Target, Stethoscope, Pill, FlaskConical, Scan,
     UserCheck, Hourglass, Gauge, Layers, Download, AlertTriangle, Settings, X,
-    Calendar, RotateCcw, Search, ClipboardList,
+    Calendar, RotateCcw, Search, ClipboardList, AlarmClockCheck, TrendingUp,
 } from "lucide-react";
 import { exportToExcel } from "@/lib/exportExcel";
 import DatePicker from "react-datepicker";
@@ -20,6 +20,7 @@ import { fmtDate, getBangkokToday, toThaiDateLabel, fiscalYearRange, recentFisca
 import type {
     ServiceTimeData, ServiceScope, VisitType, StageStat, AncillaryStat,
     DepartmentRow, ServiceShift, StageColumn, PersonVisit,
+    HourlyStagePoint, WaitBucketRow,
 } from "@/lib/servicetime.types";
 
 // ─── palette ──────────────────────────────────────────────────────────────────
@@ -33,7 +34,7 @@ const C = {
     gray: "#888780", grayL: "#f1efe8",
 };
 const fmt = (n: number) => n.toLocaleString("th-TH");
-const mins = (v: number | null) => (v == null ? "-" : `${v} น.`);
+const mins = (v: number | null) => (v == null ? "-" : `${v} นาที`);
 const tip = { contentStyle: { fontSize: 12, borderRadius: 8, border: "1px solid #e5e7eb" } };
 
 // สีตาม “เฉลี่ยเทียบเป้า” (ยิ่งน้อยยิ่งดี)
@@ -159,7 +160,7 @@ function StageRow({ s }: { s: StageStat }) {
                     <div
                         className="absolute top-[-2px] bottom-[-2px] w-0.5 bg-gray-500"
                         style={{ left: `${targetPct}%` }}
-                        title={`เป้า ≤ ${target} น.`}
+                        title={`เป้า ≤ ${target} นาที`}
                     />
                 )}
             </div>
@@ -196,7 +197,7 @@ function AncillaryCard({
                 <span className="text-gray-500">visit ที่มีรายการ: {fmt(data.itemVisits)}</span>
                 {data.withinTargetPct != null && (
                     <span className="font-bold" style={{ color: accent }}>
-                        ≤ {data.target} น. = {data.withinTargetPct}%
+                        ≤ {data.target} นาที = {data.withinTargetPct}%
                     </span>
                 )}
             </div>
@@ -249,7 +250,7 @@ function ClinicStageTable({
                             </th>
                         ))}
                         <th className="py-2 px-2 font-medium text-right">รวม (มัธยฐาน)</th>
-                        <th className="py-2 px-2 font-medium text-right">≤ {totalTarget} น.</th>
+                        <th className="py-2 px-2 font-medium text-right">≤ {totalTarget} นาที</th>
                         <th className="py-2 pl-2 font-medium">สถานะ</th>
                     </tr>
                 </thead>
@@ -326,14 +327,14 @@ function ClinicStackChart({ rows, stages }: { rows: DepartmentRow[]; stages: Sta
         <ResponsiveContainer width="100%" height={h}>
             <BarChart data={data} layout="vertical" margin={{ top: 4, right: 12, bottom: 0, left: 8 }}>
                 <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#eee" />
-                <XAxis type="number" tick={{ fontSize: 11 }} unit=" น." />
+                <XAxis type="number" tick={{ fontSize: 11 }} unit=" นาที" />
                 <YAxis
                     type="category" dataKey="department" width={110}
                     tick={{ fontSize: 11 }}
                     tickFormatter={(v: string) => (v.length > 12 ? v.slice(0, 12) + "…" : v)}
                 />
                 <Tooltip
-                    formatter={(v, n) => [`${v} น.`, stageShort(String(n), String(n))]}
+                    formatter={(v, n) => [`${v} นาที`, stageShort(String(n), String(n))]}
                     {...tip}
                 />
                 {stages.map((s) => (
@@ -341,6 +342,140 @@ function ClinicStackChart({ rows, stages }: { rows: DepartmentRow[]; stages: Sta
                 ))}
             </BarChart>
         </ResponsiveContainer>
+    );
+}
+
+// ─── กราฟเวลาเฉลี่ยแต่ละขั้นตอน (แนวนอน) ──────────────────────────────────────
+function StageAvgBarChart({ stages }: { stages: StageStat[] }) {
+    const data = stages.map((s, i) => ({
+        idx: i + 1,
+        name: `${i + 1}.${stageShort(s.key, s.label)}`,
+        key: s.key,
+        avg: s.stat.avg ?? 0,
+    }));
+    const h = Math.max(220, data.length * 34 + 40);
+    return (
+        <ResponsiveContainer width="100%" height={h}>
+            <BarChart data={data} layout="vertical" margin={{ top: 4, right: 16, bottom: 0, left: 8 }}>
+                <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#eee" />
+                <XAxis type="number" tick={{ fontSize: 11 }} />
+                <YAxis type="category" dataKey="name" width={110} tick={{ fontSize: 11 }} />
+                <Tooltip formatter={(v) => [`${v} นาที`, "เฉลี่ย"]} {...tip} />
+                <Bar dataKey="avg" radius={[0, 4, 4, 0]}>
+                    {data.map((d) => <Cell key={d.key} fill={stageColor(d.key)} />)}
+                </Bar>
+            </BarChart>
+        </ResponsiveContainer>
+    );
+}
+
+// ─── กราฟจำนวนผู้ป่วยรายชั่วโมง แยกตามขั้นตอน (เส้น + toggle) ───────────────────
+function HourlyStageLineChart({ data, stages }: { data: HourlyStagePoint[]; stages: StageColumn[] }) {
+    const [visible, setVisible] = useState<Record<string, boolean>>(() =>
+        Object.fromEntries(stages.map((s) => [s.key, true])),
+    );
+    const allOn = stages.every((s) => visible[s.key]);
+    const allOff = stages.every((s) => !visible[s.key]);
+    const setAll = (v: boolean) => setVisible(Object.fromEntries(stages.map((s) => [s.key, v])));
+    const toggle = (key: string) => setVisible((p) => ({ ...p, [key]: !p[key] }));
+
+    return (
+        <div>
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 mb-2 text-[11px]">
+                <button
+                    onClick={() => setAll(true)}
+                    className={`inline-flex items-center gap-1 font-semibold ${allOn ? "text-green-700" : "text-gray-400 hover:text-gray-600"}`}
+                >
+                    ✓ ทั้งหมด
+                </button>
+                <button
+                    onClick={() => setAll(false)}
+                    className={`inline-flex items-center gap-1 font-semibold ${allOff ? "text-red-600" : "text-gray-400 hover:text-gray-600"}`}
+                >
+                    ✕ ซ่อนทั้งหมด
+                </button>
+                {stages.map((s, i) => (
+                    <button
+                        key={s.key}
+                        onClick={() => toggle(s.key)}
+                        className={`inline-flex items-center gap-1.5 ${visible[s.key] ? "text-gray-600" : "text-gray-300"}`}
+                    >
+                        <span
+                            className="w-2.5 h-2.5 rounded-full"
+                            style={{ backgroundColor: visible[s.key] ? stageColor(s.key) : "#e5e7eb" }}
+                        />
+                        {i + 1}.{s.short}
+                    </button>
+                ))}
+            </div>
+            <ResponsiveContainer width="100%" height={280}>
+                <LineChart data={data} margin={{ top: 8, right: 8, bottom: 0, left: -12 }}>
+                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#eee" />
+                    <XAxis dataKey="hour" tick={{ fontSize: 10 }} interval={1} tickFormatter={(h) => `${h}:00`} />
+                    <YAxis tick={{ fontSize: 11 }} allowDecimals={false} />
+                    <Tooltip labelFormatter={(h) => `${h}:00 นาที`} {...tip} />
+                    {stages.filter((s) => visible[s.key]).map((s) => (
+                        <Line
+                            key={s.key} type="monotone" dataKey={s.key} name={s.short}
+                            stroke={stageColor(s.key)} strokeWidth={2} dot={false}
+                        />
+                    ))}
+                </LineChart>
+            </ResponsiveContainer>
+        </div>
+    );
+}
+
+// ─── กราฟจำนวนคนตามช่วงเวลารอของแต่ละขั้นตอน (แท่งซ้อนแนวนอน) ───────────────────
+const BUCKET_COLORS = ["#2f9e6a", "#84cc16", "#ef9f27", "#f2711c", "#e24b4a"];
+function WaitBucketChart({ rows }: { rows: WaitBucketRow[] }) {
+    const [visible, setVisible] = useState<Record<string, boolean>>(() =>
+        Object.fromEntries(rows.map((r) => [r.key, true])),
+    );
+    const toggle = (key: string) => setVisible((p) => ({ ...p, [key]: !p[key] }));
+    const shown = rows.filter((r) => visible[r.key]);
+    const bucketLabels = rows[0]?.buckets.map((b) => b.label) ?? [];
+    const data = shown.map((r) => {
+        const o: Record<string, string | number> = { name: `${rows.findIndex((x) => x.key === r.key) + 1}.${stageShort(r.key, r.label)}` };
+        r.buckets.forEach((b) => { o[b.label] = b.count; });
+        return o;
+    });
+    const h = Math.max(220, data.length * 34 + 50);
+    return (
+        <div>
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 mb-2 text-[11px]">
+                {rows.map((r, i) => (
+                    <button
+                        key={r.key}
+                        onClick={() => toggle(r.key)}
+                        className={`inline-flex items-center gap-1.5 ${visible[r.key] ? "text-gray-600 font-medium" : "text-gray-300"}`}
+                        title="คลิกเพื่อเปิด/ปิดแถวนี้"
+                    >
+                        <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: visible[r.key] ? stageColor(r.key) : "#e5e7eb" }} />
+                        {i + 1}.{stageShort(r.key, r.label)}
+                    </button>
+                ))}
+            </div>
+            <ResponsiveContainer width="100%" height={h}>
+                <BarChart data={data} layout="vertical" margin={{ top: 4, right: 16, bottom: 0, left: 8 }}>
+                    <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#eee" />
+                    <XAxis type="number" tick={{ fontSize: 11 }} allowDecimals={false} />
+                    <YAxis type="category" dataKey="name" width={110} tick={{ fontSize: 11 }} />
+                    <Tooltip formatter={(v, n) => [`${fmt(v as number)} คน`, n]} {...tip} />
+                    {bucketLabels.map((label, i) => (
+                        <Bar key={label} dataKey={label} stackId="wait" fill={BUCKET_COLORS[i] ?? C.gray} />
+                    ))}
+                </BarChart>
+            </ResponsiveContainer>
+            <div className="flex flex-wrap gap-x-4 gap-y-1 mt-2 text-[11px] text-gray-500">
+                {bucketLabels.map((label, i) => (
+                    <span key={label} className="inline-flex items-center gap-1.5">
+                        <span className="w-2.5 h-2.5 rounded-sm" style={{ backgroundColor: BUCKET_COLORS[i] ?? C.gray }} />
+                        {label}
+                    </span>
+                ))}
+            </div>
+        </div>
     );
 }
 
@@ -529,12 +664,48 @@ export default function ServiceTimeDashboardPage() {
         return [
             { icon: Users, label: "จำนวน Visit", value: fmt(summary.totalVisits), sub: `ครบ flow ${fmt(summary.completeFlowVisits)}`, ...({ accent: C.blue, bg: C.blueL }) },
             { icon: Clock, label: "ระยะเวลารวมเฉลี่ย", value: mins(total.stat.avg), sub: `มัธยฐาน ${mins(total.stat.median)} · P90 ${mins(total.stat.p90)}`, ...timeColor(total.stat.avg, total.target) },
-            { icon: Target, label: `ผ่านเกณฑ์ ≤ ${total.target} น.`, value: total.withinTargetPct != null ? `${total.withinTargetPct}%` : "-", sub: `เป้า ≥ ${pctGoal}% ของ visit ครบ flow`, ...pctColor(total.withinTargetPct, pctGoal) },
-            { icon: Stethoscope, label: "รอตรวจเฉลี่ย", value: mins(waitDoc?.stat.avg ?? null), sub: `เป้า ≤ ${waitDoc?.target} น.`, ...timeColor(waitDoc?.stat.avg ?? null, waitDoc?.target ?? null) },
-            { icon: Pill, label: "รอรับยาเฉลี่ย", value: mins(waitPh?.stat.avg ?? null), sub: `เป้า ≤ ${waitPh?.target} น.`, ...timeColor(waitPh?.stat.avg ?? null, waitPh?.target ?? null) },
-            { icon: FlaskConical, label: "Lab TAT เฉลี่ย", value: mins(data.lab.total.avg), sub: `≤ ${data.lab.target} น. = ${data.lab.withinTargetPct ?? "-"}%`, ...timeColor(data.lab.total.avg, data.lab.target) },
+            { icon: Target, label: `ผ่านเกณฑ์ ≤ ${total.target} นาที`, value: total.withinTargetPct != null ? `${total.withinTargetPct}%` : "-", sub: `เป้า ≥ ${pctGoal}% ของ visit ครบ flow`, ...pctColor(total.withinTargetPct, pctGoal) },
+            { icon: Stethoscope, label: "รอตรวจเฉลี่ย", value: mins(waitDoc?.stat.avg ?? null), sub: `เป้า ≤ ${waitDoc?.target} นาที`, ...timeColor(waitDoc?.stat.avg ?? null, waitDoc?.target ?? null) },
+            { icon: Pill, label: "รอรับยาเฉลี่ย", value: mins(waitPh?.stat.avg ?? null), sub: `เป้า ≤ ${waitPh?.target} นาที`, ...timeColor(waitPh?.stat.avg ?? null, waitPh?.target ?? null) },
+            { icon: FlaskConical, label: "Lab TAT เฉลี่ย", value: mins(data.lab.total.avg), sub: `≤ ${data.lab.target} นาที = ${data.lab.withinTargetPct ?? "-"}%`, ...timeColor(data.lab.total.avg, data.lab.target) },
         ];
     }, [data, summary, total, pctGoal]);
+
+    // การ์ดสรุปหัวเรื่อง (ผู้ป่วย OPD / เวลารวมมัธยฐาน / %เสร็จภายใน 120 นาที / จุดคอขวด)
+    const headlineKpis = useMemo(() => {
+        if (!data || !summary || !total) return [];
+        const within120 = pctColor(summary.within120Pct, 80);
+        return [
+            {
+                icon: scope === "opd" ? Users : UserCheck,
+                label: scope === "er" ? "ผู้ป่วย ER" : scope === "all" ? "ผู้ป่วย OPD+ER" : "ผู้ป่วย OPD",
+                value: fmt(summary.totalVisits),
+                sub: "ราย",
+                accent: C.blue, bg: C.blueL,
+            },
+            {
+                icon: Clock,
+                label: "เวลารวมทั้ง flow (มัธยฐาน)",
+                value: total.stat.median != null ? String(total.stat.median) : "-",
+                sub: "นาที (ยื่นบัตร → การเงิน)",
+                ...timeColor(total.stat.median, total.target),
+            },
+            {
+                icon: AlarmClockCheck,
+                label: "เสร็จภายใน 120 นาที",
+                value: summary.within120Pct != null ? `${summary.within120Pct}%` : "-",
+                sub: "เป้าหมาย ≥ 80%",
+                ...within120,
+            },
+            {
+                icon: AlertTriangle,
+                label: "จุดคอขวด (รอนานสุด)",
+                value: summary.bottleneckLabel ?? "-",
+                sub: `เฉพาะขั้นตอน "รอ"`,
+                accent: C.red, bg: C.redL,
+            },
+        ];
+    }, [data, summary, total, scope]);
 
     const rangeLabel = data ? toThaiDateLabel(data.start, data.end) : "";
 
@@ -709,6 +880,13 @@ export default function ServiceTimeDashboardPage() {
                 </div>
             ) : data ? (
                 <>
+                    {/* การ์ดสรุปหัวเรื่อง */}
+                    <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
+                        {headlineKpis.map((k, i) => (
+                            <KpiCard key={i} icon={k.icon} label={k.label} value={k.value} sub={k.sub} accent={k.accent} bg={k.bg} />
+                        ))}
+                    </div>
+
                     {/* KPI */}
                     <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 mb-5">
                         {kpis.map((k, i) => (
@@ -728,6 +906,53 @@ export default function ServiceTimeDashboardPage() {
                                 <span className="font-bold tabular-nums text-gray-800">{fmt(c.v)}</span>
                             </span>
                         ))}
+                    </div>
+
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-4">
+                        {/* เวลาเฉลี่ยแต่ละขั้นตอน (แนวนอน) */}
+                        <SectionCard
+                            title={`เวลาเฉลี่ยแต่ละขั้นตอน 1-${data.stageColumns.length} (นาที)`}
+                            icon={Hourglass} titleColor="#1a5233"
+                        >
+                            <StageAvgBarChart stages={data.allStages} />
+                        </SectionCard>
+
+                        {/* จำนวนผู้ป่วยรายชั่วโมง แยกตามขั้นตอน */}
+                        <SectionCard title="จำนวนผู้ป่วยรายชั่วโมง แยกตามขั้นตอน" icon={TrendingUp} titleColor="#1a5233">
+                            <HourlyStageLineChart data={data.hourlyStages} stages={data.stageColumns} />
+                        </SectionCard>
+                    </div>
+
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-4">
+                        {/* จำนวนคนตามช่วงเวลารอของแต่ละขั้นตอน */}
+                        <SectionCard
+                            title="จำนวนคนตามช่วงเวลารอของแต่ละขั้นตอน"
+                            icon={Layers} titleColor="#1a5233"
+                        >
+                            <p className="text-[11px] text-gray-400 -mt-1 mb-2">
+                                เขียว = รอสั้น → แดง = รอนาน · คลิกชื่อขั้นตอนด้านบนเพื่อเปิด/ปิดแถว
+                            </p>
+                            <WaitBucketChart rows={data.waitBuckets} />
+                        </SectionCard>
+
+                        {/* ภาพรวมรายชั่วโมง: ผู้ป่วยมาถึง และเวลารวมเฉลี่ย */}
+                        <SectionCard title="ภาพรวมรายชั่วโมง: ผู้ป่วยมาถึง และเวลารวมเฉลี่ย" icon={Clock} titleColor="#1a5233">
+                            <ResponsiveContainer width="100%" height={280}>
+                                <ComposedChart data={data.hourlyOverview} margin={{ top: 8, right: 8, bottom: 0, left: -12 }}>
+                                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#eee" />
+                                    <XAxis dataKey="hour" tick={{ fontSize: 10 }} interval={1} tickFormatter={(h) => `${h}:00`} />
+                                    <YAxis yAxisId="l" tick={{ fontSize: 11 }} allowDecimals={false} />
+                                    <YAxis yAxisId="r" orientation="right" tick={{ fontSize: 11 }} allowDecimals={false} />
+                                    <Tooltip
+                                        labelFormatter={(h) => `${h}:00 นาที`}
+                                        formatter={(v, n) => [n === "visits" ? `${fmt(v as number)} ราย` : `${v} นาที`, n === "visits" ? "ผู้ป่วยมาถึง" : "เวลารวมเฉลี่ย"]}
+                                        {...tip}
+                                    />
+                                    <Bar yAxisId="l" dataKey="visits" fill={C.blueL} radius={[4, 4, 0, 0]} />
+                                    <Line yAxisId="r" type="monotone" dataKey="avgTotal" stroke={C.red} strokeWidth={2.5} dot={false} />
+                                </ComposedChart>
+                            </ResponsiveContainer>
+                        </SectionCard>
                     </div>
 
                     <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-4">
@@ -757,7 +982,7 @@ export default function ServiceTimeDashboardPage() {
                                     </Bar>
                                 </BarChart>
                             </ResponsiveContainer>
-                            <p className="text-[11px] text-gray-400 mt-1">เขียว = ≤ เป้า {data.targetTotal} น. · ส้ม/แดง = เกินเป้า</p>
+                            <p className="text-[11px] text-gray-400 mt-1">เขียว = ≤ เป้า {data.targetTotal} นาที · ส้ม/แดง = เกินเป้า</p>
                         </SectionCard>
                     </div>
 
@@ -770,7 +995,7 @@ export default function ServiceTimeDashboardPage() {
                                 <YAxis yAxisId="l" tick={{ fontSize: 11 }} allowDecimals={false} />
                                 <YAxis yAxisId="r" orientation="right" tick={{ fontSize: 11 }} allowDecimals={false} />
                                 <Tooltip
-                                    formatter={(v, n) => [n === "visits" ? `${fmt(v as number)} visit` : `${v} น.`, n === "visits" ? "จำนวน" : "เวลารวมเฉลี่ย"]}
+                                    formatter={(v, n) => [n === "visits" ? `${fmt(v as number)} visit` : `${v} นาที`, n === "visits" ? "จำนวน" : "เวลารวมเฉลี่ย"]}
                                     {...tip}
                                 />
                                 <Bar yAxisId="l" dataKey="visits" fill={C.blueL} radius={[4, 4, 0, 0]} />
@@ -829,7 +1054,7 @@ export default function ServiceTimeDashboardPage() {
                                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#eee" />
                                 <XAxis dataKey="hour" tick={{ fontSize: 10 }} interval={1} tickFormatter={(h) => `${h}`} />
                                 <YAxis tick={{ fontSize: 11 }} allowDecimals={false} />
-                                <Tooltip formatter={(v) => [`${fmt(v as number)} visit`, ""]} labelFormatter={(h) => `${h}:00 น.`} {...tip} />
+                                <Tooltip formatter={(v) => [`${fmt(v as number)} visit`, ""]} labelFormatter={(h) => `${h}:00 นาที`} {...tip} />
                                 <Bar dataKey="visits" fill={C.teal} radius={[4, 4, 0, 0]} />
                             </BarChart>
                         </ResponsiveContainer>
@@ -850,9 +1075,9 @@ export default function ServiceTimeDashboardPage() {
                     />
 
                     <p className="text-[11px] text-gray-400 mt-5">
-                        * เป้าหมายเวลารวม (ปัจจุบัน ≤ {data.targetTotal} น.) และ % ผ่านเกณฑ์ (≥ {pctGoal}%) ปรับได้ที่ปุ่ม{" "}
+                        * เป้าหมายเวลารวม (ปัจจุบัน ≤ {data.targetTotal} นาที) และ % ผ่านเกณฑ์ (≥ {pctGoal}%) ปรับได้ที่ปุ่ม{" "}
                         <span className="inline-flex items-center gap-0.5"><Settings size={11} /> เป้าหมาย</span> ·
-                        เป้าหมายรายขั้นตอน (รอตรวจ ≤ 30 น., รอรับยา ≤ 15 น., Lab/X-ray ≤ 60 น.) ตั้งที่{" "}
+                        เป้าหมายรายขั้นตอน (รอตรวจ ≤ 30 นาที, รอรับยา ≤ 15 นาที, Lab/X-ray ≤ 60 นาที) ตั้งที่{" "}
                         <code>ST_TARGETS</code> ใน <code>lib/servicetime.queries.ts</code> · ตัดค่าติดลบและเกิน 12 ชม. ออกจากการคำนวณ
                     </p>
                 </>
