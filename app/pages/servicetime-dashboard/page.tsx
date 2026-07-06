@@ -8,7 +8,7 @@ import {
 import {
     Users, Clock, Timer, Target, Stethoscope, Pill, FlaskConical, Scan,
     UserCheck, Hourglass, Gauge, Layers, Download, AlertTriangle, Settings, X,
-    Calendar, RotateCcw,
+    Calendar, RotateCcw, Search, ClipboardList,
 } from "lucide-react";
 import { exportToExcel } from "@/lib/exportExcel";
 import DatePicker from "react-datepicker";
@@ -19,7 +19,7 @@ import { KpiCard, SectionCard, LiveBadge, ConnectionStatus, RefreshButton } from
 import { fmtDate, getBangkokToday, toThaiDateLabel, fiscalYearRange, recentFiscalYears, getCurrentFiscalYear, getCurrentCalendarYear } from "@/lib/thaiDate";
 import type {
     ServiceTimeData, ServiceScope, VisitType, StageStat, AncillaryStat,
-    DepartmentRow, ServiceShift,
+    DepartmentRow, ServiceShift, StageColumn, PersonVisit,
 } from "@/lib/servicetime.types";
 
 // ─── palette ──────────────────────────────────────────────────────────────────
@@ -210,16 +210,23 @@ const STAGE_META: Record<string, { short: string; color: string }> = {
     screening: { short: "คัดกรอง", color: "#6366f1" },
     wait_doctor: { short: "รอตรวจ", color: "#8b5cf6" },
     consult: { short: "ตรวจ", color: "#a855f7" },
+    lab_wait: { short: "รอแลป", color: "#059669" },
+    lab_process: { short: "LAB", color: "#10b981" },
+    xray_wait: { short: "รอ X-ray", color: "#0d9488" },
+    xray_process: { short: "X-ray", color: "#2dd4bf" },
     wait_pharmacy: { short: "รอรับยา", color: "#f59e0b" },
 };
 const stageColor = (key: string) => STAGE_META[key]?.color ?? C.gray;
 const stageShort = (key: string, fallback: string) => STAGE_META[key]?.short ?? fallback;
+// นาทีของวัน → "HH:MM"
+const toHM = (m: number | null) =>
+    m == null ? "-" : `${String(Math.floor(m / 60) % 24).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`;
 
 // ─── ตารางแยกรายคลินิก × รายขั้นตอน ───────────────────────────────────────────
 function ClinicStageTable({
     rows, stages, totalTarget, pctGoal, selected, onSelect,
 }: {
-    rows: DepartmentRow[]; stages: StageStat[]; totalTarget: number | null;
+    rows: DepartmentRow[]; stages: StageColumn[]; totalTarget: number | null;
     pctGoal: number; selected: string; onSelect: (clinic: string) => void;
 }) {
     const cellOf = (r: DepartmentRow, key: string) =>
@@ -337,6 +344,105 @@ function ClinicStackChart({ rows, stages }: { rows: DepartmentRow[]; stages: Sta
     );
 }
 
+// ─── ตารางข้อมูลรายบุคคล (ตามตัวกรอง) ─────────────────────────────────────────
+function PersonTable({
+    visits, columns, total, truncated,
+}: { visits: PersonVisit[]; columns: StageColumn[]; total: number; truncated: boolean }) {
+    const [q, setQ] = useState("");
+
+    const filtered = useMemo(() => {
+        const s = q.trim();
+        if (!s) return visits;
+        return visits.filter((v) => v.vn.includes(s) || v.hn.includes(s));
+    }, [visits, q]);
+
+    const exportPersons = () => {
+        const data = filtered.map((v) => {
+            const o: Record<string, unknown> = {
+                VN: v.vn, HN: v.hn, คลินิก: v.department, มาถึง: toHM(v.arrivalMinute),
+            };
+            for (const c of columns) o[`${c.short} (นาที)`] = v.values[c.key] ?? "";
+            o["รวม (นาที)"] = v.total ?? "";
+            return o;
+        });
+        exportToExcel(data, {
+            sheetName: "รายบุคคล",
+            filePrefix: "servicetime_รายบุคคล",
+            dateKeys: [],
+        });
+    };
+
+    return (
+        <SectionCard
+            title="ข้อมูลรายบุคคล (ตามตัวกรอง วันที่ / เวร / คลินิก)"
+            icon={ClipboardList} titleColor="#1a5233" className="mb-4"
+        >
+            <div className="flex flex-wrap items-center gap-2 -mt-1 mb-2">
+                <div className="relative">
+                    <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400" />
+                    <input
+                        value={q}
+                        onChange={(e) => setQ(e.target.value)}
+                        placeholder="ค้นหา VN / HN"
+                        className="rounded-lg border border-gray-200 bg-white pl-8 pr-3 py-1.5 text-sm text-gray-700 shadow-sm focus:outline-none focus:ring-2 focus:ring-green-600/30"
+                    />
+                </div>
+                <button
+                    onClick={exportPersons}
+                    className="inline-flex items-center gap-1.5 rounded-lg bg-green-700 px-3 py-1.5 text-xs font-semibold text-white hover:bg-green-800 transition-colors"
+                >
+                    <Download size={13} /> โหลด Excel
+                </button>
+                <span className="text-xs text-gray-500">
+                    {fmt(filtered.length)}{q ? ` / ${fmt(visits.length)}` : ""} ราย
+                    {truncated && <span className="text-amber-600"> · แสดง {fmt(visits.length)} จาก {fmt(total)} (ปรับตัวกรองให้แคบลงเพื่อดูครบ)</span>}
+                </span>
+            </div>
+
+            <div className="overflow-auto max-h-[520px]">
+                <table className="w-full text-xs">
+                    <thead className="sticky top-0 z-10 bg-white">
+                        <tr className="text-gray-400 border-b-2 border-gray-100 text-left whitespace-nowrap">
+                            <th className="py-2 pr-2 font-medium sticky left-0 bg-white">VN</th>
+                            <th className="py-2 px-2 font-medium">HN</th>
+                            <th className="py-2 px-2 font-medium">คลินิก</th>
+                            <th className="py-2 px-2 font-medium text-right">มาถึง</th>
+                            {columns.map((c) => (
+                                <th key={c.key} className="py-2 px-2 font-medium text-right" title={c.label}>
+                                    <span className="inline-block w-2 h-2 rounded-full mr-1 align-middle" style={{ backgroundColor: stageColor(c.key) }} />
+                                    {c.short}
+                                </th>
+                            ))}
+                            <th className="py-2 pl-2 font-medium text-right">รวม</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {filtered.map((v) => (
+                            <tr key={v.vn} className="border-b border-gray-50 hover:bg-gray-50/60">
+                                <td className="py-1.5 pr-2 tabular-nums text-gray-700 sticky left-0 bg-white">{v.vn}</td>
+                                <td className="py-1.5 px-2 tabular-nums text-gray-500">{v.hn || "-"}</td>
+                                <td className="py-1.5 px-2 text-gray-600 truncate max-w-[130px]" title={v.department}>{v.department}</td>
+                                <td className="py-1.5 px-2 text-right tabular-nums text-gray-500">{toHM(v.arrivalMinute)}</td>
+                                {columns.map((c) => (
+                                    <td key={c.key} className="py-1.5 px-2 text-right tabular-nums text-gray-700">
+                                        {v.values[c.key] == null ? "–" : Math.round(v.values[c.key]!)}
+                                    </td>
+                                ))}
+                                <td className="py-1.5 pl-2 text-right tabular-nums font-bold text-gray-800">
+                                    {v.total == null ? "–" : Math.round(v.total)}
+                                </td>
+                            </tr>
+                        ))}
+                        {filtered.length === 0 && (
+                            <tr><td colSpan={columns.length + 5} className="py-8 text-center text-gray-400">ไม่พบข้อมูล</td></tr>
+                        )}
+                    </tbody>
+                </table>
+            </div>
+        </SectionCard>
+    );
+}
+
 export default function ServiceTimeDashboardPage() {
     const [preset, setPreset] = useState<Preset>("month");
     const [fiscalYear, setFiscalYear] = useState<number>(() => getCurrentFiscalYear());
@@ -440,7 +546,7 @@ export default function ServiceTimeDashboardPage() {
                 visit: r.visits,
                 ครบflow: r.completeFlowVisits,
             };
-            for (const s of data.stages) {
+            for (const s of data.stageColumns) {
                 o[`${stageShort(s.key, s.label)} (นาที)`] =
                     r.stages.find((x) => x.key === s.key)?.avg ?? "";
             }
@@ -692,7 +798,7 @@ export default function ServiceTimeDashboardPage() {
                         </div>
                         <ClinicStageTable
                             rows={data.byDepartment}
-                            stages={data.stages}
+                            stages={data.stageColumns}
                             totalTarget={data.targetTotal}
                             pctGoal={pctGoal}
                             selected={clinic}
@@ -730,10 +836,18 @@ export default function ServiceTimeDashboardPage() {
                     </SectionCard>
 
                     {/* Lab / Xray */}
-                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-4">
                         <AncillaryCard title="ระยะเวลา Lab (TAT)" icon={FlaskConical} data={data.lab} />
                         <AncillaryCard title="ระยะเวลา X-ray" icon={Scan} data={data.xray} />
                     </div>
+
+                    {/* ข้อมูลรายบุคคล */}
+                    <PersonTable
+                        visits={data.visits}
+                        columns={data.stageColumns}
+                        total={data.visitsTotal}
+                        truncated={data.visitsTruncated}
+                    />
 
                     <p className="text-[11px] text-gray-400 mt-5">
                         * เป้าหมายเวลารวม (ปัจจุบัน ≤ {data.targetTotal} น.) และ % ผ่านเกณฑ์ (≥ {pctGoal}%) ปรับได้ที่ปุ่ม{" "}

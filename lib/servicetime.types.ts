@@ -1,6 +1,4 @@
 // lib/servicetime.types.ts
-// TypeScript interfaces สำหรับ Service Time Dashboard (R9) — ใช้ร่วมกัน API ↔ Page
-// วัดระยะเวลารอคอย/ให้บริการ OPD: คัดกรอง → รอตรวจ → ตรวจ → รับยา + Lab/X-ray
 
 export type ServiceScope = "all" | "opd" | "er";
 export type VisitType = "all" | "appt" | "walkin";
@@ -79,6 +77,24 @@ export interface AncillaryStat {
   withinTargetPct: number | null;
 }
 
+/** คอลัมน์ขั้นตอน (หัวตารางรายคลินิก/รายบุคคล) */
+export interface StageColumn {
+  key: string;
+  label: string;
+  short: string;
+  target: number | null;
+}
+
+/** 1 visit ราย บุคคล (ตามตัวกรอง) */
+export interface PersonVisit {
+  vn: string;
+  hn: string;
+  department: string;
+  arrivalMinute: number | null; // นาทีของวัน (สำหรับ HH:MM "มาถึง")
+  total: number | null;
+  values: Record<string, number | null>; // นาทีแต่ละขั้นตอน (คีย์ = StageColumn.key)
+}
+
 export interface ServiceTimeData {
   updatedAt: string;
   start: string;
@@ -90,11 +106,15 @@ export interface ServiceTimeData {
   clinics: string[]; // รายชื่อคลินิกที่มีในช่วงวันที่ (สำหรับ dropdown)
   targetTotal: number; // เป้าหมายเวลารวม (นาที) ที่ใช้คำนวณรอบนี้
   summary: ServiceTimeSummary;
-  stages: StageStat[]; // รอคัดกรอง, คัดกรอง, รอตรวจ, ตรวจ, รอรับยา
+  stages: StageStat[]; // ขั้นตอนหลักในเส้นทาง (แผงภาพรวม + กราฟองค์ประกอบ)
+  stageColumns: StageColumn[]; // ทุกขั้นตอน (รวม lab/xray) สำหรับหัวตาราง
   trend: TrendPoint[];
   distribution: DistributionBucket[];
   byDepartment: DepartmentRow[]; // ทุกคลินิก (กรองตามเวร ไม่กรองตามคลินิก) — ใช้เป็นตัวนำทาง
   hourly: HourlyRow[];
   lab: AncillaryStat;
   xray: AncillaryStat;
+  visits: PersonVisit[]; // ข้อมูลรายบุคคล (ตามตัวกรอง, cap 5000)
+  visitsTotal: number; // จำนวน visit ทั้งหมดตามตัวกรอง (ก่อน cap)
+  visitsTruncated: boolean; // true = ถูกตัดเพราะเกิน cap
 }

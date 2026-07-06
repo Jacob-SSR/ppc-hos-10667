@@ -53,13 +53,15 @@ const depOf = (dep: string | null | undefined): string =>
   dep?.trim() || "ไม่ระบุ";
 
 // ─── นิยามขั้นตอน OPD (แหล่งเดียว) — ใช้ทั้งภาพรวมและแยกรายคลินิก ────────────────
-// isWait = ขั้นตอน "รอ" (ใช้หา bottleneck) · pick = ดึงค่านาทีของ visit นั้น
+// inFlow = ขั้นตอนหลักในเส้นทาง (ใช้ในแผงภาพรวม + กราฟองค์ประกอบเวลา) · isWait = ขั้นตอน "รอ"
+// lab/xray เป็นขั้นตอนเสริม (เฉพาะ visit ที่มีรายการ) แสดงในตารางรายคลินิก/รายบุคคล
 export const STAGE_DEFS: {
   key: string;
   label: string; // ป้ายเต็ม (แผงภาพรวม)
-  short: string; // ป้ายสั้น (หัวตารางรายคลินิก)
+  short: string; // ป้ายสั้น (หัวตาราง)
   target: number | null;
   isWait: boolean;
+  inFlow: boolean;
   pick: (r: VisitRow) => number | null;
 }[] = [
   {
@@ -68,14 +70,16 @@ export const STAGE_DEFS: {
     short: "รอคัดกรอง",
     target: ST_TARGETS.waitScreening,
     isWait: true,
+    inFlow: true,
     pick: (r) => r.wait_screening_min,
   },
   {
     key: "screening",
-    label: "คัดกรอง",
+    label: "คัดกรอง + V/S",
     short: "คัดกรอง",
     target: ST_TARGETS.screening,
     isWait: false,
+    inFlow: true,
     pick: (r) => r.screening_min,
   },
   {
@@ -84,15 +88,53 @@ export const STAGE_DEFS: {
     short: "รอตรวจ",
     target: ST_TARGETS.waitDoctor,
     isWait: true,
+    inFlow: true,
     pick: (r) => r.wait_doctor_min,
   },
   {
     key: "consult",
-    label: "ตรวจรักษา",
+    label: "ตรวจรักษา (แพทย์)",
     short: "ตรวจ",
     target: ST_TARGETS.consult,
     isWait: false,
+    inFlow: true,
     pick: (r) => r.consult_min,
+  },
+  {
+    key: "lab_wait",
+    label: "รอแลป (สั่ง → รับสิ่งส่งตรวจ)",
+    short: "รอแลป",
+    target: null,
+    isWait: true,
+    inFlow: false,
+    pick: (r) => r.lab_wait_receive_minutes,
+  },
+  {
+    key: "lab_process",
+    label: "ตรวจ LAB (รับ → รายงานผล)",
+    short: "LAB",
+    target: null,
+    isWait: false,
+    inFlow: false,
+    pick: (r) => r.lab_process_minutes,
+  },
+  {
+    key: "xray_wait",
+    label: "รอ X-ray (สั่ง → ถ่าย)",
+    short: "รอ X-ray",
+    target: null,
+    isWait: true,
+    inFlow: false,
+    pick: (r) => r.xray_wait_minutes,
+  },
+  {
+    key: "xray_process",
+    label: "ตรวจ X-ray (ถ่าย → รายงานผล)",
+    short: "X-ray",
+    target: null,
+    isWait: false,
+    inFlow: false,
+    pick: (r) => r.xray_process_minutes,
   },
   {
     key: "wait_pharmacy",
@@ -100,6 +142,7 @@ export const STAGE_DEFS: {
     short: "รอรับยา",
     target: ST_TARGETS.waitPharmacy,
     isWait: true,
+    inFlow: true,
     pick: (r) => r.wait_pharmacy_min,
   },
 ];
@@ -129,6 +172,7 @@ function buildRowSql(scope: ServiceScope, vt: VisitType): string {
   return `
 SELECT
   v.vn,
+  v.hn,
   DATE_FORMAT(v.vstdate,'%Y-%m-%d') AS vstdate,
   v.is_appointment_visit,
   v.is_er_visit,
@@ -152,6 +196,7 @@ SELECT
 FROM (
   SELECT
     st.vn,
+    st.hn,
     st.vstdate,
     CASE WHEN ap.hn IS NOT NULL THEN 1 ELSE 0 END AS is_appointment_visit,
     CASE WHEN d5.spclty = '13' THEN 1 ELSE 0 END  AS is_er_visit,
@@ -242,6 +287,7 @@ WHERE 1=1
 // ─── row shape จาก DB ─────────────────────────────────────────────────────────
 interface VisitRow extends RowDataPacket {
   vn: string;
+  hn: string | null;
   vstdate: string;
   is_appointment_visit: number;
   is_er_visit: number;
@@ -393,8 +439,8 @@ export async function getServiceTime(
     isValid(r.total_opd_min),
   ).length;
 
-  // ── stages (ภาพรวม) — ขับด้วย STAGE_DEFS แหล่งเดียว ──
-  const stages: StageStat[] = STAGE_DEFS.map((d) =>
+  // ── stages (ภาพรวม) — เฉพาะขั้นตอนหลักในเส้นทาง (แผงภาพรวม + กราฟองค์ประกอบ) ──
+  const stages: StageStat[] = STAGE_DEFS.filter((d) => d.inFlow).map((d) =>
     stageStat(d.key, d.label, d.target, rows.map(d.pick)),
   );
 
@@ -467,11 +513,11 @@ export async function getServiceTime(
         return { key: d.key, avg: s.avg, median: s.median };
       });
 
-      // จุดคอขวด = ขั้นตอน "รอ" ที่เฉลี่ยนานสุด
+      // จุดคอขวด = ขั้นตอน "รอ" หลักในเส้นทางที่เฉลี่ยนานสุด (ไม่รวม lab/xray ที่มีเฉพาะบาง visit)
       let bottleneckKey: string | null = null;
       let worst = -1;
       for (const d of STAGE_DEFS) {
-        if (!d.isWait) continue;
+        if (!d.isWait || !d.inFlow) continue;
         const cell = stageCells.find((c) => c.key === d.key);
         if (cell?.avg != null && cell.avg > worst) {
           worst = cell.avg;
@@ -523,6 +569,36 @@ export async function getServiceTime(
     ST_TARGETS.xray,
   );
 
+  // ── คอลัมน์ขั้นตอน (สำหรับหัวตารางรายคลินิก/รายบุคคล) ──
+  const stageColumns = STAGE_DEFS.map((d) => ({
+    key: d.key,
+    label: d.label,
+    short: d.short,
+    target: d.target,
+  }));
+
+  // ── ข้อมูลรายบุคคล (ตามตัวกรอง) — cap ไว้กัน payload ใหญ่เกิน ──
+  const VISITS_CAP = 5000;
+  const sortedRows = [...rows].sort(
+    (a, b) => (a.arrival_minute ?? 1e9) - (b.arrival_minute ?? 1e9),
+  );
+  const visitsTruncated = sortedRows.length > VISITS_CAP;
+  const visits = sortedRows.slice(0, VISITS_CAP).map((r) => {
+    const values: Record<string, number | null> = {};
+    for (const d of STAGE_DEFS) {
+      const v = d.pick(r);
+      values[d.key] = isValid(v) ? round1(v!) : null;
+    }
+    return {
+      vn: r.vn,
+      hn: r.hn ?? "",
+      department: depOf(r.doctor_department),
+      arrivalMinute: r.arrival_minute ?? null,
+      total: isValid(r.total_opd_min) ? round1(r.total_opd_min!) : null,
+      values,
+    };
+  });
+
   return {
     updatedAt: new Date().toISOString(),
     start,
@@ -542,11 +618,15 @@ export async function getServiceTime(
       total: totalStage,
     },
     stages,
+    stageColumns,
     trend,
     distribution,
     byDepartment,
     hourly,
     lab,
     xray,
+    visits,
+    visitsTotal: rows.length,
+    visitsTruncated,
   };
 }
