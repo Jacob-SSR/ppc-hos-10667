@@ -1,6 +1,6 @@
 // lib/servicetime.queries.ts
 // ดึงข้อมูลระยะเวลาให้บริการ OPD ราย visit จาก HOSxP แล้วสรุปเป็น KPI
-// ต้นทาง SQL: service_time / lab_head / xray_report / oapp / kskdepartment (คงสูตรเวลาเดิมของ HOSxP ไว้)
+// ต้นทาง SQL: service_time / lab_head / xray_report / oapp / ovst / kskdepartment (คงสูตรเวลาเดิมของ HOSxP ไว้)
 
 import { db } from "@/lib/db";
 import { RowDataPacket } from "mysql2";
@@ -222,7 +222,7 @@ FROM (
     st.vstdate,
     CASE WHEN ap.hn IS NOT NULL THEN 1 ELSE 0 END AS is_appointment_visit,
     CASE WHEN d5.spclty = '13' THEN 1 ELSE 0 END  AS is_er_visit,
-    d5.department AS doctor_department,
+    COALESCE(d5.department, dfb.department) AS doctor_department,
 
     CASE WHEN st.service3 IS NULL THEN NULL
          WHEN st.service3='24:00:00' THEN STR_TO_DATE(CONCAT(st.vstdate,' 00:00:00'),'%Y-%m-%d %H:%i:%s')+INTERVAL 1 DAY
@@ -272,6 +272,11 @@ FROM (
 
   FROM service_time st
   LEFT JOIN kskdepartment d5 ON d5.depcode = st.service5_dep
+
+  -- fallback คลินิก: กรณี service5_dep ว่าง/ไม่ match kskdepartment (เช่น visit ที่ยังไม่ถึงขั้นตอนเรียกตรวจ)
+  -- ให้ไปดูจาก ovst แทน ตามลำดับ cur_dep (แผนกปัจจุบัน) → last_dep (แผนกล่าสุด) → main_dep (แผนกหลักของ visit)
+  LEFT JOIN ovst o ON o.vn = st.vn
+  LEFT JOIN kskdepartment dfb ON dfb.depcode = COALESCE(o.cur_dep, o.last_dep, o.main_dep)
 
   LEFT JOIN (
     SELECT DISTINCT hn, nextdate FROM oapp WHERE hn IS NOT NULL AND nextdate IS NOT NULL
