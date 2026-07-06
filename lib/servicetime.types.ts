@@ -4,6 +4,8 @@
 
 export type ServiceScope = "all" | "opd" | "er";
 export type VisitType = "all" | "appt" | "walkin";
+/** ช่วงเวลา (เวร) ตามเวลาเข้าจุดคัดกรอง */
+export type ServiceShift = "all" | "morning" | "evening" | "night";
 
 /** สถิติสรุปของ 1 กลุ่มค่า (นาที) */
 export interface StatBlock {
@@ -45,11 +47,22 @@ export interface DistributionBucket {
   count: number;
 }
 
+/** ค่าเฉลี่ย/มัธยฐาน 1 ขั้นตอน ของ 1 คลินิก (ใช้ในตารางแยกรายขั้นตอน) */
+export interface DeptStageCell {
+  key: string;
+  avg: number | null;
+  median: number | null;
+}
+
 export interface DepartmentRow {
   department: string;
   visits: number;
+  completeFlowVisits: number; // visit ที่ครบ flow ในคลินิกนี้
   avgTotal: number | null;
   medianTotal: number | null;
+  withinTargetPct: number | null; // % visit ที่เวลารวม ≤ เป้าหมาย
+  bottleneckKey: string | null; // ขั้นตอน "รอ" ที่ใช้เวลาเฉลี่ยนานสุดในคลินิกนี้
+  stages: DeptStageCell[]; // เวลาเฉลี่ย/มัธยฐาน แยกรายขั้นตอน (คีย์ตรงกับ stages[])
 }
 
 export interface HourlyRow {
@@ -72,11 +85,15 @@ export interface ServiceTimeData {
   end: string;
   scope: ServiceScope;
   visitType: VisitType;
+  shift: ServiceShift; // เวรที่เลือก
+  clinic: string; // คลินิกที่เลือก ("all" = ทุกคลินิก)
+  clinics: string[]; // รายชื่อคลินิกที่มีในช่วงวันที่ (สำหรับ dropdown)
+  targetTotal: number; // เป้าหมายเวลารวม (นาที) ที่ใช้คำนวณรอบนี้
   summary: ServiceTimeSummary;
   stages: StageStat[]; // รอคัดกรอง, คัดกรอง, รอตรวจ, ตรวจ, รอรับยา
   trend: TrendPoint[];
   distribution: DistributionBucket[];
-  byDepartment: DepartmentRow[];
+  byDepartment: DepartmentRow[]; // ทุกคลินิก (กรองตามเวร ไม่กรองตามคลินิก) — ใช้เป็นตัวนำทาง
   hourly: HourlyRow[];
   lab: AncillaryStat;
   xray: AncillaryStat;

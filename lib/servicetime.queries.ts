@@ -7,6 +7,7 @@ import { RowDataPacket } from "mysql2";
 import type {
   ServiceScope,
   VisitType,
+  ServiceShift,
   ServiceTimeData,
   StatBlock,
   StageStat,
@@ -31,6 +32,77 @@ export const ST_TARGETS = {
 
 // เกณฑ์กรองค่าผิดปกติ: ตัดค่าติดลบ (เวลาสลับ) และเกิน MAX_MINUTES (timestamp เพี้ยน/ค้างคิว)
 const MAX_MINUTES = 720; // 12 ชม.
+
+// ─── เวร (ตามเวลาเข้าจุดคัดกรอง, นาทีของวัน) ─────────────────────────────────────
+// เช้า 08:30–16:30 · บ่าย 16:30–00:30 · ดึก 00:30–08:30 (ดึกคาบเที่ยงคืน จึง +1440)
+const SHIFT_WINDOWS: Record<Exclude<ServiceShift, "all">, [number, number]> = {
+  morning: [510, 990],
+  evening: [990, 1470],
+  night: [1470, 1950],
+};
+function inShift(min: number | null, shift: ServiceShift): boolean {
+  if (shift === "all") return true;
+  if (min == null) return false;
+  const mm = min < 510 ? min + 1440 : min; // ก่อน 08:30 = ช่วงดึกของ "วันถัดไป"
+  const [a, b] = SHIFT_WINDOWS[shift];
+  return mm >= a && mm < b;
+}
+
+// ชื่อคลินิก (แผนกจุดตรวจ) หลัง normalize — ใช้ทั้งกรองและ dropdown
+const depOf = (dep: string | null | undefined): string =>
+  dep?.trim() || "ไม่ระบุ";
+
+// ─── นิยามขั้นตอน OPD (แหล่งเดียว) — ใช้ทั้งภาพรวมและแยกรายคลินิก ────────────────
+// isWait = ขั้นตอน "รอ" (ใช้หา bottleneck) · pick = ดึงค่านาทีของ visit นั้น
+export const STAGE_DEFS: {
+  key: string;
+  label: string; // ป้ายเต็ม (แผงภาพรวม)
+  short: string; // ป้ายสั้น (หัวตารางรายคลินิก)
+  target: number | null;
+  isWait: boolean;
+  pick: (r: VisitRow) => number | null;
+}[] = [
+  {
+    key: "wait_screening",
+    label: "รอคัดกรอง",
+    short: "รอคัดกรอง",
+    target: ST_TARGETS.waitScreening,
+    isWait: true,
+    pick: (r) => r.wait_screening_min,
+  },
+  {
+    key: "screening",
+    label: "คัดกรอง",
+    short: "คัดกรอง",
+    target: ST_TARGETS.screening,
+    isWait: false,
+    pick: (r) => r.screening_min,
+  },
+  {
+    key: "wait_doctor",
+    label: "รอตรวจ (หลังคัดกรอง → เรียกตรวจ)",
+    short: "รอตรวจ",
+    target: ST_TARGETS.waitDoctor,
+    isWait: true,
+    pick: (r) => r.wait_doctor_min,
+  },
+  {
+    key: "consult",
+    label: "ตรวจรักษา",
+    short: "ตรวจ",
+    target: ST_TARGETS.consult,
+    isWait: false,
+    pick: (r) => r.consult_min,
+  },
+  {
+    key: "wait_pharmacy",
+    label: "รอรับยา",
+    short: "รอรับยา",
+    target: ST_TARGETS.waitPharmacy,
+    isWait: true,
+    pick: (r) => r.wait_pharmacy_min,
+  },
+];
 
 // ─── Input validation ─────────────────────────────────────────────────────────
 function assertDate(s: string): string {
@@ -62,6 +134,7 @@ SELECT
   v.is_er_visit,
   v.doctor_department,
   HOUR(v.dt_arrive_screening)                                       AS arrival_hour,
+  (HOUR(v.dt_arrive_screening)*60 + MINUTE(v.dt_arrive_screening))  AS arrival_minute,
   TIMESTAMPDIFF(MINUTE, v.dt_arrive_screening, v.dt_start_screening) AS wait_screening_min,
   TIMESTAMPDIFF(MINUTE, v.dt_start_screening, v.dt_end_screening)    AS screening_min,
   TIMESTAMPDIFF(MINUTE, v.dt_end_screening,   v.dt_call_doctor)      AS wait_doctor_min,
@@ -174,6 +247,7 @@ interface VisitRow extends RowDataPacket {
   is_er_visit: number;
   doctor_department: string | null;
   arrival_hour: number | null;
+  arrival_minute: number | null;
   wait_screening_min: number | null;
   screening_min: number | null;
   wait_doctor_min: number | null;
@@ -275,12 +349,39 @@ export async function getServiceTime(
   end: string,
   scope: ServiceScope,
   visitType: VisitType,
+  shift: ServiceShift = "all",
+  clinic: string = "all",
+  targetTotalInput?: number | null,
 ): Promise<ServiceTimeData> {
   assertDate(start);
   assertDate(end);
 
+  // เป้าหมายเวลารวม: รับจาก request ได้ (10–720 น.) ไม่งั้นใช้ค่า default R9
+  const totalTarget =
+    targetTotalInput != null &&
+    Number.isFinite(targetTotalInput) &&
+    targetTotalInput >= 10 &&
+    targetTotalInput <= MAX_MINUTES
+      ? Math.round(targetTotalInput)
+      : ST_TARGETS.total;
+
   const sql = buildRowSql(scope, visitType);
-  const [rows] = await db.query<VisitRow[]>(sql, [start, end]);
+  const [allRows] = await db.query<VisitRow[]>(sql, [start, end]);
+
+  // รายชื่อคลินิกทั้งหมดในช่วงวันที่ (ก่อนกรองเวร/คลินิก → dropdown คงที่)
+  const clinics = [
+    ...new Set(allRows.map((r) => depOf(r.doctor_department))),
+  ].sort((a, b) => a.localeCompare(b, "th"));
+
+  // ชั้นกรอง: เวร → ใช้กับทุกส่วน (รวมตารางรายคลินิก) · คลินิก → ใช้กับทุกส่วน "ยกเว้น" ตารางรายคลินิก
+  const shiftRows =
+    shift === "all"
+      ? allRows
+      : allRows.filter((r) => inShift(r.arrival_minute, shift));
+  const rows =
+    clinic === "all"
+      ? shiftRows
+      : shiftRows.filter((r) => depOf(r.doctor_department) === clinic);
 
   // ── summary flags ──
   const appointmentVisits = rows.filter(
@@ -292,44 +393,15 @@ export async function getServiceTime(
     isValid(r.total_opd_min),
   ).length;
 
-  // ── stages ──
-  const stages: StageStat[] = [
-    stageStat(
-      "wait_screening",
-      "รอคัดกรอง",
-      ST_TARGETS.waitScreening,
-      rows.map((r) => r.wait_screening_min),
-    ),
-    stageStat(
-      "screening",
-      "คัดกรอง",
-      ST_TARGETS.screening,
-      rows.map((r) => r.screening_min),
-    ),
-    stageStat(
-      "wait_doctor",
-      "รอตรวจ (หลังคัดกรอง → เรียกตรวจ)",
-      ST_TARGETS.waitDoctor,
-      rows.map((r) => r.wait_doctor_min),
-    ),
-    stageStat(
-      "consult",
-      "ตรวจรักษา",
-      ST_TARGETS.consult,
-      rows.map((r) => r.consult_min),
-    ),
-    stageStat(
-      "wait_pharmacy",
-      "รอรับยา",
-      ST_TARGETS.waitPharmacy,
-      rows.map((r) => r.wait_pharmacy_min),
-    ),
-  ];
+  // ── stages (ภาพรวม) — ขับด้วย STAGE_DEFS แหล่งเดียว ──
+  const stages: StageStat[] = STAGE_DEFS.map((d) =>
+    stageStat(d.key, d.label, d.target, rows.map(d.pick)),
+  );
 
   const totalStage = stageStat(
     "total",
     "ระยะเวลารวม (คัดกรอง → รับยา)",
-    ST_TARGETS.total,
+    totalTarget,
     rows.map((r) => r.total_opd_min),
   );
 
@@ -377,32 +449,50 @@ export async function getServiceTime(
     count: totalVals.filter(b.test).length,
   }));
 
-  // ── by department (แผนกจุดตรวจ) ──
-  const deptMap = new Map<string, number[]>();
-  const deptVisits = new Map<string, number>();
-  for (const r of rows) {
-    const dep = r.doctor_department?.trim() || "ไม่ระบุ";
-    deptVisits.set(dep, (deptVisits.get(dep) ?? 0) + 1);
-    if (isValid(r.total_opd_min)) {
-      if (!deptMap.has(dep)) deptMap.set(dep, []);
-      deptMap.get(dep)!.push(r.total_opd_min!);
-    }
+  // ── by department (แผนกจุดตรวจ) — จาก shiftRows (ทุกคลินิก) พร้อมแยกรายขั้นตอน ──
+  const deptRows = new Map<string, VisitRow[]>();
+  for (const r of shiftRows) {
+    const dep = depOf(r.doctor_department);
+    if (!deptRows.has(dep)) deptRows.set(dep, []);
+    deptRows.get(dep)!.push(r);
   }
-  const byDepartment: DepartmentRow[] = [...deptVisits.entries()]
-    .map(([department, visits]) => {
-      const totals = deptMap.get(department) ?? [];
-      const sorted = [...totals].sort((a, b) => a - b);
+  const byDepartment: DepartmentRow[] = [...deptRows.entries()]
+    .map(([department, drs]) => {
+      const totalsRaw = drs.map((r) => r.total_opd_min);
+      const totalStat = statOf(totalsRaw);
+
+      // เวลาแต่ละขั้นตอนของคลินิกนี้
+      const stageCells = STAGE_DEFS.map((d) => {
+        const s = statOf(drs.map(d.pick));
+        return { key: d.key, avg: s.avg, median: s.median };
+      });
+
+      // จุดคอขวด = ขั้นตอน "รอ" ที่เฉลี่ยนานสุด
+      let bottleneckKey: string | null = null;
+      let worst = -1;
+      for (const d of STAGE_DEFS) {
+        if (!d.isWait) continue;
+        const cell = stageCells.find((c) => c.key === d.key);
+        if (cell?.avg != null && cell.avg > worst) {
+          worst = cell.avg;
+          bottleneckKey = d.key;
+        }
+      }
+
       return {
         department,
-        visits,
-        avgTotal: totals.length
-          ? round1(totals.reduce((a, b) => a + b, 0) / totals.length)
-          : null,
-        medianTotal: percentile(sorted, 0.5),
+        visits: drs.length,
+        completeFlowVisits: totalStat.count,
+        avgTotal: totalStat.avg,
+        medianTotal: totalStat.median,
+        withinTargetPct: withinPct(totalsRaw, totalTarget),
+        bottleneckKey,
+        stages: stageCells,
       };
     })
-    .sort((a, b) => b.visits - a.visits)
-    .slice(0, 15);
+    // เรียงจากเวลารวมมัธยฐานมาก→น้อย (คลินิกที่รอนานสุดอยู่บน)
+    .sort((a, b) => (b.medianTotal ?? 0) - (a.medianTotal ?? 0))
+    .slice(0, 25);
 
   // ── hourly (ชั่วโมงที่มาถึงจุดคัดกรอง) ──
   const hourMap = new Map<number, number>();
@@ -439,6 +529,10 @@ export async function getServiceTime(
     end,
     scope,
     visitType,
+    shift,
+    clinic,
+    clinics,
+    targetTotal: totalTarget,
     summary: {
       totalVisits: rows.length,
       completeFlowVisits,
