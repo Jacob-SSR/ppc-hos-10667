@@ -290,6 +290,12 @@ export const DASHBOARD_GROUPS: SidebarSubGroup[] = [
         icon: Baby,
         group: "disease",
       },
+      {
+        label: "แผนที่บ้านหญิงตั้งครรภ์ที่ซีด",
+        href: "/pages/anc-anemia-map",
+        icon: MapPinned,
+        group: "disease",
+      },
     ],
   },
 ];

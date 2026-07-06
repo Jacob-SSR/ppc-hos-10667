@@ -1,12 +1,4 @@
 // lib/anc.service.ts
-// SQL service สำหรับ Dashboard งานการพยาบาลผู้คลอด (ANC / Maternity)
-// แหล่งข้อมูล: ovstdiag (ICD10), person_anc (บัญชี 2), oapp (นัดหมาย), referout (ส่งต่อ),
-//             ipt_pregnancy (ห้องคลอด), lab_head/lab_order/lab_items (ผล Lab), vn_stat (รายได้)
-//
-// ENV ที่เกี่ยวข้อง:
-//   ANC_HCT_LAB_CODES=10        // รหัส lab HCT (รพ.พลับพลาชัย = 10)
-//   ANC_HB_LAB_CODES=...        // รหัส lab Hb/Hemoglobin (ตั้งให้ตรง master LIS)
-
 import { db } from "@/lib/db";
 import { RowDataPacket } from "mysql2";
 
@@ -612,3 +604,59 @@ export const getAncAnemiaHct = (start: string, end: string) =>
 
 export const getAncAnemiaHb = (start: string, end: string) =>
   getAncAnemia(start, end, HB_PREDICATE, 11);
+
+// ─── 6b. ภาวะซีด: ทะเบียนรายบุคคล (สำหรับแผนที่หลังคาเรือน) ──────────────────
+// รวมผลต่อ 1 คน (distinct cid) — เอาค่า HCT/Hb ต่ำสุดในช่วง + ที่อยู่/ตำบล
+// เพื่อจับคู่พิกัดหลังคาเรือน (เลข 13 หลัก) แล้วปักหมุดในหน้า /pages/anc-anemia-map
+export interface AncAnemiaMapRow extends RowDataPacket {
+  cid: string;
+  hn: string;
+  ptname: string;
+  age_y: number;
+  hct: number | null; // HCT ต่ำสุดในช่วง (< 33%)
+  last_date: string; // วันที่ตรวจล่าสุด (YYYY-MM-DD)
+  addrpart: string;
+  moopart: string;
+  tmb_name: string;
+}
+
+export async function getAncAnemiaMapRows(
+  start: string,
+  end: string,
+): Promise<AncAnemiaMapRow[]> {
+  const [rows] = await db.query<AncAnemiaMapRow[]>(
+    `
+    SELECT
+      pt.cid                                              AS cid,
+      lh.hn                                               AS hn,
+      MAX(CONCAT(pt.pname, pt.fname, ' ', pt.lname))      AS ptname,
+      MAX(TIMESTAMPDIFF(YEAR, pt.birthday, lh.order_date)) AS age_y,
+      MIN(CASE WHEN (${HCT_PREDICATE})
+               THEN CAST(lo.lab_order_result AS DECIMAL(10,2)) END) AS hct,
+      DATE_FORMAT(MAX(lh.order_date), '%Y-%m-%d')        AS last_date,
+      MAX(pt.addrpart)                                    AS addrpart,
+      MAX(pt.moopart)                                     AS moopart,
+      MAX(t.full_name)                                    AS tmb_name
+    FROM lab_head lh
+    INNER JOIN lab_order lo ON lo.lab_order_number = lh.lab_order_number
+    LEFT  JOIN lab_items li ON li.lab_items_code = lo.lab_items_code
+    INNER JOIN patient pt   ON pt.hn = lh.hn
+    LEFT  JOIN thaiaddress t
+      ON t.chwpart = pt.chwpart
+      AND t.amppart = pt.amppart
+      AND t.tmbpart = pt.tmbpart
+    WHERE lh.order_date BETWEEN ? AND ?
+      AND lo.lab_order_result REGEXP '^[0-9]+(\\.[0-9]+)?$'
+      AND (${HCT_PREDICATE})
+      AND CAST(lo.lab_order_result AS DECIMAL(10,2)) < 33
+      AND EXISTS (
+        SELECT 1 FROM ovstdiag od
+        WHERE od.vn = lh.vn AND od.icd10 IN (${ANC_PREG_ICD})
+      )
+    GROUP BY pt.cid, lh.hn
+    ORDER BY last_date DESC
+    `,
+    [start, end],
+  );
+  return rows;
+}
