@@ -9,6 +9,7 @@ import {
     Users, Clock, Timer, Target, Stethoscope, Pill, FlaskConical, Scan,
     UserCheck, Hourglass, Gauge, Layers, Download, AlertTriangle, Settings, X,
     Calendar, RotateCcw, Search, ClipboardList, AlarmClockCheck, TrendingUp,
+    Workflow, LayoutDashboard, Flag,
 } from "lucide-react";
 import { exportToExcel } from "@/lib/exportExcel";
 import DatePicker from "react-datepicker";
@@ -605,6 +606,258 @@ function PersonTable({
     );
 }
 
+// ─── Tab bar (สลับมุมมอง ภาพรวม ⇄ ผังกระบวนการ) ──────────────────────────────
+type View = "flow" | "overview";
+const VIEWS: { key: View; label: string; icon: React.ElementType }[] = [
+    { key: "overview", label: "ภาพรวม / เชิงลึก", icon: LayoutDashboard },
+    { key: "flow", label: "ผังกระบวนการ (Flow)", icon: Workflow },
+];
+function TabBar({ value, onChange }: { value: View; onChange: (v: View) => void }) {
+    return (
+        <div className="flex items-center gap-1 border-b border-gray-200 mb-5 overflow-x-auto">
+            {VIEWS.map((v) => {
+                const active = v.key === value;
+                return (
+                    <button
+                        key={v.key}
+                        onClick={() => onChange(v.key)}
+                        className={`inline-flex items-center gap-1.5 whitespace-nowrap px-4 py-2.5 text-sm font-semibold border-b-2 -mb-px transition-colors ${active
+                            ? "border-green-700 text-green-700"
+                            : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
+                            }`}
+                    >
+                        <v.icon size={16} /> {v.label}
+                    </button>
+                );
+            })}
+        </div>
+    );
+}
+
+// ─── VSM / Flowchart (ผังกระบวนการ OPD — ค่าจริง) ─────────────────────────────
+// การ์ด = ขั้น "ดำเนินงาน" (Process Time จริง) · ลูกศร = ขั้น "รอ" (Waiting Time จริง)
+type FlowMetric = "avg" | "median";
+
+// พาสเทล
+const P = {
+    cardBg: "#f4f8ff", cardBorder: "#e2ebfa",
+    icon: "#4f7ce0", iconBg: "#e8f0fd",
+    ink: "#3a5488",
+    name: "#3c4a63",
+    waitInk: "#5b6b8c",
+    arrow: "#3f6fd6", arrowDash: "#b6cbf0",
+    tatBg: "#fff8ea", tatBorder: "#f6e4b8", tatInk: "#e6a12a", tatIconBg: "#fceccb",
+    endBg: "#ecfaf2", endBorder: "#c1e9d5", endInk: "#12a06a", endIconBg: "#d8f3e6",
+};
+
+// นาที (ทศนิยมได้) → "H:MM:SS"
+const toHMS = (min: number | null): string => {
+    if (min == null) return "-";
+    const totalSec = Math.max(0, Math.round(min * 60));
+    const h = Math.floor(totalSec / 3600);
+    const m = Math.floor((totalSec % 3600) / 60);
+    const s = totalSec % 60;
+    return `${h}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+};
+const pickVal = (s: StageStat | null, metric: FlowMetric) =>
+    s ? (metric === "median" ? s.stat.median : s.stat.avg) : null;
+const inkOf = (stage: StageStat | null) =>
+    stage && stage.target != null ? timeColor(stage.stat.avg, stage.target).accent : P.ink;
+
+// จุดเริ่มต้น
+function StartNode() {
+    return (
+        <div className="flex h-full flex-col items-center justify-center">
+            <div className="flex h-11 w-11 items-center justify-center rounded-full border-2" style={{ borderColor: P.arrow, backgroundColor: P.iconBg }}>
+                <Flag size={18} style={{ color: P.icon }} />
+            </div>
+            <span className="mt-1 text-center text-[10px] font-semibold leading-tight text-gray-500">ยื่นบัตร</span>
+        </div>
+    );
+}
+
+// การ์ดขั้น "ดำเนินงาน" (Process Time จริง)
+function FlowCard({
+    stage, icon: Icon, metric, tone = "blue", label, tall = false,
+}: {
+    stage: StageStat | null;
+    icon: React.ElementType;
+    metric: FlowMetric;
+    tone?: "blue" | "green";
+    label?: string;
+    tall?: boolean;
+}) {
+    const green = tone === "green";
+    const v = pickVal(stage, metric);
+    const perf = inkOf(stage);
+    const timeInk = green ? (stage?.target != null ? perf : P.endInk) : perf;
+    const name = label ?? (stage ? STAGE_META[stage.key]?.short ?? stage.label : "");
+    return (
+        <div
+            className={`relative flex w-full flex-col items-center rounded-2xl border px-4 py-3 text-center shadow-sm transition-shadow hover:shadow-md ${tall ? "h-full justify-center" : ""}`}
+            style={{ backgroundColor: green ? P.endBg : P.cardBg, borderColor: green ? P.endBorder : P.cardBorder }}
+        >
+            <div className={`mb-1.5 flex items-center justify-center rounded-xl ${tall ? "h-16 w-16" : "h-11 w-11"}`} style={{ backgroundColor: green ? P.endIconBg : P.iconBg }}>
+                <Icon size={tall ? 36 : 24} style={{ color: green ? P.endInk : P.icon }} />
+            </div>
+            <div className={`font-bold ${tall ? "text-lg" : "text-sm"}`} style={{ color: green ? P.endInk : P.name }}>{name}</div>
+            <div className={`mt-0.5 font-extrabold tabular-nums ${tall ? "text-3xl" : "text-xl"}`} style={{ color: timeInk }}>{toHMS(v)}</div>
+            <div className="text-[10px] text-gray-400">Process Time</div>
+        </div>
+    );
+}
+
+// ลูกศรแนวนอน + ป้ายเวลา "รอ" จริง (stage) — หรือลูกศรเปล่า (plain)
+function WaitLink({
+    stage = null, metric = "avg", label, dashed = false, plain = false,
+}: { stage?: StageStat | null; metric?: FlowMetric; label?: string; dashed?: boolean; plain?: boolean }) {
+    const col = dashed ? P.arrowDash : P.arrow;
+    const v = stage ? pickVal(stage, metric) : null;
+    const ink = stage && stage.target != null ? timeColor(stage.stat.avg, stage.target).accent : P.waitInk;
+    return (
+        <div className="flex h-full w-full flex-col items-center justify-center px-1">
+            {!plain && (
+                <div className="mb-1 flex flex-col items-center leading-tight">
+                    {label && <span className="text-[10px] font-semibold text-gray-500">{label}</span>}
+                    <span className="text-[8px] font-medium uppercase tracking-wide text-gray-400">waiting time</span>
+                    <span className="text-[13px] font-extrabold tabular-nums" style={{ color: ink }}>{toHMS(v)}</span>
+                </div>
+            )}
+            <div className="flex w-full items-center">
+                <div className="flex-1" style={dashed ? { borderTop: `2px dashed ${col}` } : { height: 2, background: col }} />
+                <div style={{ width: 0, height: 0, borderTop: "5px solid transparent", borderBottom: "5px solid transparent", borderLeft: `8px solid ${col}` }} />
+            </div>
+        </div>
+    );
+}
+
+// ลูกศรแนวตั้ง (ชี้ลง) — จุดแตกสาขาจาก "ตรวจ"
+function WaitDown() {
+    return (
+        <div className="flex items-center justify-center py-1">
+            <div className="flex flex-col items-center">
+                <div style={{ width: 2, height: 22, background: P.arrow }} />
+                <div style={{ width: 0, height: 0, borderLeft: "5px solid transparent", borderRight: "5px solid transparent", borderTop: `7px solid ${P.arrow}` }} />
+            </div>
+        </div>
+    );
+}
+
+// ─── แผงผังกระบวนการ (Flow view) ─────────────────────────────────────────────
+function FlowVSM({ data }: { data: ServiceTimeData }) {
+    const [metric, setMetric] = useState<FlowMetric>("avg");
+    const byKey = (k: string) => data.allStages.find((s) => s.key === k) ?? null;
+    const total = data.summary.total;
+    const tv = pickVal(total, metric);
+    const [h, m, s2] = (() => {
+        if (tv == null) return ["-", "--", "--"];
+        const totalSec = Math.max(0, Math.round(tv * 60));
+        return [String(Math.floor(totalSec / 3600)), String(Math.floor((totalSec % 3600) / 60)).padStart(2, "0"), String(totalSec % 60).padStart(2, "0")];
+    })();
+    const updated = (() => {
+        try { return new Date(data.updatedAt).toLocaleTimeString("th-TH", { hour: "2-digit", minute: "2-digit" }); }
+        catch { return "-"; }
+    })();
+
+    const cell = "flex items-center justify-center";
+
+    return (
+        <div>
+            {/* แถบควบคุม */}
+            <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+                <div className="flex items-center gap-2 text-sm text-gray-500">
+                    <span className="font-semibold text-gray-700">แสดงค่า:</span>
+                    <Segmented value={metric} options={[{ key: "avg", label: "เฉลี่ย" }, { key: "median", label: "มัธยฐาน" }]} onChange={setMetric} />
+                </div>
+                <div className="flex flex-wrap items-center gap-3 text-[11px] text-gray-500">
+                    <span className="inline-flex items-center gap-1"><span className="h-3 w-4 rounded-sm border" style={{ background: P.cardBg, borderColor: P.cardBorder }} /> การ์ด = ดำเนินงาน</span>
+                    <span className="inline-flex items-center gap-1"><svg width="18" height="8"><line x1="0" y1="4" x2="12" y2="4" stroke={P.arrow} strokeWidth="2" /><path d="M12 1 L18 4 L12 7 Z" fill={P.arrow} /></svg> ลูกศร = รอ</span>
+                    <span className="mx-1 h-3 w-px bg-gray-200" />
+                    <span className="inline-flex items-center gap-1"><span className="h-2.5 w-2.5 rounded-full" style={{ background: C.green }} /> ผ่านเกณฑ์</span>
+                    <span className="inline-flex items-center gap-1"><span className="h-2.5 w-2.5 rounded-full" style={{ background: C.amber }} /> เกินเล็กน้อย</span>
+                    <span className="inline-flex items-center gap-1"><span className="h-2.5 w-2.5 rounded-full" style={{ background: C.red }} /> เกินมาก</span>
+                </div>
+            </div>
+
+            {/* TAT รวม */}
+            <div className="mb-8 flex flex-wrap items-center justify-center gap-x-8 gap-y-3 rounded-3xl border px-6 py-5" style={{ backgroundColor: P.tatBg, borderColor: P.tatBorder }}>
+                <div className="flex items-center gap-3">
+                    <div className="flex h-14 w-14 items-center justify-center rounded-full" style={{ backgroundColor: P.tatIconBg }}>
+                        <Clock size={30} style={{ color: P.tatInk }} />
+                    </div>
+                    <span className="text-lg font-bold text-gray-700">
+                        TAT {metric === "median" ? "มัธยฐาน" : "เฉลี่ย"}รวม <span className="text-sm font-normal text-gray-400">(นาที)</span>
+                    </span>
+                </div>
+                <div className="flex items-start gap-2">
+                    {[{ v: h, u: "ชั่วโมง" }, { v: m, u: "นาที" }, { v: s2, u: "วินาที" }].map((x, i) => (
+                        <div key={x.u} className="flex items-start">
+                            {i > 0 && <span className="text-4xl font-extrabold leading-[1.1] md:text-5xl" style={{ color: P.tatInk }}>:</span>}
+                            <div className="flex flex-col items-center">
+                                <span className="text-5xl font-extrabold leading-none tabular-nums md:text-6xl" style={{ color: P.tatInk }}>{x.v}</span>
+                                <span className="mt-1 text-xs text-gray-400">{x.u}</span>
+                            </div>
+                        </div>
+                    ))}
+                </div>
+            </div>
+
+            {/* ผังกระบวนการ (flowchart ค่าจริง) */}
+            <div className="overflow-x-auto pb-2">
+                <div
+                    className="grid items-stretch"
+                    style={{
+                        gridTemplateColumns:
+                            "minmax(64px,auto) minmax(78px,1fr) minmax(120px,auto) minmax(78px,1fr) minmax(120px,auto) minmax(78px,1fr) minmax(120px,auto) minmax(64px,1fr) minmax(186px,auto)",
+                        minWidth: 1120,
+                        columnGap: 2,
+                    }}
+                >
+                    {/* แถวบน: ยื่นบัตร →(รอคัดกรอง)→ คัดกรอง →(รอตรวจ)→ ตรวจ →→ รอรับยา */}
+                    <div className={cell} style={{ gridColumn: 1, gridRow: 1 }}><StartNode /></div>
+                    <div className={cell} style={{ gridColumn: 2, gridRow: 1 }}><WaitLink stage={byKey("wait_screening")} metric={metric} label="รอคัดกรอง" /></div>
+                    <div className={cell} style={{ gridColumn: 3, gridRow: 1 }}><FlowCard stage={byKey("screening")} icon={ClipboardList} metric={metric} label="คัดกรอง" /></div>
+                    <div className={cell} style={{ gridColumn: 4, gridRow: 1 }}><WaitLink stage={byKey("wait_doctor")} metric={metric} label="รอตรวจ" /></div>
+                    <div className={cell} style={{ gridColumn: 5, gridRow: 1 }}><FlowCard stage={byKey("consult")} icon={Stethoscope} metric={metric} label="ตรวจ" /></div>
+                    <div className={cell} style={{ gridColumn: "6 / 9", gridRow: 1 }}><WaitLink plain /></div>
+
+                    {/* ปลายทาง รอรับยา — สูงคร่อมทุกแถว */}
+                    <div className="flex" style={{ gridColumn: 9, gridRow: "1 / 6" }}><FlowCard stage={byKey("wait_pharmacy")} icon={Pill} metric={metric} tone="green" label="รอรับยา" tall /></div>
+
+                    {/* แตกลงจาก ตรวจ */}
+                    <div className={cell} style={{ gridColumn: 5, gridRow: 2 }}><WaitDown /></div>
+
+                    {/* แถว Lab: (รอแลป)→ LAB →→ รอรับยา */}
+                    <div className={cell} style={{ gridColumn: "5 / 7", gridRow: 3 }}><WaitLink stage={byKey("lab_wait")} metric={metric} label="รอแลป" dashed /></div>
+                    <div className={cell} style={{ gridColumn: 7, gridRow: 3 }}><FlowCard stage={byKey("lab_process")} icon={FlaskConical} metric={metric} label="LAB" /></div>
+                    <div className={cell} style={{ gridColumn: 8, gridRow: 3 }}><WaitLink plain dashed /></div>
+
+                    <div className={cell} style={{ gridColumn: 5, gridRow: 4 }}><WaitDown /></div>
+
+                    {/* แถว X-ray: (รอ X-ray)→ X-ray →→ รอรับยา */}
+                    <div className={cell} style={{ gridColumn: "5 / 7", gridRow: 5 }}><WaitLink stage={byKey("xray_wait")} metric={metric} label="รอ X-ray" dashed /></div>
+                    <div className={cell} style={{ gridColumn: 7, gridRow: 5 }}><FlowCard stage={byKey("xray_process")} icon={Scan} metric={metric} label="X-ray" /></div>
+                    <div className={cell} style={{ gridColumn: 8, gridRow: 5 }}><WaitLink plain dashed /></div>
+                </div>
+            </div>
+
+            {/* หมายเหตุ */}
+            <div className="mt-6 flex flex-wrap items-center justify-between gap-2 border-t border-gray-100 pt-3 text-[11px] text-gray-400">
+                <span className="inline-flex items-center gap-1">
+                    <Clock size={12} /> เวลาแสดงเป็น ชั่วโมง : นาที : วินาที (ค่า{metric === "median" ? "มัธยฐาน" : "เฉลี่ย"}จริงในช่วงที่เลือก) ·
+                    การ์ด = เวลาดำเนินงาน · ลูกศร = เวลารอจริง · หลังตรวจแตกไป Lab / X-ray แล้วรวมกลับที่ รอรับยา · ตัวเลขจับสีเฉพาะขั้นที่มีเกณฑ์
+                </span>
+                <span>อัปเดตล่าสุด {updated} น.</span>
+            </div>
+        </div>
+    );
+}
+
+
+
+
+
+
 export default function ServiceTimeDashboardPage() {
     const [preset, setPreset] = useState<Preset>("month");
     const [fiscalYear, setFiscalYear] = useState<number>(() => getCurrentFiscalYear());
@@ -615,6 +868,7 @@ export default function ServiceTimeDashboardPage() {
     const [visitType, setVisitType] = useState<VisitType>("all");
     const [shift, setShift] = useState<ServiceShift>("all");
     const [clinic, setClinic] = useState<string>("all");
+    const [view, setView] = useState<View>("overview");
 
     // เป้าหมาย (เก็บใน localStorage) — targetTotal ส่งไป server, pctGoal ใช้ฝั่ง client (สี/สถานะ)
     const DEFAULT_TARGETS = { total: 90, pct: 80 };
@@ -907,206 +1161,212 @@ export default function ServiceTimeDashboardPage() {
                 </div>
             ) : data ? (
                 <>
-                    {/* การ์ดสรุปหัวเรื่อง */}
-                    <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
-                        {headlineKpis.map((k, i) => (
-                            <KpiCard key={i} icon={k.icon} label={k.label} value={k.value} sub={k.sub} accent={k.accent} bg={k.bg} />
-                        ))}
-                    </div>
+                    <TabBar value={view} onChange={setView} />
 
-                    {/* KPI */}
-                    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 mb-5">
-                        {kpis.map((k, i) => (
-                            <KpiCard key={i} icon={k.icon} label={k.label} value={k.value} sub={k.sub} accent={k.accent} bg={k.bg} />
-                        ))}
-                    </div>
+                    {view === "flow" && <FlowVSM data={data} />}
 
-                    {/* visit type breakdown chips */}
-                    <div className="flex flex-wrap gap-2 mb-5 text-xs">
-                        {[
-                            { icon: UserCheck, label: "นัด", v: summary!.appointmentVisits, color: C.teal },
-                            { icon: Users, label: "Walk-in", v: summary!.walkinVisits, color: C.blue },
-                        ].map((c) => (
-                            <span key={c.label} className="inline-flex items-center gap-1.5 rounded-full border border-gray-200 bg-white px-3 py-1">
-                                <c.icon size={13} style={{ color: c.color }} />
-                                <span className="text-gray-500">{c.label}</span>
-                                <span className="font-bold tabular-nums text-gray-800">{fmt(c.v)}</span>
-                            </span>
-                        ))}
-                    </div>
-
-                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-4">
-                        {/* เวลาเฉลี่ยแต่ละขั้นตอน (แนวนอน) */}
-                        <SectionCard
-                            title={`เวลาเฉลี่ยแต่ละขั้นตอน 1-${data.stageColumns.length} (นาที)`}
-                            icon={Hourglass} titleColor="#1a5233"
-                        >
-                            <StageAvgBarChart stages={data.allStages} />
-                        </SectionCard>
-
-                        {/* จำนวนผู้ป่วยรายชั่วโมง แยกตามขั้นตอน */}
-                        <SectionCard title="จำนวนผู้ป่วยรายชั่วโมง แยกตามขั้นตอน" icon={TrendingUp} titleColor="#1a5233">
-                            <HourlyStageLineChart data={data.hourlyStages} stages={data.stageColumns} />
-                        </SectionCard>
-                    </div>
-
-                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-4">
-                        {/* จำนวนคนตามช่วงเวลารอของแต่ละขั้นตอน */}
-                        <SectionCard
-                            title="จำนวนคนตามช่วงเวลารอของแต่ละขั้นตอน"
-                            icon={Layers} titleColor="#1a5233"
-                        >
-                            <p className="text-[11px] text-gray-400 -mt-1 mb-2">
-                                เขียว = รอสั้น → แดง = รอนาน · คลิกชื่อขั้นตอนด้านบนเพื่อเปิด/ปิดแถว
-                            </p>
-                            <WaitBucketChart rows={data.waitBuckets} />
-                        </SectionCard>
-
-                        {/* ภาพรวมรายชั่วโมง: ผู้ป่วยมาถึง และเวลารวมเฉลี่ย */}
-                        <SectionCard title="ภาพรวมรายชั่วโมง: ผู้ป่วยมาถึง และเวลารวมเฉลี่ย" icon={Clock} titleColor="#1a5233">
-                            <ResponsiveContainer width="100%" height={280}>
-                                <ComposedChart data={data.hourlyOverview} margin={{ top: 8, right: 8, bottom: 0, left: -12 }}>
-                                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#eee" />
-                                    <XAxis dataKey="hour" tick={{ fontSize: 10 }} interval={1} tickFormatter={(h) => `${h}:00`} />
-                                    <YAxis yAxisId="l" tick={{ fontSize: 11 }} allowDecimals={false} />
-                                    <YAxis yAxisId="r" orientation="right" tick={{ fontSize: 11 }} allowDecimals={false} />
-                                    <Tooltip
-                                        labelFormatter={(h) => `${h}:00 นาที`}
-                                        formatter={(v, n) => [n === "visits" ? `${fmt(v as number)} ราย` : `${v} นาที`, n === "visits" ? "ผู้ป่วยมาถึง" : "เวลารวมเฉลี่ย"]}
-                                        {...tip}
-                                    />
-                                    <Bar yAxisId="l" dataKey="visits" fill={C.blueL} radius={[4, 4, 0, 0]} />
-                                    <Line yAxisId="r" type="monotone" dataKey="avgTotal" stroke={C.red} strokeWidth={2.5} dot={false} />
-                                </ComposedChart>
-                            </ResponsiveContainer>
-                        </SectionCard>
-                    </div>
-
-                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-4">
-                        {/* Stage breakdown */}
-                        <SectionCard title="ระยะเวลาแต่ละขั้นตอน (เฉลี่ย · เส้น = เป้าหมาย)" icon={Hourglass} titleColor="#1a5233">
-                            <div>
-                                {data.stages.map((s) => <StageRow key={s.key} s={s} />)}
-                                <div className="mt-2 pt-2 border-t-2 border-gray-200">
-                                    {total && <StageRow s={total} />}
-                                </div>
-                            </div>
-                        </SectionCard>
-
-                        {/* Distribution */}
-                        <SectionCard title="การกระจายระยะเวลารวม (นาที)" icon={Timer} titleColor="#1a5233">
-                            <ResponsiveContainer width="100%" height={230}>
-                                <BarChart data={data.distribution} margin={{ top: 8, right: 8, bottom: 0, left: -18 }}>
-                                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#eee" />
-                                    <XAxis dataKey="label" tick={{ fontSize: 11 }} />
-                                    <YAxis tick={{ fontSize: 11 }} allowDecimals={false} />
-                                    <Tooltip formatter={(v) => [`${fmt(v as number)} visit`, ""]} {...tip} />
-                                    <Bar dataKey="count" radius={[6, 6, 0, 0]}>
-                                        {data.distribution.map((b, i) => {
-                                            const good = ["≤30", "31-60", "61-90"].includes(b.label);
-                                            return <Cell key={i} fill={good ? C.green : i === 3 ? C.amber : C.red} />;
-                                        })}
-                                    </Bar>
-                                </BarChart>
-                            </ResponsiveContainer>
-                            <p className="text-[11px] text-gray-400 mt-1">เขียว = ≤ เป้า {data.targetTotal} นาที · ส้ม/แดง = เกินเป้า</p>
-                        </SectionCard>
-                    </div>
-
-                    {/* Trend */}
-                    <SectionCard title="แนวโน้มรายวัน — จำนวน visit และเวลารวมเฉลี่ย" icon={Clock} titleColor="#1a5233" className="mb-4">
-                        <ResponsiveContainer width="100%" height={280}>
-                            <ComposedChart data={data.trend} margin={{ top: 8, right: 8, bottom: 0, left: -12 }}>
-                                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#eee" />
-                                <XAxis dataKey="label" tick={{ fontSize: 11 }} interval="preserveStartEnd" />
-                                <YAxis yAxisId="l" tick={{ fontSize: 11 }} allowDecimals={false} />
-                                <YAxis yAxisId="r" orientation="right" tick={{ fontSize: 11 }} allowDecimals={false} />
-                                <Tooltip
-                                    formatter={(v, n) => [n === "visits" ? `${fmt(v as number)} visit` : `${v} นาที`, n === "visits" ? "จำนวน" : "เวลารวมเฉลี่ย"]}
-                                    {...tip}
-                                />
-                                <Bar yAxisId="l" dataKey="visits" fill={C.blueL} radius={[4, 4, 0, 0]} />
-                                <Line yAxisId="r" type="monotone" dataKey="avgTotal" stroke={C.green} strokeWidth={2.5} dot={false} />
-                            </ComposedChart>
-                        </ResponsiveContainer>
-                    </SectionCard>
-
-                    {/* แยกรายคลินิก × รายขั้นตอน */}
-                    <SectionCard
-                        title="สรุปแยกรายคลินิก — เวลาเฉลี่ยรายขั้นตอน (นาที) · เรียงจากรอนานสุด · จุดคอขวดไฮไลต์แดง"
-                        icon={Layers} titleColor="#1a5233" className="mb-4"
-                    >
-                        <div className="flex items-center justify-between gap-2 -mt-1 mb-2">
-                            <p className="text-[11px] text-gray-400 flex items-center gap-1">
-                                <AlertTriangle size={12} className="text-red-400" />
-                                ช่องพื้นแดง = ขั้นตอน &ldquo;รอ&rdquo; ที่นานสุดของคลินิกนั้น · คลิกแถวเพื่อกรองแผงอื่น (ตารางนี้แสดงทุกคลินิกตามเวรที่เลือก)
-                            </p>
-                            <button
-                                onClick={exportClinics}
-                                className="inline-flex items-center gap-1.5 rounded-lg bg-green-700 px-3 py-1.5 text-xs font-semibold text-white hover:bg-green-800 transition-colors shrink-0"
-                            >
-                                <Download size={13} /> Excel
-                            </button>
+                    {view === "overview" && (<>
+                        {/* การ์ดสรุปหัวเรื่อง */}
+                        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
+                            {headlineKpis.map((k, i) => (
+                                <KpiCard key={i} icon={k.icon} label={k.label} value={k.value} sub={k.sub} accent={k.accent} bg={k.bg} />
+                            ))}
                         </div>
-                        <ClinicStageTable
-                            rows={data.byDepartment}
-                            stages={data.stageColumns}
-                            totalTarget={data.targetTotal}
-                            pctGoal={pctGoal}
-                            selected={clinic}
-                            onSelect={setClinic}
-                        />
-                    </SectionCard>
 
-                    {/* องค์ประกอบเวลา แยกรายขั้นตอน (stacked) */}
-                    <SectionCard
-                        title="องค์ประกอบเวลาแยกรายขั้นตอน — 12 คลินิกที่รอนานสุด"
-                        icon={Timer} titleColor="#1a5233" className="mb-4"
-                    >
-                        <ClinicStackChart rows={data.byDepartment} stages={data.stages} />
-                        <div className="flex flex-wrap gap-x-4 gap-y-1.5 mt-3 text-[11px] text-gray-500">
-                            {data.stages.map((s) => (
-                                <span key={s.key} className="inline-flex items-center gap-1.5">
-                                    <span className="w-2.5 h-2.5 rounded-sm" style={{ backgroundColor: stageColor(s.key) }} />
-                                    {stageShort(s.key, s.label)}
+                        {/* KPI */}
+                        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 mb-5">
+                            {kpis.map((k, i) => (
+                                <KpiCard key={i} icon={k.icon} label={k.label} value={k.value} sub={k.sub} accent={k.accent} bg={k.bg} />
+                            ))}
+                        </div>
+
+                        {/* visit type breakdown chips */}
+                        <div className="flex flex-wrap gap-2 mb-5 text-xs">
+                            {[
+                                { icon: UserCheck, label: "นัด", v: summary!.appointmentVisits, color: C.teal },
+                                { icon: Users, label: "Walk-in", v: summary!.walkinVisits, color: C.blue },
+                            ].map((c) => (
+                                <span key={c.label} className="inline-flex items-center gap-1.5 rounded-full border border-gray-200 bg-white px-3 py-1">
+                                    <c.icon size={13} style={{ color: c.color }} />
+                                    <span className="text-gray-500">{c.label}</span>
+                                    <span className="font-bold tabular-nums text-gray-800">{fmt(c.v)}</span>
                                 </span>
                             ))}
                         </div>
-                    </SectionCard>
 
-                    {/* Hourly */}
-                    <SectionCard title="ปริมาณผู้รับบริการตามชั่วโมง (เข้าจุดคัดกรอง)" icon={Users} titleColor="#1a5233" className="mb-4">
-                        <ResponsiveContainer width="100%" height={230}>
-                            <BarChart data={data.hourly} margin={{ top: 8, right: 8, bottom: 0, left: -18 }}>
-                                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#eee" />
-                                <XAxis dataKey="hour" tick={{ fontSize: 10 }} interval={1} tickFormatter={(h) => `${h}`} />
-                                <YAxis tick={{ fontSize: 11 }} allowDecimals={false} />
-                                <Tooltip formatter={(v) => [`${fmt(v as number)} visit`, ""]} labelFormatter={(h) => `${h}:00 นาที`} {...tip} />
-                                <Bar dataKey="visits" fill={C.teal} radius={[4, 4, 0, 0]} />
-                            </BarChart>
-                        </ResponsiveContainer>
-                    </SectionCard>
+                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-4">
+                            {/* เวลาเฉลี่ยแต่ละขั้นตอน (แนวนอน) */}
+                            <SectionCard
+                                title={`เวลาเฉลี่ยแต่ละขั้นตอน 1-${data.stageColumns.length} (นาที)`}
+                                icon={Hourglass} titleColor="#1a5233"
+                            >
+                                <StageAvgBarChart stages={data.allStages} />
+                            </SectionCard>
 
-                    {/* Lab / Xray */}
-                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-4">
-                        <AncillaryCard title="ระยะเวลา Lab (TAT)" icon={FlaskConical} data={data.lab} />
-                        <AncillaryCard title="ระยะเวลา X-ray" icon={Scan} data={data.xray} />
-                    </div>
+                            {/* จำนวนผู้ป่วยรายชั่วโมง แยกตามขั้นตอน */}
+                            <SectionCard title="จำนวนผู้ป่วยรายชั่วโมง แยกตามขั้นตอน" icon={TrendingUp} titleColor="#1a5233">
+                                <HourlyStageLineChart data={data.hourlyStages} stages={data.stageColumns} />
+                            </SectionCard>
+                        </div>
 
-                    {/* ข้อมูลรายบุคคล */}
-                    <PersonTable
-                        visits={data.visits}
-                        columns={data.stageColumns}
-                        total={data.visitsTotal}
-                        truncated={data.visitsTruncated}
-                    />
+                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-4">
+                            {/* จำนวนคนตามช่วงเวลารอของแต่ละขั้นตอน */}
+                            <SectionCard
+                                title="จำนวนคนตามช่วงเวลารอของแต่ละขั้นตอน"
+                                icon={Layers} titleColor="#1a5233"
+                            >
+                                <p className="text-[11px] text-gray-400 -mt-1 mb-2">
+                                    เขียว = รอสั้น → แดง = รอนาน · คลิกชื่อขั้นตอนด้านบนเพื่อเปิด/ปิดแถว
+                                </p>
+                                <WaitBucketChart rows={data.waitBuckets} />
+                            </SectionCard>
 
-                    <p className="text-[11px] text-gray-400 mt-5">
-                        * เป้าหมายเวลารวม (ปัจจุบัน ≤ {data.targetTotal} นาที) และ % ผ่านเกณฑ์ (≥ {pctGoal}%) ปรับได้ที่ปุ่ม{" "}
-                        <span className="inline-flex items-center gap-0.5"><Settings size={11} /> เป้าหมาย</span> ·
-                        เป้าหมายรายขั้นตอน (รอตรวจ ≤ 30 นาที, รอรับยา ≤ 15 นาที, Lab/X-ray ≤ 60 นาที) ตั้งที่{" "}
-                        <code>ST_TARGETS</code> ใน <code>lib/servicetime.queries.ts</code> · ตัดค่าติดลบและเกิน 12 ชม. ออกจากการคำนวณ
-                    </p>
+                            {/* ภาพรวมรายชั่วโมง: ผู้ป่วยมาถึง และเวลารวมเฉลี่ย */}
+                            <SectionCard title="ภาพรวมรายชั่วโมง: ผู้ป่วยมาถึง และเวลารวมเฉลี่ย" icon={Clock} titleColor="#1a5233">
+                                <ResponsiveContainer width="100%" height={280}>
+                                    <ComposedChart data={data.hourlyOverview} margin={{ top: 8, right: 8, bottom: 0, left: -12 }}>
+                                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#eee" />
+                                        <XAxis dataKey="hour" tick={{ fontSize: 10 }} interval={1} tickFormatter={(h) => `${h}:00`} />
+                                        <YAxis yAxisId="l" tick={{ fontSize: 11 }} allowDecimals={false} />
+                                        <YAxis yAxisId="r" orientation="right" tick={{ fontSize: 11 }} allowDecimals={false} />
+                                        <Tooltip
+                                            labelFormatter={(h) => `${h}:00 นาที`}
+                                            formatter={(v, n) => [n === "visits" ? `${fmt(v as number)} ราย` : `${v} นาที`, n === "visits" ? "ผู้ป่วยมาถึง" : "เวลารวมเฉลี่ย"]}
+                                            {...tip}
+                                        />
+                                        <Bar yAxisId="l" dataKey="visits" fill={C.blueL} radius={[4, 4, 0, 0]} />
+                                        <Line yAxisId="r" type="monotone" dataKey="avgTotal" stroke={C.red} strokeWidth={2.5} dot={false} />
+                                    </ComposedChart>
+                                </ResponsiveContainer>
+                            </SectionCard>
+                        </div>
+
+                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-4">
+                            {/* Stage breakdown */}
+                            <SectionCard title="ระยะเวลาแต่ละขั้นตอน (เฉลี่ย · เส้น = เป้าหมาย)" icon={Hourglass} titleColor="#1a5233">
+                                <div>
+                                    {data.stages.map((s) => <StageRow key={s.key} s={s} />)}
+                                    <div className="mt-2 pt-2 border-t-2 border-gray-200">
+                                        {total && <StageRow s={total} />}
+                                    </div>
+                                </div>
+                            </SectionCard>
+
+                            {/* Distribution */}
+                            <SectionCard title="การกระจายระยะเวลารวม (นาที)" icon={Timer} titleColor="#1a5233">
+                                <ResponsiveContainer width="100%" height={230}>
+                                    <BarChart data={data.distribution} margin={{ top: 8, right: 8, bottom: 0, left: -18 }}>
+                                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#eee" />
+                                        <XAxis dataKey="label" tick={{ fontSize: 11 }} />
+                                        <YAxis tick={{ fontSize: 11 }} allowDecimals={false} />
+                                        <Tooltip formatter={(v) => [`${fmt(v as number)} visit`, ""]} {...tip} />
+                                        <Bar dataKey="count" radius={[6, 6, 0, 0]}>
+                                            {data.distribution.map((b, i) => {
+                                                const good = ["≤30", "31-60", "61-90"].includes(b.label);
+                                                return <Cell key={i} fill={good ? C.green : i === 3 ? C.amber : C.red} />;
+                                            })}
+                                        </Bar>
+                                    </BarChart>
+                                </ResponsiveContainer>
+                                <p className="text-[11px] text-gray-400 mt-1">เขียว = ≤ เป้า {data.targetTotal} นาที · ส้ม/แดง = เกินเป้า</p>
+                            </SectionCard>
+                        </div>
+
+                        {/* Trend */}
+                        <SectionCard title="แนวโน้มรายวัน — จำนวน visit และเวลารวมเฉลี่ย" icon={Clock} titleColor="#1a5233" className="mb-4">
+                            <ResponsiveContainer width="100%" height={280}>
+                                <ComposedChart data={data.trend} margin={{ top: 8, right: 8, bottom: 0, left: -12 }}>
+                                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#eee" />
+                                    <XAxis dataKey="label" tick={{ fontSize: 11 }} interval="preserveStartEnd" />
+                                    <YAxis yAxisId="l" tick={{ fontSize: 11 }} allowDecimals={false} />
+                                    <YAxis yAxisId="r" orientation="right" tick={{ fontSize: 11 }} allowDecimals={false} />
+                                    <Tooltip
+                                        formatter={(v, n) => [n === "visits" ? `${fmt(v as number)} visit` : `${v} นาที`, n === "visits" ? "จำนวน" : "เวลารวมเฉลี่ย"]}
+                                        {...tip}
+                                    />
+                                    <Bar yAxisId="l" dataKey="visits" fill={C.blueL} radius={[4, 4, 0, 0]} />
+                                    <Line yAxisId="r" type="monotone" dataKey="avgTotal" stroke={C.green} strokeWidth={2.5} dot={false} />
+                                </ComposedChart>
+                            </ResponsiveContainer>
+                        </SectionCard>
+
+                        {/* แยกรายคลินิก × รายขั้นตอน */}
+                        <SectionCard
+                            title="สรุปแยกรายคลินิก — เวลาเฉลี่ยรายขั้นตอน (นาที) · เรียงจากรอนานสุด · จุดคอขวดไฮไลต์แดง"
+                            icon={Layers} titleColor="#1a5233" className="mb-4"
+                        >
+                            <div className="flex items-center justify-between gap-2 -mt-1 mb-2">
+                                <p className="text-[11px] text-gray-400 flex items-center gap-1">
+                                    <AlertTriangle size={12} className="text-red-400" />
+                                    ช่องพื้นแดง = ขั้นตอน &ldquo;รอ&rdquo; ที่นานสุดของคลินิกนั้น · คลิกแถวเพื่อกรองแผงอื่น (ตารางนี้แสดงทุกคลินิกตามเวรที่เลือก)
+                                </p>
+                                <button
+                                    onClick={exportClinics}
+                                    className="inline-flex items-center gap-1.5 rounded-lg bg-green-700 px-3 py-1.5 text-xs font-semibold text-white hover:bg-green-800 transition-colors shrink-0"
+                                >
+                                    <Download size={13} /> Excel
+                                </button>
+                            </div>
+                            <ClinicStageTable
+                                rows={data.byDepartment}
+                                stages={data.stageColumns}
+                                totalTarget={data.targetTotal}
+                                pctGoal={pctGoal}
+                                selected={clinic}
+                                onSelect={setClinic}
+                            />
+                        </SectionCard>
+
+                        {/* องค์ประกอบเวลา แยกรายขั้นตอน (stacked) */}
+                        <SectionCard
+                            title="องค์ประกอบเวลาแยกรายขั้นตอน — 12 คลินิกที่รอนานสุด"
+                            icon={Timer} titleColor="#1a5233" className="mb-4"
+                        >
+                            <ClinicStackChart rows={data.byDepartment} stages={data.stages} />
+                            <div className="flex flex-wrap gap-x-4 gap-y-1.5 mt-3 text-[11px] text-gray-500">
+                                {data.stages.map((s) => (
+                                    <span key={s.key} className="inline-flex items-center gap-1.5">
+                                        <span className="w-2.5 h-2.5 rounded-sm" style={{ backgroundColor: stageColor(s.key) }} />
+                                        {stageShort(s.key, s.label)}
+                                    </span>
+                                ))}
+                            </div>
+                        </SectionCard>
+
+                        {/* Hourly */}
+                        <SectionCard title="ปริมาณผู้รับบริการตามชั่วโมง (เข้าจุดคัดกรอง)" icon={Users} titleColor="#1a5233" className="mb-4">
+                            <ResponsiveContainer width="100%" height={230}>
+                                <BarChart data={data.hourly} margin={{ top: 8, right: 8, bottom: 0, left: -18 }}>
+                                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#eee" />
+                                    <XAxis dataKey="hour" tick={{ fontSize: 10 }} interval={1} tickFormatter={(h) => `${h}`} />
+                                    <YAxis tick={{ fontSize: 11 }} allowDecimals={false} />
+                                    <Tooltip formatter={(v) => [`${fmt(v as number)} visit`, ""]} labelFormatter={(h) => `${h}:00 นาที`} {...tip} />
+                                    <Bar dataKey="visits" fill={C.teal} radius={[4, 4, 0, 0]} />
+                                </BarChart>
+                            </ResponsiveContainer>
+                        </SectionCard>
+
+                        {/* Lab / Xray */}
+                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-4">
+                            <AncillaryCard title="ระยะเวลา Lab (TAT)" icon={FlaskConical} data={data.lab} />
+                            <AncillaryCard title="ระยะเวลา X-ray" icon={Scan} data={data.xray} />
+                        </div>
+
+                        {/* ข้อมูลรายบุคคล */}
+                        <PersonTable
+                            visits={data.visits}
+                            columns={data.stageColumns}
+                            total={data.visitsTotal}
+                            truncated={data.visitsTruncated}
+                        />
+
+                        <p className="text-[11px] text-gray-400 mt-5">
+                            * เป้าหมายเวลารวม (ปัจจุบัน ≤ {data.targetTotal} นาที) และ % ผ่านเกณฑ์ (≥ {pctGoal}%) ปรับได้ที่ปุ่ม{" "}
+                            <span className="inline-flex items-center gap-0.5"><Settings size={11} /> เป้าหมาย</span> ·
+                            เป้าหมายรายขั้นตอน (รอตรวจ ≤ 30 นาที, รอรับยา ≤ 15 นาที, Lab/X-ray ≤ 60 นาที) ตั้งที่{" "}
+                            <code>ST_TARGETS</code> ใน <code>lib/servicetime.queries.ts</code> · ตัดค่าติดลบและเกิน 12 ชม. ออกจากการคำนวณ
+                        </p>
+                    </>)}
                 </>
             ) : null}
 
