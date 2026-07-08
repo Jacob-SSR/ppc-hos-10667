@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
     Users, Clock, Target, Stethoscope, Pill, FlaskConical,
-    UserCheck, Gauge, Settings, X, Calendar, RotateCcw, AlarmClockCheck, AlertTriangle,
+    Gauge, Settings, X, Calendar, RotateCcw, AlarmClockCheck, AlertTriangle,
 } from "lucide-react";
 import { exportToExcel } from "@/lib/exportExcel";
 import DatePicker from "react-datepicker";
@@ -11,13 +11,13 @@ import { th } from "date-fns/locale";
 import "react-datepicker/dist/react-datepicker.css";
 import ThaiDateInput from "@/app/components/ThaiDateInput";
 import { ConnectionStatus, LiveBadge, RefreshButton } from "@/app/components/dashboard/live";
-import { fmtDate, getBangkokToday, toThaiDateLabel, getCurrentFiscalYear, getCurrentCalendarYear } from "@/lib/thaiDate";
-import type { ServiceTimeData, ServiceScope, VisitType, ServiceShift } from "@/lib/servicetime.types";
+import { fmtDate, getBangkokToday, toThaiDateLabel } from "@/lib/thaiDate";
+import type { ServiceTimeData, VisitType, ServiceShift } from "@/lib/servicetime.types";
 
 import {
     C, fmt, mins, timeColor, pctColor, stageShort,
-    Preset, PRESETS, FISCAL_YEARS, CALENDAR_YEARS, fiscalRange, calendarRange,
-    SCOPES, VISIT_TYPES, SHIFTS, presetRange,
+    Preset, PRESETS,
+    VISIT_TYPES, SHIFTS, presetRange,
     Segmented, Field,
     TabBar, View,
     FlowVSM,
@@ -25,16 +25,13 @@ import {
 } from "@/app/components/servicetime";
 
 export default function ServiceTimeDashboardPage() {
-    const [preset, setPreset] = useState<Preset>("month");
-    const [fiscalYear, setFiscalYear] = useState<number>(() => getCurrentFiscalYear());
-    const [calendarYear, setCalendarYear] = useState<number>(() => getCurrentCalendarYear());
-    const [customStart, setCustomStart] = useState<Date>(() => presetRange("month").start);
+    const [preset, setPreset] = useState<Preset>("today");
+    const [customStart, setCustomStart] = useState<Date>(() => getBangkokToday());
     const [customEnd, setCustomEnd] = useState<Date>(() => getBangkokToday());
-    const [scope, setScope] = useState<ServiceScope>("opd");
     const [visitType, setVisitType] = useState<VisitType>("all");
     const [shift, setShift] = useState<ServiceShift>("all");
     const [clinic, setClinic] = useState<string>("all");
-    const [view, setView] = useState<View>("overview");
+    const [view, setView] = useState<View>("flow");
 
     // เป้าหมาย (เก็บใน localStorage) — targetTotal ส่งไป server, pctGoal ใช้ฝั่ง client (สี/สถานะ)
     const DEFAULT_TARGETS = { total: 90, pct: 80 };
@@ -75,15 +72,12 @@ export default function ServiceTimeDashboardPage() {
 
     const fetchData = useCallback(async () => {
         const { start, end } =
-            preset === "custom" ? { start: customStart, end: customEnd }
-                : preset === "fiscal" ? fiscalRange(fiscalYear)
-                    : preset === "calendar" ? calendarRange(calendarYear)
-                        : presetRange(preset);
+            preset === "custom" ? { start: customStart, end: customEnd } : presetRange(preset);
         setLoading(true);
         setError(null);
         try {
             const qs = new URLSearchParams({
-                start: fmtDate(start), end: fmtDate(end), scope, visitType,
+                start: fmtDate(start), end: fmtDate(end), scope: "opd", visitType,
                 shift, clinic, target: String(targetTotal),
             });
             const res = await fetch(`/api/servicetime?${qs}`, { credentials: "include" });
@@ -97,7 +91,7 @@ export default function ServiceTimeDashboardPage() {
         } finally {
             setLoading(false);
         }
-    }, [preset, customStart, customEnd, fiscalYear, calendarYear, scope, visitType, shift, clinic, targetTotal]);
+    }, [preset, customStart, customEnd, visitType, shift, clinic, targetTotal]);
 
     useEffect(() => { fetchData(); }, [fetchData]);
 
@@ -124,8 +118,8 @@ export default function ServiceTimeDashboardPage() {
         const within120 = pctColor(summary.within120Pct, 80);
         return [
             {
-                icon: scope === "opd" ? Users : UserCheck,
-                label: scope === "er" ? "ผู้ป่วย ER" : scope === "all" ? "ผู้ป่วย OPD+ER" : "ผู้ป่วย OPD",
+                icon: Users,
+                label: "ผู้ป่วย OPD",
                 value: fmt(summary.totalVisits),
                 sub: "ราย",
                 accent: C.blue, bg: C.blueL,
@@ -152,7 +146,7 @@ export default function ServiceTimeDashboardPage() {
                 accent: C.red, bg: C.redL,
             },
         ];
-    }, [data, summary, total, scope]);
+    }, [data, summary, total]);
 
     const rangeLabel = data ? toThaiDateLabel(data.start, data.end) : "";
 
@@ -184,9 +178,9 @@ export default function ServiceTimeDashboardPage() {
     }, [data]);
 
     const filtersActive =
-        clinic !== "all" || shift !== "all" || scope !== "opd" || visitType !== "all";
+        clinic !== "all" || shift !== "all" || visitType !== "all";
     const resetFilters = () => {
-        setClinic("all"); setShift("all"); setScope("opd"); setVisitType("all");
+        setClinic("all"); setShift("all"); setVisitType("all");
     };
 
     return (
@@ -199,7 +193,6 @@ export default function ServiceTimeDashboardPage() {
                         <h1 className="text-xl md:text-2xl font-extrabold text-gray-800">
                             ระยะเวลารอคอย / ให้บริการ OPD
                         </h1>
-                        <LiveBadge />
                     </div>
                     <p className="text-xs text-gray-500 mt-1">
                         ตัวชี้วัด Service Time (R9) · {rangeLabel || "—"}
@@ -208,7 +201,6 @@ export default function ServiceTimeDashboardPage() {
                     </p>
                 </div>
                 <div className="flex items-center gap-2">
-                    <ConnectionStatus error={!!error} connected={!error && !!data} />
                     <RefreshButton loading={loading} onClick={fetchData} />
                 </div>
             </div>
@@ -219,30 +211,6 @@ export default function ServiceTimeDashboardPage() {
                     <Field label="ช่วงวันที่" icon={Calendar}>
                         <div className="flex items-center gap-2">
                             <Segmented value={preset} options={PRESETS} onChange={setPreset} />
-                            {preset === "fiscal" && (
-                                <select
-                                    value={fiscalYear}
-                                    onChange={(e) => setFiscalYear(Number(e.target.value))}
-                                    className="rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-sm text-gray-700 shadow-sm focus:outline-none focus:ring-2 focus:ring-green-600/30"
-                                    title="เลือกปีงบประมาณ"
-                                >
-                                    {FISCAL_YEARS.map((y) => (
-                                        <option key={y} value={y}>ปีงบ {y}</option>
-                                    ))}
-                                </select>
-                            )}
-                            {preset === "calendar" && (
-                                <select
-                                    value={calendarYear}
-                                    onChange={(e) => setCalendarYear(Number(e.target.value))}
-                                    className="rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-sm text-gray-700 shadow-sm focus:outline-none focus:ring-2 focus:ring-green-600/30"
-                                    title="เลือกปีปฏิทิน"
-                                >
-                                    {CALENDAR_YEARS.map((y) => (
-                                        <option key={y} value={y}>ปี {y}</option>
-                                    ))}
-                                </select>
-                            )}
                             {preset === "custom" && (
                                 <div className="flex items-center gap-2">
                                     <DatePicker
@@ -282,10 +250,6 @@ export default function ServiceTimeDashboardPage() {
 
                     <Field label="เวร" icon={Clock}>
                         <Segmented value={shift} options={SHIFTS} onChange={setShift} />
-                    </Field>
-
-                    <Field label="กลุ่มบริการ">
-                        <Segmented value={scope} options={SCOPES} onChange={setScope} />
                     </Field>
 
                     <Field label="ประเภทการมา">

@@ -8,6 +8,7 @@ import { Segmented } from "./Segmented";
 
 // ─── VSM / Flowchart (ผังกระบวนการ OPD — ค่าจริง) ─────────────────────────────
 // การ์ด = ขั้น "ดำเนินงาน" (Process Time จริง) · ลูกศร = ขั้น "รอ" (Waiting Time จริง)
+// Lab / X-ray = ส่งตรวจจากห้องตรวจ แล้ว "ผลกลับห้องตรวจ" (ไม่ได้ไปรับยาโดยตรง)
 type FlowMetric = "avg" | "median";
 
 // พาสเทล
@@ -18,6 +19,7 @@ const P = {
     name: "#3c4a63",
     waitInk: "#5b6b8c",
     arrow: "#3f6fd6", arrowDash: "#b6cbf0",
+    loopBg: "#fbfcff", loopBorder: "#cdd9f0",
     tatBg: "#fff8ea", tatBorder: "#f6e4b8", tatInk: "#e6a12a", tatIconBg: "#fceccb",
     endBg: "#ecfaf2", endBorder: "#c1e9d5", endInk: "#12a06a", endIconBg: "#d8f3e6",
 };
@@ -103,13 +105,42 @@ function WaitLink({
     );
 }
 
-// ลูกศรแนวตั้ง (ชี้ลง) — จุดแตกสาขาจาก "ตรวจ"
-function WaitDown() {
+// ลูกศรคู่แนวตั้ง ตรวจ ⇅ Lab/X-ray — ลงทึบ = ส่งตรวจ · ขึ้นประ = ผลกลับห้องตรวจ
+function LoopArrows() {
     return (
-        <div className="flex items-center justify-center py-1">
+        <div className="flex items-center justify-center gap-6 py-1">
             <div className="flex flex-col items-center">
-                <div style={{ width: 2, height: 22, background: P.arrow }} />
+                <span className="mb-0.5 text-[9px] font-semibold text-gray-500">ส่งตรวจ</span>
+                <div style={{ width: 2, height: 26, background: P.arrow }} />
                 <div style={{ width: 0, height: 0, borderLeft: "5px solid transparent", borderRight: "5px solid transparent", borderTop: `7px solid ${P.arrow}` }} />
+            </div>
+            <div className="flex flex-col items-center">
+                <div style={{ width: 0, height: 0, borderLeft: "5px solid transparent", borderRight: "5px solid transparent", borderBottom: `7px solid ${P.arrowDash}` }} />
+                <div style={{ width: 0, height: 26, borderLeft: `2px dashed ${P.arrowDash}` }} />
+                <span className="mt-0.5 text-[9px] font-semibold text-gray-400">ผลกลับห้องตรวจ</span>
+            </div>
+        </div>
+    );
+}
+
+// สาขา Lab / X-ray — ป้ายเวลารอ + การ์ด (อยู่ในกล่องส่งตรวจเพิ่มเติม)
+function BranchItem({
+    waitStage, procStage, waitLabel, icon, cardLabel, metric,
+}: {
+    waitStage: StageStat | null;
+    procStage: StageStat | null;
+    waitLabel: string;
+    icon: React.ElementType;
+    cardLabel: string;
+    metric: FlowMetric;
+}) {
+    return (
+        <div className="flex items-center gap-1">
+            <div className="w-[86px]">
+                <WaitLink stage={waitStage} metric={metric} label={waitLabel} dashed />
+            </div>
+            <div className="w-[130px]">
+                <FlowCard stage={procStage} icon={icon} metric={metric} label={cardLabel} />
             </div>
         </div>
     );
@@ -180,8 +211,8 @@ export function FlowVSM({ data }: { data: ServiceTimeData }) {
                     className="grid items-stretch"
                     style={{
                         gridTemplateColumns:
-                            "minmax(64px,auto) minmax(78px,1fr) minmax(120px,auto) minmax(78px,1fr) minmax(120px,auto) minmax(78px,1fr) minmax(120px,auto) minmax(64px,1fr) minmax(186px,auto)",
-                        minWidth: 1120,
+                            "minmax(64px,auto) minmax(90px,1fr) minmax(120px,auto) minmax(90px,1fr) minmax(140px,auto) minmax(90px,1fr) minmax(186px,auto)",
+                        minWidth: 980,
                         columnGap: 2,
                     }}
                 >
@@ -191,25 +222,32 @@ export function FlowVSM({ data }: { data: ServiceTimeData }) {
                     <div className={cell} style={{ gridColumn: 3, gridRow: 1 }}><FlowCard stage={byKey("screening")} icon={ClipboardList} metric={metric} label="คัดกรอง" /></div>
                     <div className={cell} style={{ gridColumn: 4, gridRow: 1 }}><WaitLink stage={byKey("wait_doctor")} metric={metric} label="รอตรวจ" /></div>
                     <div className={cell} style={{ gridColumn: 5, gridRow: 1 }}><FlowCard stage={byKey("consult")} icon={Stethoscope} metric={metric} label="ตรวจ" /></div>
-                    <div className={cell} style={{ gridColumn: "6 / 9", gridRow: 1 }}><WaitLink plain /></div>
+                    <div className={cell} style={{ gridColumn: 6, gridRow: 1 }}><WaitLink plain /></div>
 
-                    {/* ปลายทาง รอรับยา — สูงคร่อมทุกแถว */}
-                    <div className="flex" style={{ gridColumn: 9, gridRow: "1 / 6" }}><FlowCard stage={byKey("wait_pharmacy")} icon={Pill} metric={metric} tone="green" label="รอรับยา" tall /></div>
+                    {/* ปลายทาง รอรับยา */}
+                    <div className="flex" style={{ gridColumn: 7, gridRow: "1 / 4" }}><FlowCard stage={byKey("wait_pharmacy")} icon={Pill} metric={metric} tone="green" label="รอรับยา" tall /></div>
 
-                    {/* แตกลงจาก ตรวจ */}
-                    <div className={cell} style={{ gridColumn: 5, gridRow: 2 }}><WaitDown /></div>
+                    {/* ตรวจ ⇅ Lab/X-ray — ส่งตรวจแล้วผลกลับห้องตรวจ */}
+                    <div className={cell} style={{ gridColumn: 5, gridRow: 2 }}><LoopArrows /></div>
 
-                    {/* แถว Lab: (รอแลป)→ LAB →→ รอรับยา */}
-                    <div className={cell} style={{ gridColumn: "5 / 7", gridRow: 3 }}><WaitLink stage={byKey("lab_wait")} metric={metric} label="รอแลป" dashed /></div>
-                    <div className={cell} style={{ gridColumn: 7, gridRow: 3 }}><FlowCard stage={byKey("lab_process")} icon={FlaskConical} metric={metric} label="LAB" /></div>
-                    <div className={cell} style={{ gridColumn: 8, gridRow: 3 }}><WaitLink plain dashed /></div>
-
-                    <div className={cell} style={{ gridColumn: 5, gridRow: 4 }}><WaitDown /></div>
-
-                    {/* แถว X-ray: (รอ X-ray)→ X-ray →→ รอรับยา */}
-                    <div className={cell} style={{ gridColumn: "5 / 7", gridRow: 5 }}><WaitLink stage={byKey("xray_wait")} metric={metric} label="รอ X-ray" dashed /></div>
-                    <div className={cell} style={{ gridColumn: 7, gridRow: 5 }}><FlowCard stage={byKey("xray_process")} icon={Scan} metric={metric} label="X-ray" /></div>
-                    <div className={cell} style={{ gridColumn: 8, gridRow: 5 }}><WaitLink plain dashed /></div>
+                    {/* กล่องส่งตรวจเพิ่มเติม: Lab / X-ray (ผลกลับห้องตรวจ ไม่ได้ไปรับยาโดยตรง) */}
+                    <div style={{ gridColumn: "3 / 7", gridRow: 3 }}>
+                        <div className="mx-auto w-fit rounded-2xl border border-dashed px-5 py-4" style={{ backgroundColor: P.loopBg, borderColor: P.loopBorder }}>
+                            <div className="mb-3 text-center text-[11px] font-semibold text-gray-500">
+                                ส่งตรวจเพิ่มเติม (บางราย) — เสร็จแล้ว<span style={{ color: P.icon }}>กลับห้องตรวจ</span>
+                            </div>
+                            <div className="flex flex-wrap items-center justify-center gap-x-8 gap-y-4">
+                                <BranchItem
+                                    waitStage={byKey("lab_wait")} procStage={byKey("lab_process")}
+                                    waitLabel="รอแลป" icon={FlaskConical} cardLabel="LAB" metric={metric}
+                                />
+                                <BranchItem
+                                    waitStage={byKey("xray_wait")} procStage={byKey("xray_process")}
+                                    waitLabel="รอ X-ray" icon={Scan} cardLabel="X-ray" metric={metric}
+                                />
+                            </div>
+                        </div>
+                    </div>
                 </div>
             </div>
 
@@ -217,7 +255,7 @@ export function FlowVSM({ data }: { data: ServiceTimeData }) {
             <div className="mt-6 flex flex-wrap items-center justify-between gap-2 border-t border-gray-100 pt-3 text-[11px] text-gray-400">
                 <span className="inline-flex items-center gap-1">
                     <Clock size={12} /> เวลาแสดงเป็น ชั่วโมง : นาที : วินาที (ค่า{metric === "median" ? "มัธยฐาน" : "เฉลี่ย"}จริงในช่วงที่เลือก) ·
-                    การ์ด = เวลาดำเนินงาน · ลูกศร = เวลารอจริง · หลังตรวจแตกไป Lab / X-ray แล้วรวมกลับที่ รอรับยา · ตัวเลขจับสีเฉพาะขั้นที่มีเกณฑ์
+                    การ์ด = เวลาดำเนินงาน · ลูกศร = เวลารอจริง · Lab / X-ray ส่งตรวจจากห้องตรวจแล้วผลกลับห้องตรวจ ก่อนไปรอรับยา · ตัวเลขจับสีเฉพาะขั้นที่มีเกณฑ์
                 </span>
                 <span>อัปเดตล่าสุด {updated} น.</span>
             </div>

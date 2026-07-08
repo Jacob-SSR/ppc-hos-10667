@@ -5,8 +5,8 @@ import { Workflow, LayoutDashboard } from "lucide-react";
 // ─── Tab bar (สลับมุมมอง ภาพรวม ⇄ ผังกระบวนการ) ──────────────────────────────
 export type View = "flow" | "overview";
 export const VIEWS: { key: View; label: string; icon: React.ElementType }[] = [
-    { key: "overview", label: "ภาพรวม / เชิงลึก", icon: LayoutDashboard },
     { key: "flow", label: "ผังกระบวนการ (Flow)", icon: Workflow },
+    { key: "overview", label: "ภาพรวม / เชิงลึก", icon: LayoutDashboard },
 ];
 
 export function TabBar({ value, onChange }: { value: View; onChange: (v: View) => void }) {
