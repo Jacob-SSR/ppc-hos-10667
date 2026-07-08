@@ -12,9 +12,7 @@ import { getAncAnemiaMapRows } from "@/lib/anc.service";
 export const dynamic = "force-dynamic";
 
 // ─── แหล่งข้อมูลพิกัด (ชุดเดียวกับ drug-map / homeward-map) ─────────────────────
-const PIKAD_SPREADSHEET_ID =
-  process.env.PIKAD_SPREADSHEET_ID ??
-  "12tU32ntRHsBVWHRUMGh0CfHpclpQplghH__6yh08wp4";
+const PIKAD_SPREADSHEET_ID = process.env.PIKAD_SPREADSHEET_ID!;
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 export interface AnemiaMapPoint {

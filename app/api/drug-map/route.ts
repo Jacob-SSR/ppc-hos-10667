@@ -13,9 +13,7 @@ import {
 // ชีตผู้ป่วยยาเสพติด (ชุดเดียวกับ /api/drug-sheets)
 const DRUG_SPREADSHEET_ID = process.env.DRUG_SPREADSHEET_ID!;
 // ชีตพิกัดหลังคาเรือน (มี ละติจูด/ลองจิจูด + เลข 13 หลัก)
-const PIKAD_SPREADSHEET_ID =
-  process.env.PIKAD_SPREADSHEET_ID ??
-  "12tU32ntRHsBVWHRUMGh0CfHpclpQplghH__6yh08wp4";
+const PIKAD_SPREADSHEET_ID = process.env.PIKAD_SPREADSHEET_ID!;
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 export interface DrugMapPoint {

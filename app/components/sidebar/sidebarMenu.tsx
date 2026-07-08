@@ -243,6 +243,12 @@ export const DASHBOARD_GROUPS: SidebarSubGroup[] = [
         group: "disease",
       },
       {
+        label: "แผนที่บ้านผู้ป่วยวัณโรค",
+        href: "/pages/tb-map",
+        icon: MapPinned,
+        group: "disease",
+      },
+      {
         label: "RDU Antibiotic Smart Use",
         href: "/pages/rdu-dashboard",
         icon: Pill,

@@ -10,12 +10,8 @@ import {
 } from "@/lib/sheets";
 
 // ─── แหล่งข้อมูล ───────────────────────────────────────────────────────────────
-const MINITHAN_SPREADSHEET_ID =
-  process.env.MINITHAN_SPREADSHEET_ID ||
-  "1NokZz-8JYoK99X6996VG-DWPl940VsSkQqPjDjq3X-s";
-const PIKAD_SPREADSHEET_ID =
-  process.env.PIKAD_SPREADSHEET_ID ??
-  "12tU32ntRHsBVWHRUMGh0CfHpclpQplghH__6yh08wp4";
+const MINITHAN_SPREADSHEET_ID = process.env.MINITHAN_SPREADSHEET_ID!;
+const PIKAD_SPREADSHEET_ID = process.env.PIKAD_SPREADSHEET_ID!;
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 export interface MiniThanMapPoint {

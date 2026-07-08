@@ -14,9 +14,7 @@ const HOMEWARD_SPREADSHEET_ID = process.env.HOMEWARD_SPREADSHEET_ID!;
 const HOMEWARD_SHEET_NAME =
   process.env.HOMEWARD_SHEET_NAME ||
   "ชดเชย Home Ward +พลับพลารักษ์ By Natchanan";
-const PIKAD_SPREADSHEET_ID =
-  process.env.PIKAD_SPREADSHEET_ID ??
-  "12tU32ntRHsBVWHRUMGh0CfHpclpQplghH__6yh08wp4";
+const PIKAD_SPREADSHEET_ID = process.env.PIKAD_SPREADSHEET_ID!;
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 export interface HomeWardMapPoint {
