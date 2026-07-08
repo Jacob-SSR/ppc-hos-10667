@@ -21,6 +21,7 @@ import {
 } from "@/app/components/dashboard/live";
 import { formatThaiDate } from "@/lib/dateUtils";
 import AiSummaryCard from "@/app/components/ai/AiSummaryCard";
+import AncCharts from "@/app/components/dashboard/AncCharts";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 interface AncSummary {
@@ -48,6 +49,7 @@ interface AncData {
     updatedAt: string; start: string; end: string; summary: AncSummary;
     missedAppts: MissedAppt[]; laborAdmit: LaborAdmit[]; referOut: ReferOut[];
     anemiaHct: Anemia; anemiaHb: Anemia; daily: DailyMonthly;
+    anc5ByMonth?: MonthPoint[]; // ฝากครบ 5 ครั้ง (เดือนที่มาครั้งที่ 5)
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -460,6 +462,20 @@ export default function AncNursingDashboardPage() {
                                 : <HBarList data={riskBars} colors={["#EF9F27"]} labelWidth={140} />}
                         </SectionCard>
                     </div>
+
+                    {/* ── กราฟไตรมาส + โดนัทภาวะเสี่ยง/สถานะคลอด ── */}
+                    {dm && (
+                        <AncCharts
+                            newRegByMonth={dm.newReg.byMonth}
+                            anc5ByMonth={data?.anc5ByMonth ?? []}
+                            riskData={riskBars}
+                            delivery={{
+                                "ยังไม่คลอด": s.ancActiveTotal,
+                                "คลอดแล้ว": s.laborAdmitCount,
+                                "ส่งต่อห้องคลอด": s.referOutCount,
+                            }}
+                        />
+                    )}
                 </>
             )}
 

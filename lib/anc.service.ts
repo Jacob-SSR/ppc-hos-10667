@@ -660,3 +660,41 @@ export async function getAncAnemiaMapRows(
   );
   return rows;
 }
+
+// ─── 7. ฝากครรภ์ครบ 5 ครั้ง รายเดือน ─────────────────────────────────────────
+// นับจาก person_anc_service (บัญชี 2) — แหล่งเดียวกับ quality8 (service_count)
+// เอาวันที่มารับบริการ "ครั้งที่ 5" ของแต่ละ person_anc แล้ว group ตามเดือน
+// ไม่ใช้ ROW_NUMBER() เพื่อรองรับ MariaDB เก่าของ HosXP
+export async function getAncAnc5ByMonth(
+  start: string,
+  end: string,
+): Promise<AncMonthPoint[]> {
+  const [rows] = await db.query<RowDataPacket[]>(
+    `
+    SELECT DATE_FORMAT(x.anc_service_date, '%Y-%m') AS ym, COUNT(*) AS value
+    FROM (
+      SELECT DISTINCT person_anc_id, anc_service_date
+      FROM person_anc_service
+    ) x
+    WHERE (
+        SELECT COUNT(DISTINCT y.anc_service_date)
+        FROM person_anc_service y
+        WHERE y.person_anc_id = x.person_anc_id
+          AND y.anc_service_date <= x.anc_service_date
+      ) = 5
+      AND x.anc_service_date BETWEEN ? AND ?
+    GROUP BY ym
+    ORDER BY ym
+    `,
+    [start, end],
+  );
+
+  return rows.map((r) => {
+    const [y, m] = String(r.ym).split("-").map(Number);
+    return {
+      month: String(r.ym),
+      label: `${TH_MON[m]} ${String(y + 543).slice(2)}`,
+      value: Number(r.value) || 0,
+    };
+  });
+}
