@@ -67,6 +67,7 @@ export function DateRangeToolbar({
     dropdownMode: "select" as const,
     yearDropdownItemNumber: 20,
     customInput: <ThaiDateInput />,
+    popperProps: { strategy: "fixed" as const },
   };
 
   return (

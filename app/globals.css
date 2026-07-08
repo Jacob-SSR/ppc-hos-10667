@@ -149,6 +149,11 @@ html.dark {
   --mint-border-on-dark: #166534;
 }
 
+/* ─── ปฏิทิน react-datepicker ให้ลอยเหนือแผนที่ Leaflet ─── */
+.react-datepicker-popper {
+    z-index: 2000 !important;
+}
+
 /* ─────────────────────────────────────────────────
    BASE STYLES
 ───────────────────────────────────────────────── */
