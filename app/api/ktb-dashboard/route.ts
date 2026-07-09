@@ -1,8 +1,19 @@
 // app/api/ktb-dashboard/route.ts
-import { NextResponse } from "next/server";
-import { readFileSync, existsSync } from "fs";
-import path from "path";
-import * as XLSX from "xlsx";
+import { NextRequest, NextResponse } from "next/server";
+import {
+  getSheetClient,
+  getFirstSheetTitle,
+  getValues,
+  parseDate,
+  sheetsError,
+} from "@/lib/sheets";
+import { cachedQuery, invalidate } from "@/lib/cache";
+
+// ─── แหล่งข้อมูล + Cache ──────────────────────────────────────────────────────
+const SPREADSHEET_ID = process.env.KTB_SPREADSHEET_ID!;
+const SHEET_NAME = process.env.KTB_SHEET_NAME || "";
+const CACHE_KEY = "ktb-dashboard";
+const TTL = 900; // 15 นาที — ข้อมูลงวดจ่ายอัปเดตเป็นรอบ ไม่ต้องถี่
 
 export interface KtbRow {
   repNo: string;
@@ -81,52 +92,40 @@ const HCODE_MAP: Record<string, { name: string; isHospital: boolean }> = {
 
 // ─── SERVICE SHORT LABELS ─────────────────────────────────────────────────────
 const SERVICE_SHORT: Record<string, string> = {
-  "ฉีดวัคซีนป้องกันโรคป้องกันโรคไข้หวัดใหญ่ตามฤดูกาล(7กลุ่มเสี่ยง)": "วัคซีนไข้หวัดใหญ่",
-  "วัคซีนป้องกันโรคไข้หวัดใหญ่ตามฤดูกาล": "วัคซีนไข้หวัดใหญ่",
+  "ฉีดวัคซีนป้องกันโรคป้องกันโรคไข้หวัดใหญ่ตามฤดูกาล(7กลุ่มเสี่ยง)":
+    "วัคซีนไข้หวัดใหญ่",
+  วัคซีนป้องกันโรคไข้หวัดใหญ่ตามฤดูกาล: "วัคซีนไข้หวัดใหญ่",
   "การตรวจคัดกรองโรคไวรัสตับอักเสบ ซี": "ตรวจตับอักเสบ C",
   "บริการตรวจคัดกรองไวรัสตับอักเสบ บี": "ตรวจตับอักเสบ B",
-  "ค่าบริการเก็บตัวอย่าง": "เก็บตัวอย่าง",
+  ค่าบริการเก็บตัวอย่าง: "เก็บตัวอย่าง",
 };
 
+/** Sheets API คืน formatted string เช่น "1,234.50" → strip comma ก่อนแปลง */
 function toNum(v: unknown): number {
-  const n = Number(v);
+  if (v == null || v === "") return 0;
+  const n = Number(String(v).replace(/,/g, "").trim());
   return isNaN(n) ? 0 : n;
 }
 
 function normalizeHcode(raw: unknown): string {
-  if (!raw) return "";
-  const n = Math.round(Number(raw));
+  if (raw == null || raw === "") return "";
+  const n = Math.round(Number(String(raw).replace(/,/g, "").trim()));
   if (isNaN(n)) return "";
   // 5 digit เช่น 3045 → 03045, 10909 → 10909
   return n < 10000 ? `0${n}` : String(n);
 }
 
-function parseDate(raw: unknown): string {
-  if (!raw) return "";
-  if (raw instanceof Date) {
-    // วันที่จาก openpyxl อาจเป็น พ.ศ. → แปลง
-    const y = raw.getFullYear();
-    const ce = y > 2400 ? y - 543 : y;
-    const m = String(raw.getMonth() + 1).padStart(2, "0");
-    const d = String(raw.getDate()).padStart(2, "0");
-    return `${ce}-${m}-${d}`;
-  }
-  return String(raw).slice(0, 10);
-}
+// ─── อ่านข้อมูลจาก Google Sheets ──────────────────────────────────────────────
+// layout เดียวกับ KTB.xlsx เดิม: row 0–3 = headers, data เริ่ม row 4, งวดจ่าย = col B
+async function fetchRows(): Promise<KtbRow[]> {
+  const sheets = await getSheetClient();
+  const sheetName =
+    SHEET_NAME || (await getFirstSheetTitle(sheets, SPREADSHEET_ID));
+  const raw = await getValues(sheets, SPREADSHEET_ID, `'${sheetName}'!A:AB`);
 
-function parseXlsx(filePath: string): KtbRow[] {
-  const buf = readFileSync(filePath);
-  const wb = XLSX.read(buf, { type: "buffer", cellDates: true });
-  const ws = wb.Sheets[wb.SheetNames[0]];
-  const raw = XLSX.utils.sheet_to_json<unknown[]>(ws, {
-    header: 1,
-    defval: "",
-  }) as unknown[][];
-
-  // Row 0–3 = headers, data เริ่ม row 4
   const rows: KtbRow[] = [];
   for (let i = 4; i < raw.length; i++) {
-    const r = raw[i] as unknown[];
+    const r = raw[i] ?? [];
     const งวดจ่าย = r[1] ? String(r[1]).trim() : "";
     if (!งวดจ่าย) continue; // skip blank
 
@@ -252,7 +251,7 @@ function buildDashboard(rows: KtbRow[]): KtbDashboardData {
                 ไม่ชดเชย: sr.reduce((s, r) => s + r.ไม่ชดเชย, 0),
                 สถานะ,
               };
-            }
+            },
           );
 
           return {
@@ -293,20 +292,22 @@ function buildDashboard(rows: KtbRow[]): KtbDashboardData {
   };
 }
 
-export async function GET() {
+// ถูกเรียกเฉพาะตอน cache miss
+async function buildKtbData(): Promise<KtbDashboardData> {
+  const rows = await fetchRows();
+  return buildDashboard(rows);
+}
+
+export async function GET(req: NextRequest) {
   try {
-    const filePath = path.join(process.cwd(), "data", "ktb.xlsx");
-    if (!existsSync(filePath)) {
-      return NextResponse.json(
-        { error: "ไม่พบไฟล์ data/ktb.xlsx — กรุณาอัปโหลดข้อมูลก่อน" },
-        { status: 404 }
-      );
+    // ?refresh=1 → ล้าง cache แล้วดึงจาก Sheets ใหม่ (ปุ่มรีเฟรชในหน้า dashboard)
+    if (req.nextUrl.searchParams.get("refresh") === "1") {
+      await invalidate(CACHE_KEY);
     }
-    const rows = parseXlsx(filePath);
-    const data = buildDashboard(rows);
+
+    const data = await cachedQuery([CACHE_KEY], buildKtbData, TTL);
     return NextResponse.json(data);
   } catch (err) {
-    console.error("KtbDashboard error:", err);
-    return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
+    return sheetsError(err, "KtbDashboard");
   }
 }

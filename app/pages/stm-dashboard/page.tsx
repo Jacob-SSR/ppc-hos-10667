@@ -584,10 +584,11 @@ export default function StmDashboardPage() {
   const [noFile, setNoFile] = useState(false);
   const [seg, setSeg] = useState<Seg>("walkin");
 
-  const fetchData = useCallback(async () => {
+  // refresh = true → บังคับล้าง Redis cache แล้วดึงจาก Google Sheets ใหม่
+  const fetchData = useCallback(async (refresh = false) => {
     setLoading(true); setError(null); setNoFile(false);
     try {
-      const res = await fetch(`/api/stm-dashboard?seg=${seg}`, { credentials: "include" });
+      const res = await fetch(`/api/stm-dashboard?seg=${seg}${refresh ? "&refresh=1" : ""}`, { credentials: "include" });
       if (res.status === 404) { setNoFile(true); setLoading(false); return; }
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       setData(await res.json());
@@ -601,7 +602,7 @@ export default function StmDashboardPage() {
   // โหลดครั้งแรก + รีเฟรชอัตโนมัติทุก 60 วินาที (เรียลไทม์จาก Google Sheet)
   useEffect(() => {
     fetchData();
-    const id = setInterval(fetchData, 60_000);
+    const id = setInterval(() => fetchData(), 60_000);
     return () => clearInterval(id);
   }, [fetchData]);
 
@@ -625,7 +626,7 @@ export default function StmDashboardPage() {
             {data && <span className="ml-2">· อัปเดต {new Date(data.updatedAt).toLocaleString("th-TH")}</span>}
           </p>
         </div>
-        <button onClick={fetchData} disabled={loading}
+        <button onClick={() => fetchData(true)} disabled={loading}
           className="flex items-center gap-1.5 border border-gray-200 rounded-lg px-3 py-1.5 text-sm text-gray-600 hover:bg-gray-50 disabled:opacity-40">
           <motion.span animate={loading ? { rotate: 360 } : { rotate: 0 }}
             transition={loading ? { duration: 0.8, repeat: Infinity, ease: "linear" } : {}}>
@@ -646,8 +647,8 @@ export default function StmDashboardPage() {
                 key={t.key}
                 onClick={() => setSeg(t.key)}
                 className={`px-4 py-1.5 rounded-lg text-sm font-semibold transition-all ${active
-                    ? "bg-white shadow-sm text-[#1a5233]"
-                    : "text-gray-500 hover:text-gray-700"
+                  ? "bg-white shadow-sm text-[#1a5233]"
+                  : "text-gray-500 hover:text-gray-700"
                   }`}
               >
                 {t.label}

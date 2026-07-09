@@ -1,24 +1,19 @@
 // app/api/stm-dashboard/route.ts
-// อ่านข้อมูล STM (OPD-UCS) จาก Google Sheet แบบเรียลไทม์ (แทนการอัปโหลดไฟล์ stm.xlsx)
-// แสดงเฉพาะรายการ PROJCODE = "WALKIN" และสรุปยอด "เรียกเก็บ" + "ยอดชดเชยทั้งสิ้น"
-//
-// ── ENV ที่เกี่ยวข้อง ───────────────────────────────────────────────────────────
-//   GOOGLE_SERVICE_ACCOUNT_EMAIL   (มีอยู่แล้วในโปรเจกต์)
-//   GOOGLE_PRIVATE_KEY             (มีอยู่แล้วในโปรเจกต์)
-//   STM_SHEET_ID                   (ต้องตั้งใน .env — เก็บ Google Sheet ID ไว้ที่นี่)
-//
-//   ⚠️ ต้องแชร์ Google Sheet ให้ service account อ่านได้ (สิทธิ์ Viewer ก็พอ)
-//      โดยแชร์ให้อีเมลใน GOOGLE_SERVICE_ACCOUNT_EMAIL
-
 import { NextResponse } from "next/server";
 import { getSheetClient, getFirstSheetTitle } from "@/lib/sheets/client";
 import { parseDate } from "@/lib/sheets/parseDate";
+import { cachedQuery, invalidate } from "@/lib/cache";
 
-// ดึงสดทุกครั้ง ไม่ cache → ใกล้เคียง realtime
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
 const SHEET_ID = process.env.STM_SHEET_ID!;
+
+// ─── Redis cache ───────────────────────────────────────────────────────────────
+// cache "แถวดิบทั้งหมด" ก้อนเดียว → ทุก seg (all/walkin/nonwalkin) ใช้ cache ร่วมกัน
+// TTL สั้นหน่อย (5 นาที) เพื่อยังใกล้เคียง realtime — ?refresh=1 บังคับดึงใหม่ได้
+const CACHE_KEY = "stm-dashboard:rows";
+const TTL = 300;
 
 // ค่าใน PROJCODE (คอลัมน์ K) ที่ถือว่าเป็น WALKIN
 const PROJ_WALKIN = "WALKIN";
@@ -337,7 +332,12 @@ export async function GET(req: Request) {
     const seg: StmSeg =
       segParam === "all" || segParam === "nonwalkin" ? segParam : "walkin";
 
-    const all = await fetchAllRows();
+    // ?refresh=1 → ล้าง cache แล้วดึงจาก Sheets ใหม่ (ปุ่มรีเฟรชในหน้า dashboard)
+    if (new URL(req.url).searchParams.get("refresh") === "1") {
+      await invalidate(CACHE_KEY);
+    }
+
+    const all = await cachedQuery([CACHE_KEY], fetchAllRows, TTL);
     if (all.length === 0) {
       return NextResponse.json(
         {

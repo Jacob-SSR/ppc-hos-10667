@@ -1,14 +1,13 @@
 "use client";
 
-import { useEffect, useState, useCallback, useMemo, useRef } from "react";
+import { useEffect, useState, useCallback, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid, ResponsiveContainer,
 } from "recharts";
 import {
   RefreshCw, TrendingUp, BadgeCheck, AlertTriangle, Banknote,
-  Info, Building2, MapPin, ChevronDown, UploadCloud, CheckCircle2,
-  XCircle, Filter,
+  Building2, MapPin, ChevronDown, Filter,
 } from "lucide-react";
 import React from "react";
 
@@ -423,85 +422,20 @@ function UnitCard({ unit }: { unit: KtbUnitSummary }) {
   );
 }
 
-// ─── Upload Dropzone ──────────────────────────────────────────────────────────
-function UploadDropzone({ onSuccess }: { onSuccess: () => void }) {
-  const inputRef = useRef<HTMLInputElement>(null);
-  const [dragging, setDragging] = useState(false);
-  const [uploading, setUploading] = useState(false);
-  const [result, setResult] = useState<{ ok: boolean; msg: string } | null>(null);
-
-  const upload = useCallback(async (file: File) => {
-    setUploading(true); setResult(null);
-    const form = new FormData(); form.append("file", file);
-    try {
-      const res = await fetch("/api/ktb-upload", { method: "POST", body: form, credentials: "include" });
-      const json = await res.json();
-      setResult({ ok: json.success, msg: json.message ?? json.error });
-      if (json.success) setTimeout(onSuccess, 600);
-    } catch { setResult({ ok: false, msg: "เชื่อมต่อ server ไม่ได้" }); }
-    finally { setUploading(false); }
-  }, [onSuccess]);
-
-  return (
-    <div className="bg-white border border-gray-200 rounded-2xl p-4">
-      <div className="flex items-center justify-between mb-3">
-        <h4 className="text-sm font-bold text-[#717171]">อัปโหลดข้อมูลรายการไม่ชดเชย</h4>
-        <span className="text-[11px] text-gray-400">ktb.xlsx</span>
-      </div>
-      <motion.div
-        onDragOver={e => { e.preventDefault(); setDragging(true); }}
-        onDragLeave={() => setDragging(false)}
-        onDrop={e => { e.preventDefault(); setDragging(false); const f = e.dataTransfer.files[0]; if (f) upload(f); }}
-        onClick={() => !uploading && inputRef.current?.click()}
-        animate={{ borderColor: dragging ? "#3aa36a" : "#d1d5db", backgroundColor: dragging ? "#f0faf4" : "#fafafa" }}
-        className="border-2 border-dashed rounded-xl cursor-pointer flex flex-col items-center gap-2 py-6 select-none">
-        <input ref={inputRef} type="file" accept=".xlsx,.xls" className="hidden"
-          onChange={e => { const f = e.target.files?.[0]; if (f) upload(f); e.target.value = ""; }} />
-        <AnimatePresence mode="wait">
-          {uploading ? (
-            <motion.div key="up" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="flex flex-col items-center gap-2">
-              <motion.div animate={{ rotate: 360 }} transition={{ duration: 1, repeat: Infinity, ease: "linear" }}><RefreshCw size={28} className="text-green-600" /></motion.div>
-              <p className="text-sm font-semibold text-green-700">กำลังอัปโหลด...</p>
-            </motion.div>
-          ) : result?.ok ? (
-            <motion.div key="ok" initial={{ opacity: 0, scale: 0.85 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0 }} className="flex flex-col items-center gap-1">
-              <CheckCircle2 size={28} className="text-green-600" />
-              <p className="text-sm font-bold text-green-700">{result.msg}</p>
-              <p className="text-xs text-gray-400 underline cursor-pointer" onClick={e => { e.stopPropagation(); setResult(null); }}>อัปโหลดไฟล์ใหม่</p>
-            </motion.div>
-          ) : result ? (
-            <motion.div key="err" initial={{ opacity: 0, scale: 0.85 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0 }} className="flex flex-col items-center gap-1">
-              <XCircle size={28} className="text-red-500" />
-              <p className="text-sm font-semibold text-red-600">{result.msg}</p>
-              <p className="text-xs text-gray-500 underline cursor-pointer" onClick={e => { e.stopPropagation(); setResult(null); }}>ลองใหม่</p>
-            </motion.div>
-          ) : (
-            <motion.div key="idle" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="flex flex-col items-center gap-1 pointer-events-none">
-              <UploadCloud size={28} style={{ color: dragging ? "#3aa36a" : "#9ca3af" }} />
-              <p className="text-sm font-semibold text-gray-600">{dragging ? "ปล่อยเพื่ออัปโหลด" : "ลากวางไฟล์ หรือคลิกเพื่อเลือก"}</p>
-              <p className="text-xs text-gray-400">ไฟล์ Excel รายการไม่ชดเชย</p>
-            </motion.div>
-          )}
-        </AnimatePresence>
-      </motion.div>
-    </div>
-  );
-}
-
 // ─── Page ─────────────────────────────────────────────────────────────────────
 export default function KtbDashboardPage() {
   const [data, setData] = useState<KtbDashboardData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [noFile, setNoFile] = useState(false);
   const [filterUnit, setFilterUnit] = useState("ทั้งหมด");
   const [filterBatch, setFilterBatch] = useState("ทั้งหมด");
 
-  const fetchData = useCallback(async () => {
-    setLoading(true); setError(null); setNoFile(false);
+  // refresh = true → บังคับล้าง Redis cache แล้วดึงจาก Google Sheets ใหม่
+  const fetchData = useCallback(async (refresh = false) => {
+    setLoading(true); setError(null);
     try {
-      const res = await fetch("/api/ktb-dashboard", { credentials: "include" });
-      if (res.status === 404) { setNoFile(true); setLoading(false); return; }
+      const url = refresh ? "/api/ktb-dashboard?refresh=1" : "/api/ktb-dashboard";
+      const res = await fetch(url, { credentials: "include" });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       setData(await res.json());
     } catch (e) { setError((e as Error).message); }
@@ -557,7 +491,7 @@ export default function KtbDashboardPage() {
             {data && <span className="ml-2">· อัปเดต {new Date(data.updatedAt).toLocaleString("th-TH")}</span>}
           </p>
         </div>
-        <button onClick={fetchData} disabled={loading}
+        <button onClick={() => fetchData(true)} disabled={loading}
           className="flex items-center gap-1.5 border border-gray-200 rounded-lg px-3 py-1.5 text-sm text-gray-600 hover:bg-gray-50 disabled:opacity-40">
           <motion.span animate={loading ? { rotate: 360 } : { rotate: 0 }}
             transition={loading ? { duration: 0.8, repeat: Infinity, ease: "linear" } : {}}>
@@ -567,15 +501,6 @@ export default function KtbDashboardPage() {
         </button>
       </div>
 
-      {noFile && !loading && (
-        <div className="bg-amber-50 border border-amber-200 rounded-2xl p-6 flex items-start gap-3">
-          <Info size={18} className="text-amber-600 shrink-0 mt-0.5" />
-          <div>
-            <p className="text-sm font-bold text-amber-800">ยังไม่มีข้อมูล</p>
-            <p className="text-xs text-amber-700 mt-1">กรุณาอัปโหลดไฟล์ Excel รายการไม่ชดเชย ด้านล่าง</p>
-          </div>
-        </div>
-      )}
       {error && <div className="bg-red-50 border border-red-200 rounded-2xl p-4 text-sm text-red-700">⚠️ {error}</div>}
 
       {/* Filter Bar */}
@@ -648,8 +573,6 @@ export default function KtbDashboardPage() {
         </div>
       )}
 
-      {/* Upload */}
-      <UploadDropzone onSuccess={fetchData} />
     </div>
   );
 }

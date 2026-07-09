@@ -1,9 +1,25 @@
-import { NextResponse } from "next/server";
-import { readFileSync, existsSync } from "fs";
-import path from "path";
-import * as XLSX from "xlsx";
-import type { BillingUnitSummary, BillingItemSummary, BillingDashboardData } from "@/types/allTypes";
+// app/api/billing-dashboard/route.ts
+import { NextRequest, NextResponse } from "next/server";
+import {
+  getSheetClient,
+  getFirstSheetTitle,
+  getValues,
+  parseDate,
+  sheetsError,
+} from "@/lib/sheets";
+import { cachedQuery, invalidate } from "@/lib/cache";
+import type {
+  BillingUnitSummary,
+  BillingItemSummary,
+  BillingDashboardData,
+} from "@/types/allTypes";
 export type { BillingUnitSummary, BillingItemSummary, BillingDashboardData };
+
+// ─── แหล่งข้อมูล + Cache ──────────────────────────────────────────────────────
+const SPREADSHEET_ID = process.env.BILLING_SPREADSHEET_ID!;
+const SHEET_NAME = process.env.BILLING_SHEET_NAME || ""; // ว่าง = ใช้ sheet แรก
+const CACHE_KEY = "billing-dashboard";
+const TTL = 900; // 15 นาที
 
 export interface BillingRow {
   repNo: string;
@@ -28,9 +44,6 @@ export interface BillingRow {
   hcodeKey: string;
 }
 
-
-
-
 const HCODE_MAP: Record<string, { name: string; isHospital: boolean }> = {
   "10909": { name: "โรงพยาบาลพลับพลาชัย", isHospital: true },
   "03044": { name: "รพ.สต.บ้านจันดุม ", isHospital: false },
@@ -45,13 +58,16 @@ const SHORT_LABELS: Record<string, string> = {
   "บริการฉีดวัคซีนพื้นฐานตามกาหนดการให้วัคซีนตามแผนงานสร้างเสริมภูมิคุ้มกันโรค (EPI) ของกระทรวงสาธารณสุข":
     "วัคซีน EPI",
   "บริการฉีดวัคซีนคอตีบ-บาดทะยัก (dT) ในผู้ใหญ่": "วัคซีน dT",
-  "บริการควบคุมป้องกันและรักษาผู้ป่วยเบาหวาน หรือความดันโลหิตสูง": "ควบคุม DM/HT",
+  "บริการควบคุมป้องกันและรักษาผู้ป่วยเบาหวาน หรือความดันโลหิตสูง":
+    "ควบคุม DM/HT",
   "บริการผู้ป่วยเบาหวานชนิดที่ 2": "เบาหวาน T2",
-  "บริการโรคความดันโลหิตสูง": "ความดันโลหิตสูง",
+  บริการโรคความดันโลหิตสูง: "ความดันโลหิตสูง",
 };
 
+/** Sheets API คืน formatted string เช่น "1,234.50" → strip comma ก่อนแปลง */
 function toNum(v: unknown): number {
-  const n = Number(v);
+  if (v == null || v === "") return 0;
+  const n = Number(String(v).replace(/,/g, "").trim());
   return isNaN(n) ? 0 : n;
 }
 
@@ -60,29 +76,23 @@ function extractHcodeKey(s: unknown): string {
   return String(s).split(" ")[0].trim();
 }
 
-function parseXlsx(filePath: string): BillingRow[] {
-  const buf = readFileSync(filePath);
-  const wb = XLSX.read(buf, { type: "buffer" });
-  const ws = wb.Sheets[wb.SheetNames[0]];
-  const raw = XLSX.utils.sheet_to_json<unknown[]>(ws, { header: 1, defval: "" }) as unknown[][];
+// ─── อ่านข้อมูลจาก Google Sheets ──────────────────────────────────────────────
+// layout เดียวกับ billing.xlsx เดิม: row 0 = header, row 3 = "Filter", data เริ่ม row 4
+async function fetchRows(): Promise<BillingRow[]> {
+  const sheets = await getSheetClient();
+  const sheetName =
+    SHEET_NAME || (await getFirstSheetTitle(sheets, SPREADSHEET_ID));
+  const raw = await getValues(sheets, SPREADSHEET_ID, `'${sheetName}'!A:Z`);
 
-  // Row 0 = header, rows 1-2 = sub-headers/empty, row 3 = "Filter", data starts row 4
   const rows: BillingRow[] = [];
   for (let i = 4; i < raw.length; i++) {
-    const r = raw[i] as unknown[];
-    if (!r[1] || String(r[1]).trim() === "" || String(r[1]).trim() === "Filter") continue;
+    const r = raw[i] ?? [];
+    if (!r[1] || String(r[1]).trim() === "" || String(r[1]).trim() === "Filter")
+      continue;
 
     const hcodeKey = extractHcodeKey(r[25]);
     const hcodeInfo = HCODE_MAP[hcodeKey];
     const หมายเหตุRaw = r[24] ? String(r[24]).trim() : "";
-    let dateStr = "";
-    const rawDate = r[10];
-    if (rawDate instanceof Date) {
-      dateStr = rawDate.toISOString().slice(0, 10);
-    } else if (rawDate) {
-      // Excel serial or thai date string
-      dateStr = String(rawDate).slice(0, 10);
-    }
 
     rows.push({
       repNo: String(r[1] ?? ""),
@@ -91,7 +101,7 @@ function parseXlsx(filePath: string): BillingRow[] {
       ชื่อสกุล: String(r[6] ?? ""),
       สิทธิ: String(r[7] ?? ""),
       hcode: String(r[8] ?? ""),
-      วันรับบริการ: dateStr,
+      วันรับบริการ: parseDate(r[10]),
       รายการขอเบิก: String(r[12] ?? ""),
       จำนวน: toNum(r[13]),
       ราคาต่อหน่วย: toNum(r[14]),
@@ -112,7 +122,10 @@ function parseXlsx(filePath: string): BillingRow[] {
 
 function buildDashboard(rows: BillingRow[]): BillingDashboardData {
   // group by unit → item → status
-  const unitMap = new Map<string, Map<string, Map<string, { rows: BillingRow[] }>>>();
+  const unitMap = new Map<
+    string,
+    Map<string, Map<string, { rows: BillingRow[] }>>
+  >();
 
   for (const r of rows) {
     if (!unitMap.has(r.hcodeKey)) unitMap.set(r.hcodeKey, new Map());
@@ -141,7 +154,8 @@ function buildDashboard(rows: BillingRow[]): BillingDashboardData {
       for (const [status, { rows: sr }] of statusMap) {
         const remarkCount: Record<string, number> = {};
         for (const r of sr) {
-          if (r.หมายเหตุ) remarkCount[r.หมายเหตุ] = (remarkCount[r.หมายเหตุ] || 0) + 1;
+          if (r.หมายเหตุ)
+            remarkCount[r.หมายเหตุ] = (remarkCount[r.หมายเหตุ] || 0) + 1;
         }
         items.push({
           รายการขอเบิก: itemKey,
@@ -169,17 +183,22 @@ function buildDashboard(rows: BillingRow[]): BillingDashboardData {
       เรียกเก็บ: totalClaim,
       ชดเชย: totalComp,
       ไม่ชดเชย: totalNoComp,
-      อัตราชดเชย: totalClaim > 0 ? Math.round((totalComp / totalClaim) * 1000) / 10 : 0,
+      อัตราชดเชย:
+        totalClaim > 0 ? Math.round((totalComp / totalClaim) * 1000) / 10 : 0,
       items,
     });
   }
 
   // remark summary
-  const remarkMap = new Map<string, { unit: string; count: number; claim: number }>();
+  const remarkMap = new Map<
+    string,
+    { unit: string; count: number; claim: number }
+  >();
   for (const r of rows) {
     if (!r.หมายเหตุ) continue;
     const key = `${r.หมายเหตุ}|||${r.หน่วยบริการ}`;
-    if (!remarkMap.has(key)) remarkMap.set(key, { unit: r.หน่วยบริการ, count: 0, claim: 0 });
+    if (!remarkMap.has(key))
+      remarkMap.set(key, { unit: r.หน่วยบริการ, count: 0, claim: 0 });
     const e = remarkMap.get(key)!;
     e.count++;
     e.claim += r.รวมขอเบิก;
@@ -205,17 +224,22 @@ function buildDashboard(rows: BillingRow[]): BillingDashboardData {
   };
 }
 
-export async function GET() {
+// ถูกเรียกเฉพาะตอน cache miss
+async function buildBillingData(): Promise<BillingDashboardData> {
+  const rows = await fetchRows();
+  return buildDashboard(rows);
+}
+
+export async function GET(req: NextRequest) {
   try {
-    const filePath = path.join(process.cwd(), "data", "billing.xlsx");
-    if (!existsSync(filePath)) {
-      return NextResponse.json({ error: "ไม่พบไฟล์ data/billing.xlsx — กรุณาอัปโหลดข้อมูลก่อน" }, { status: 404 });
+    // ?refresh=1 → ล้าง cache แล้วดึงจาก Sheets ใหม่ (ปุ่มรีเฟรชในหน้า dashboard)
+    if (req.nextUrl.searchParams.get("refresh") === "1") {
+      await invalidate(CACHE_KEY);
     }
-    const rows = parseXlsx(filePath);
-    const data = buildDashboard(rows);
+
+    const data = await cachedQuery([CACHE_KEY], buildBillingData, TTL);
     return NextResponse.json(data);
   } catch (err) {
-    console.error("BillingDashboard error:", err);
-    return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
+    return sheetsError(err, "BillingDashboard");
   }
 }
