@@ -1,8 +1,4 @@
 // app/api/sepsis-sheets/route.ts
-// ดึงข้อมูล Sepsis จาก Google Sheets แบบ real-time
-// Spreadsheet ID: 13sNBF0oUkngCAS0Lxzs3fTYr2ywrDAYyU8b0-UMh08w
-// Sheet แยกรายปี: 2569, 2568, 2567, 2566
-
 import { NextResponse } from "next/server";
 import {
   getSheetClient,
@@ -12,6 +8,13 @@ import {
   parseDate,
   sheetsError,
 } from "@/lib/sheets";
+import { getAddressByHn, type AddressParts } from "@/lib/sepsis.service";
+import { cachedQuery } from "@/lib/cache";
+
+// ─── Cache TTL ────────────────────────────────────────────────────────────────
+// ทะเบียน Sepsis อัปเดตเป็นรอบ → ผลรวม 10 นาที, ที่อยู่จาก HosXP 1 ชม. (แทบไม่เปลี่ยน)
+const TTL_RESULT = 600;
+const TTL_ADDRESS = 3600;
 
 const SPREADSHEET_ID = process.env.Sepsis_SPREADSHEET_ID!;
 
@@ -44,6 +47,13 @@ export interface SepsisSheetRow {
   atbTime: string;
   doorToDxMin: number | null; // เวลามาถึง รพ. → Dx Sepsis (นาที)
   dxToAtbMin: number | null; // Dx Sepsis → ได้รับ ATB (นาที)
+  address: string; // ที่อยู่จาก HosXP patient (join thaiaddress ตาม HN)
+  // ── ที่อยู่แยกส่วน (จาก HosXP) ──
+  houseNo: string; // เลขที่
+  moo: string; // หมู่
+  tambon: string; // ตำบล
+  amphur: string; // อำเภอ
+  changwat: string; // จังหวัด
 }
 
 // ─── Column map per layout ────────────────────────────────────────────────────
@@ -359,6 +369,12 @@ function parseSheet(raw: string[][], thaiYear: string): SepsisSheetRow[] {
       atbTime: minToClock(atbMin),
       doorToDxMin: span(arrivalAbs, dxAbs),
       dxToAtbMin: span(dxAbs, atbAbs),
+      address: "", // เติมภายหลังจาก HosXP (ดู GET)
+      houseNo: "",
+      moo: "",
+      tambon: "",
+      amphur: "",
+      changwat: "",
     });
   }
   return rows;
@@ -466,52 +482,107 @@ function buildSummary(rows: SepsisSheetRow[]) {
   };
 }
 
+// ─── ที่อยู่จาก HosXP (มี cache ชั้นแยก TTL ยาว) ──────────────────────────────
+// key ผูกกับ hash ของชุด HN → HN ชุดเดิมได้ cache เดิม, มีผู้ป่วยใหม่ = key ใหม่
+async function getCachedAddressMap(hns: string[]) {
+  const { createHash } = await import("crypto");
+  const hash = createHash("md5")
+    .update([...hns].sort().join(","))
+    .digest("hex")
+    .slice(0, 12);
+  const cached = await cachedQuery<[string, AddressParts][]>(
+    ["sepsis-address", hash],
+    async () => [...(await getAddressByHn(hns)).entries()],
+    TTL_ADDRESS,
+  );
+  return new Map(cached);
+}
+
+// ─── สร้าง payload เต็ม (ชีต + ที่อยู่ + summary) ─────────────────────────────
+async function buildPayload() {
+  const sheets = await getSheetClient();
+
+  // ดึงรายชื่อ sheets ทั้งหมด
+  const sheetNames = await getAllSheetTitles(sheets, SPREADSHEET_ID);
+
+  // กรองเฉพาะ sheet ที่มีปีงบประมาณ (2565-2569)
+  const yearSheets = sheetNames.filter((n) => /256[5-9]/.test(n));
+
+  if (yearSheets.length === 0) {
+    return {
+      updatedAt: new Date().toISOString(),
+      rows: [] as SepsisSheetRow[],
+      summary: buildSummary([]),
+      sheetNames,
+    };
+  }
+
+  // ดึงข้อมูลทุก sheet พร้อมกัน
+  const allRows: SepsisSheetRow[] = [];
+
+  await Promise.all(
+    yearSheets.map(async (sheetName) => {
+      const raw = await getValues(sheets, SPREADSHEET_ID, `${sheetName}!A:Z`);
+      const thaiYear = sheetName.trim().match(/(\d{4})/)?.[1] ?? sheetName;
+      const parsed = parseSheet(raw, thaiYear);
+      allRows.push(...parsed);
+    }),
+  );
+
+  // เรียงตาม year แล้ว serviceDate
+  allRows.sort((a, b) => {
+    if (a.year !== b.year) return a.year.localeCompare(b.year);
+    return (a.serviceDate || "").localeCompare(b.serviceDate || "");
+  });
+
+  // ── เติมที่อยู่จาก HosXP (patient + thaiaddress) ตาม HN ──
+  // ถ้า DB ล่มไม่ให้ dashboard พัง → แสดง "-" แทน
+  try {
+    const hns = [...new Set(allRows.map((r) => r.hn).filter(Boolean))];
+    if (hns.length > 0) {
+      const addrMap = await getCachedAddressMap(hns);
+      allRows.forEach((r) => {
+        const a = addrMap.get(r.hn);
+        if (!a) return;
+        r.houseNo = a.houseNo;
+        r.moo = a.moo;
+        r.tambon = a.tambon;
+        r.amphur = a.amphur;
+        r.changwat = a.changwat;
+        r.address = [
+          a.houseNo,
+          a.moo ? `ม.${a.moo}` : "",
+          a.tambon ? `ต.${a.tambon}` : "",
+          a.amphur ? `อ.${a.amphur}` : "",
+          a.changwat ? `จ.${a.changwat}` : "",
+        ]
+          .filter(Boolean)
+          .join(" ");
+      });
+    }
+  } catch (e) {
+    console.error("[SepsisSheets] address enrich failed:", e);
+  }
+
+  const summary = buildSummary(allRows);
+
+  return {
+    updatedAt: new Date().toISOString(),
+    rows: allRows,
+    summary,
+    sheetNames: yearSheets,
+  };
+}
+
 // ─── GET ──────────────────────────────────────────────────────────────────────
 export async function GET() {
   try {
-    const sheets = await getSheetClient();
-
-    // ดึงรายชื่อ sheets ทั้งหมด
-    const sheetNames = await getAllSheetTitles(sheets, SPREADSHEET_ID);
-
-    // กรองเฉพาะ sheet ที่มีปีงบประมาณ (2565-2569)
-    const yearSheets = sheetNames.filter((n) => /256[5-9]/.test(n));
-
-    if (yearSheets.length === 0) {
-      return NextResponse.json({
-        updatedAt: new Date().toISOString(),
-        rows: [],
-        summary: buildSummary([]),
-        sheetNames,
-      });
-    }
-
-    // ดึงข้อมูลทุก sheet พร้อมกัน
-    const allRows: SepsisSheetRow[] = [];
-
-    await Promise.all(
-      yearSheets.map(async (sheetName) => {
-        const raw = await getValues(sheets, SPREADSHEET_ID, `${sheetName}!A:Z`);
-        const thaiYear = sheetName.trim().match(/(\d{4})/)?.[1] ?? sheetName;
-        const parsed = parseSheet(raw, thaiYear);
-        allRows.push(...parsed);
-      }),
+    const payload = await cachedQuery(
+      ["sepsis-sheets"],
+      buildPayload,
+      TTL_RESULT,
     );
-
-    // เรียงตาม year แล้ว serviceDate
-    allRows.sort((a, b) => {
-      if (a.year !== b.year) return a.year.localeCompare(b.year);
-      return (a.serviceDate || "").localeCompare(b.serviceDate || "");
-    });
-
-    const summary = buildSummary(allRows);
-
-    return NextResponse.json({
-      updatedAt: new Date().toISOString(),
-      rows: allRows,
-      summary,
-      sheetNames: yearSheets,
-    });
+    return NextResponse.json(payload);
   } catch (err) {
     return sheetsError(err, "SepsisSheets");
   }

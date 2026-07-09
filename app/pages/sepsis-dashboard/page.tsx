@@ -9,7 +9,9 @@ import {
     Info, Clock, Timer, Syringe, ChevronDown,
     Users, AlertTriangle, Activity, TrendingUp, Skull,
     ShieldAlert, Microscope, MapPin, HeartPulse, CheckCircle2,
+    FileDown,
 } from "lucide-react";
+import { exportToExcel } from "@/lib/exportExcel";
 import {
     useAutoRefresh, timeAgo, CountdownRing, KpiCard, HBarList,
     SectionCard, MiniPagination, LiveBadge, ConnectionStatus, RefreshButton,
@@ -69,6 +71,12 @@ interface SepsisRow {
     zone: string;
     doorToDxMin: number | null;
     dxToAtbMin: number | null;
+    address: string;
+    houseNo: string;
+    moo: string;
+    tambon: string;
+    amphur: string;
+    changwat: string;
 }
 
 interface DashboardData {
@@ -123,23 +131,130 @@ function YearTab({ years, selected, onSelect }: {
 }
 
 // ─── Patient Table ────────────────────────────────────────────────────────────
+const uniqSorted = (vals: string[]) =>
+    [...new Set(vals.map((v) => v.trim()).filter(Boolean))].sort((a, b) =>
+        a.localeCompare(b, "th", { numeric: true }));
+
+function AddrFilter({ label, value, options, onChange }: {
+    label: string; value: string; options: string[]; onChange: (v: string) => void;
+}) {
+    return (
+        <div className="relative inline-block">
+            <select
+                value={value}
+                onChange={(e) => onChange(e.target.value)}
+                className="appearance-none pl-3 pr-8 py-1.5 rounded-lg border border-gray-200 bg-white text-xs font-medium text-gray-600 cursor-pointer focus:outline-none focus:border-[#3aa36a] transition-colors"
+            >
+                <option value="">{label}: ทั้งหมด</option>
+                {options.map((o) => <option key={o} value={o}>{o}</option>)}
+            </select>
+            <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-gray-400">
+                <ChevronDown size={13} />
+            </span>
+        </div>
+    );
+}
+
 function PatientTable({ rows }: { rows: SepsisRow[] }) {
-    const { page, setPage, totalPages, paged } = usePagination(rows, 20);
+    const [fMoo, setFMoo] = useState("");
+    const [fTambon, setFTambon] = useState("");
+    const [fAmphur, setFAmphur] = useState("");
+    const [fChangwat, setFChangwat] = useState("");
+
+    // ตัวเลือก dropdown: cascade ตาม filter ระดับบน (จังหวัด → อำเภอ → ตำบล → หมู่)
+    const optChangwat = useMemo(() => uniqSorted(rows.map((r) => r.changwat)), [rows]);
+    const optAmphur = useMemo(() =>
+        uniqSorted(rows.filter((r) => !fChangwat || r.changwat === fChangwat)
+            .map((r) => r.amphur)), [rows, fChangwat]);
+    const optTambon = useMemo(() =>
+        uniqSorted(rows.filter((r) =>
+            (!fChangwat || r.changwat === fChangwat) &&
+            (!fAmphur || r.amphur === fAmphur))
+            .map((r) => r.tambon)), [rows, fChangwat, fAmphur]);
+    const optMoo = useMemo(() =>
+        uniqSorted(rows.filter((r) =>
+            (!fChangwat || r.changwat === fChangwat) &&
+            (!fAmphur || r.amphur === fAmphur) &&
+            (!fTambon || r.tambon === fTambon))
+            .map((r) => r.moo)), [rows, fChangwat, fAmphur, fTambon]);
+
+    const filtered = useMemo(() =>
+        rows.filter((r) =>
+            (!fChangwat || r.changwat === fChangwat) &&
+            (!fAmphur || r.amphur === fAmphur) &&
+            (!fTambon || r.tambon === fTambon) &&
+            (!fMoo || r.moo === fMoo)),
+        [rows, fChangwat, fAmphur, fTambon, fMoo]);
+
+    const hasFilter = !!(fMoo || fTambon || fAmphur || fChangwat);
+    const clearFilters = () => { setFMoo(""); setFTambon(""); setFAmphur(""); setFChangwat(""); };
+
+    const { page, setPage, totalPages, paged } = usePagination(filtered, 20);
+
+    const handleExport = () => {
+        exportToExcel(
+            filtered.map((r) => ({
+                "ปี": r.year,
+                "ชื่อ-สกุล": r.name,
+                "HN": r.hn,
+                "อายุ": r.age ?? "",
+                "แผนก": r.department,
+                "วันรับบริการ": r.serviceDate,
+                "เลขที่": r.houseNo,
+                "หมู่": r.moo,
+                "ตำบล": r.tambon,
+                "อำเภอ": r.amphur,
+                "จังหวัด": r.changwat,
+                "Site of Infection": r.siteOfInfection,
+                "ประเภทการติดเชื้อ": r.typeOfInfection,
+                "Pathogen": r.pathogen,
+                "โรคประจำตัว": r.comorbidity,
+                "Septic Shock": r.septicShock === true ? "ใช่" : r.septicShock === false ? "ไม่ใช่" : "",
+                "สถานะ": r.definiteStatus,
+            })),
+            { filePrefix: "sepsis_patients", sheetName: "Sepsis", dateKeys: [] },
+        );
+    };
 
     return (
         <div className="bg-white border border-gray-200 rounded-2xl shadow-sm overflow-hidden">
-            <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
+            <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between flex-wrap gap-3">
                 <div className="flex items-center gap-2">
                     <Users size={15} className="text-gray-400" />
                     <p className="text-sm font-bold text-gray-600">รายชื่อผู้ป่วย</p>
+                    <span className="text-xs text-gray-400">
+                        {filtered.length} ราย{hasFilter ? ` (จาก ${rows.length})` : ""}
+                    </span>
                 </div>
-                <span className="text-xs text-gray-400">{rows.length} ราย</span>
+                <div className="flex items-center gap-2 flex-wrap">
+                    <AddrFilter label="จังหวัด" value={fChangwat} options={optChangwat}
+                        onChange={(v) => { setFChangwat(v); setFAmphur(""); setFTambon(""); setFMoo(""); }} />
+                    <AddrFilter label="อำเภอ" value={fAmphur} options={optAmphur}
+                        onChange={(v) => { setFAmphur(v); setFTambon(""); setFMoo(""); }} />
+                    <AddrFilter label="ตำบล" value={fTambon} options={optTambon}
+                        onChange={(v) => { setFTambon(v); setFMoo(""); }} />
+                    <AddrFilter label="หมู่" value={fMoo} options={optMoo} onChange={setFMoo} />
+                    {hasFilter && (
+                        <button onClick={clearFilters}
+                            className="text-xs text-gray-400 hover:text-red-500 underline underline-offset-2 transition-colors">
+                            ล้างตัวกรอง
+                        </button>
+                    )}
+                    <button
+                        onClick={handleExport}
+                        disabled={filtered.length === 0}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-green-700 text-white text-xs font-semibold hover:bg-green-800 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                    >
+                        <FileDown size={13} /> Export Excel
+                    </button>
+                </div>
             </div>
             <div className="overflow-x-auto max-h-[500px] overflow-y-auto">
                 <table className="min-w-full text-xs border-collapse">
                     <thead>
                         <tr className="bg-green-700 sticky top-0">
                             {["ปี", "ชื่อ-สกุล", "HN", "อายุ", "แผนก", "วันรับบริการ",
+                                "เลขที่", "หมู่", "ตำบล", "อำเภอ", "จังหวัด",
                                 "Site", "ประเภทการติดเชื้อ", "Pathogen", "สถานะ"].map((h) => (
                                     <th key={h} className="px-3 py-2.5 text-left text-white font-semibold border-r border-green-600 whitespace-nowrap">
                                         {h}
@@ -168,6 +283,11 @@ function PatientTable({ rows }: { rows: SepsisRow[] }) {
                                     </span>
                                 </td>
                                 <td className="px-3 py-2 text-gray-600 whitespace-nowrap">{r.serviceDate || "-"}</td>
+                                <td className="px-3 py-2 text-gray-600 whitespace-nowrap">{r.houseNo || "-"}</td>
+                                <td className="px-3 py-2 text-gray-600 text-center">{r.moo || "-"}</td>
+                                <td className="px-3 py-2 text-gray-600 whitespace-nowrap">{r.tambon || "-"}</td>
+                                <td className="px-3 py-2 text-gray-600 whitespace-nowrap">{r.amphur || "-"}</td>
+                                <td className="px-3 py-2 text-gray-600 whitespace-nowrap">{r.changwat || "-"}</td>
                                 <td className="px-3 py-2 text-gray-500 text-[10px] whitespace-nowrap">
                                     {r.siteOfInfection.split(" ")[0]}
                                 </td>
