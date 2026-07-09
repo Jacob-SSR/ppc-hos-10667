@@ -1,7 +1,4 @@
 // app/api/dmtb-dashboard/route.ts
-// อ่านข้อมูลตรงจาก Google Sheets (เลิกอัปโหลดไฟล์ .xlsx)
-// หมายเหตุ: หัวตารางจริงแยก 2 แถว (แถวบนเป็นหัวกลุ่ม merge, แถวล่างเป็นหัวย่อย)
-//          จึง map ด้วย "ตำแหน่งคอลัมน์คงที่" ไม่ใช่ชื่อ header
 import { NextResponse } from "next/server";
 import {
   getSheetClient,
@@ -11,9 +8,11 @@ import {
   parseDate,
   sheetsError,
 } from "@/lib/sheets";
+import { cachedQuery } from "@/lib/cache";
 
 const SPREADSHEET_ID = process.env.DMTB_SPREADSHEET_ID!;
 
+const TTL_SECONDS = 900;
 // ── ตำแหน่งคอลัมน์ (index เริ่ม 0) ตาม layout จริงของ DMTB ─────────────────────
 const C = {
   repNo: 1,
@@ -322,13 +321,12 @@ export async function GET(req: Request) {
   const debug = new URL(req.url).searchParams.get("debug") === "1";
 
   try {
-    const sheets = await getSheetClient();
-    const firstSheet = await getFirstSheetTitle(sheets, SPREADSHEET_ID);
-    const raw = await getValues(sheets, SPREADSHEET_ID, `${firstSheet}!A:AC`);
-
-    const rows = parseSheet(raw);
-
+    // โหมด debug → อ่านสดเสมอ ไม่ผ่าน cache (ไว้เช็ค layout ชีตจริง)
     if (debug) {
+      const sheets = await getSheetClient();
+      const firstSheet = await getFirstSheetTitle(sheets, SPREADSHEET_ID);
+      const raw = await getValues(sheets, SPREADSHEET_ID, `${firstSheet}!A:AC`);
+      const rows = parseSheet(raw);
       return NextResponse.json({
         sheetName: firstSheet,
         headerRow0: raw[0] ?? [],
@@ -338,7 +336,21 @@ export async function GET(req: Request) {
       });
     }
 
-    const data = buildDashboard(rows, firstSheet);
+    const data = await cachedQuery(
+      ["dmtb-dashboard"],
+      async () => {
+        const sheets = await getSheetClient();
+        const firstSheet = await getFirstSheetTitle(sheets, SPREADSHEET_ID);
+        const raw = await getValues(
+          sheets,
+          SPREADSHEET_ID,
+          `${firstSheet}!A:AC`,
+        );
+        return buildDashboard(parseSheet(raw), firstSheet);
+      },
+      TTL_SECONDS,
+    );
+
     return NextResponse.json(data);
   } catch (err) {
     return sheetsError(err, "DmtbDashboard");

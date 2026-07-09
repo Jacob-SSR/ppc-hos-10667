@@ -8,8 +8,14 @@ import {
   sheetsError,
 } from "@/lib/sheets";
 import { getAncAnemiaMapRows } from "@/lib/anc.service";
+import { cachedQuery } from "@/lib/cache";
 
 export const dynamic = "force-dynamic";
+
+// ─── Cache TTL ────────────────────────────────────────────────────────────────
+// Sheets API ช้า + มีโควตา → cache ผลรวม 15 นาที, ดัชนีพิกัด 30 นาที
+const TTL_RESULT = 900;
+const TTL_COORD_INDEX = 1800;
 
 // ─── แหล่งข้อมูลพิกัด (ชุดเดียวกับ drug-map / homeward-map) ─────────────────────
 const PIKAD_SPREADSHEET_ID = process.env.PIKAD_SPREADSHEET_ID!;
@@ -128,16 +134,16 @@ function composeAddress(
 }
 
 // ─── อ่านชีตพิกัด → Map<เลข13หลัก, {lat,lng,mapLink}> ─────────────────────────
-async function buildCoordIndex(): Promise<
-  Map<string, { lat: number; lng: number; mapLink: string }>
-> {
+type CoordEntry = { lat: number; lng: number; mapLink: string };
+
+async function buildCoordIndex(): Promise<Map<string, CoordEntry>> {
   const sheets = await getSheetClient();
   const first =
     (await getAllSheetTitles(sheets, PIKAD_SPREADSHEET_ID))[0] ?? "Sheet1";
   // A=ละติจูด/ลองจิจูด  B=ชื่อ-นามสกุล  C=เลข13หลัก  D=วันเกิด  E=ลิ้งพิกัด
   const raw = await getValues(sheets, PIKAD_SPREADSHEET_ID, `${first}!A2:E`);
 
-  const idx = new Map<string, { lat: number; lng: number; mapLink: string }>();
+  const idx = new Map<string, CoordEntry>();
   for (const row of raw) {
     if (!row || row.length < 3) continue;
     const id = normId(row[2]);
@@ -148,6 +154,16 @@ async function buildCoordIndex(): Promise<
     idx.set(id, { lat: c.lat, lng: c.lng, mapLink: toStr(row[4]) });
   }
   return idx;
+}
+
+/** เวอร์ชันมี cache — Map serialize ตรง ๆ ไม่ได้ ต้องแปลงเป็น entries ก่อน */
+async function buildCoordIndexCached(): Promise<Map<string, CoordEntry>> {
+  const entries = await cachedQuery<[string, CoordEntry][]>(
+    ["pikad-coord-index"],
+    async () => [...(await buildCoordIndex()).entries()],
+    TTL_COORD_INDEX,
+  );
+  return new Map(entries);
 }
 
 // ย้อนหลังกี่ปีงบ — default = 1 (ปีงบปัจจุบัน ให้ยอดตรงกับ anc-nursing-dashboard)
@@ -173,6 +189,93 @@ function defaultRange(): { start: string; end: string } {
   };
 }
 
+// ─── สร้างข้อมูลแผนที่ (ถูกเรียกเฉพาะตอน cache miss) ──────────────────────────
+async function buildAnemiaMapData(
+  start: string,
+  end: string,
+): Promise<AnemiaMapData> {
+  // ── ดึงคู่ขนาน: ทะเบียนซีด (SQL) + ดัชนีพิกัด (Sheet, cache 30 นาที) ──
+  const [rows, coordIdx] = await Promise.all([
+    getAncAnemiaMapRows(start, end),
+    buildCoordIndexCached(),
+  ]);
+
+  const points: AnemiaMapPoint[] = [];
+  const unmatchedList: AnemiaMapUnmatched[] = [];
+  const yearSet = new Set<string>();
+  const monthSet = new Set<string>();
+
+  for (const r of rows) {
+    const fullName = toStr(r.ptname).trim();
+    const hn = toStr(r.hn);
+    const tambon = toStr(r.tmb_name).trim();
+    const address = composeAddress(
+      toStr(r.addrpart).trim(),
+      toStr(r.moopart).trim(),
+      tambon,
+    );
+
+    const id13 = normId(r.cid);
+    const coord = id13.length === 13 ? coordIdx.get(id13) : undefined;
+
+    if (!coord) {
+      unmatchedList.push({ hn, fullName, tambon });
+      continue;
+    }
+
+    const hct = r.hct != null ? Number(r.hct) : null;
+    const severity = classifySeverity(hct);
+
+    const testDate = toStr(r.last_date).slice(0, 10);
+    const ym = /^\d{4}-\d{2}/.test(testDate) ? testDate.slice(0, 7) : "";
+    const [yyyy, mm] = ym ? ym.split("-") : ["", ""];
+    const yearBE = yyyy ? String(parseInt(yyyy, 10) + 543) : "";
+    const monthIdx = mm ? parseInt(mm, 10) - 1 : -1;
+    const monthName = monthIdx >= 0 && monthIdx < 12 ? THAI_M[monthIdx] : "";
+    const serviceMonth = ym ? monthLabelBE(ym) : "";
+    if (yearBE) yearSet.add(yearBE);
+    if (monthName) monthSet.add(monthName);
+
+    points.push({
+      id: points.length + 1,
+      hn,
+      fullName,
+      address,
+      tambon,
+      hct,
+      severity,
+      age: Number(r.age_y ?? 0),
+      testDate,
+      yearBE,
+      monthName,
+      serviceMonth,
+      lat: coord.lat,
+      lng: coord.lng,
+      mapLink: coord.mapLink,
+    });
+  }
+
+  const SEV_ORDER = ["รุนแรง", "ปานกลาง", "เล็กน้อย"];
+  return {
+    updatedAt: new Date().toISOString(),
+    start,
+    end,
+    total: rows.length,
+    matched: points.length,
+    unmatched: unmatchedList.length,
+    points,
+    unmatchedList,
+    filters: {
+      tambon: uniq(points.map((p) => p.tambon)).sort((a, b) =>
+        a.localeCompare(b, "th"),
+      ),
+      severity: SEV_ORDER.filter((s) => points.some((p) => p.severity === s)),
+      year: [...yearSet].sort((a, b) => b.localeCompare(a)), // ปีล่าสุดก่อน
+      month: THAI_M.filter((m) => monthSet.has(m)), // ม.ค. → ธ.ค.
+    },
+  };
+}
+
 // ─── GET ──────────────────────────────────────────────────────────────────────
 export async function GET(req: Request) {
   try {
@@ -181,88 +284,13 @@ export async function GET(req: Request) {
     const start = url.searchParams.get("start") || def.start;
     const end = url.searchParams.get("end") || def.end;
 
-    // ── ดึงคู่ขนาน: ทะเบียนซีด (SQL) + ดัชนีพิกัด (Sheet) ──
-    const [rows, coordIdx] = await Promise.all([
-      getAncAnemiaMapRows(start, end),
-      buildCoordIndex(),
-    ]);
+    const data = await cachedQuery(
+      ["anc-anemia-map", start, end],
+      () => buildAnemiaMapData(start, end),
+      TTL_RESULT,
+    );
 
-    const points: AnemiaMapPoint[] = [];
-    const unmatchedList: AnemiaMapUnmatched[] = [];
-    const yearSet = new Set<string>();
-    const monthSet = new Set<string>();
-
-    for (const r of rows) {
-      const fullName = toStr(r.ptname).trim();
-      const hn = toStr(r.hn);
-      const tambon = toStr(r.tmb_name).trim();
-      const address = composeAddress(
-        toStr(r.addrpart).trim(),
-        toStr(r.moopart).trim(),
-        tambon,
-      );
-
-      const id13 = normId(r.cid);
-      const coord = id13.length === 13 ? coordIdx.get(id13) : undefined;
-
-      if (!coord) {
-        unmatchedList.push({ hn, fullName, tambon });
-        continue;
-      }
-
-      const hct = r.hct != null ? Number(r.hct) : null;
-      const severity = classifySeverity(hct);
-
-      const testDate = toStr(r.last_date).slice(0, 10);
-      const ym = /^\d{4}-\d{2}/.test(testDate) ? testDate.slice(0, 7) : "";
-      const [yyyy, mm] = ym ? ym.split("-") : ["", ""];
-      const yearBE = yyyy ? String(parseInt(yyyy, 10) + 543) : "";
-      const monthIdx = mm ? parseInt(mm, 10) - 1 : -1;
-      const monthName = monthIdx >= 0 && monthIdx < 12 ? THAI_M[monthIdx] : "";
-      const serviceMonth = ym ? monthLabelBE(ym) : "";
-      if (yearBE) yearSet.add(yearBE);
-      if (monthName) monthSet.add(monthName);
-
-      points.push({
-        id: points.length + 1,
-        hn,
-        fullName,
-        address,
-        tambon,
-        hct,
-        severity,
-        age: Number(r.age_y ?? 0),
-        testDate,
-        yearBE,
-        monthName,
-        serviceMonth,
-        lat: coord.lat,
-        lng: coord.lng,
-        mapLink: coord.mapLink,
-      });
-    }
-
-    const SEV_ORDER = ["รุนแรง", "ปานกลาง", "เล็กน้อย"];
-    const result: AnemiaMapData = {
-      updatedAt: new Date().toISOString(),
-      start,
-      end,
-      total: rows.length,
-      matched: points.length,
-      unmatched: unmatchedList.length,
-      points,
-      unmatchedList,
-      filters: {
-        tambon: uniq(points.map((p) => p.tambon)).sort((a, b) =>
-          a.localeCompare(b, "th"),
-        ),
-        severity: SEV_ORDER.filter((s) => points.some((p) => p.severity === s)),
-        year: [...yearSet].sort((a, b) => b.localeCompare(a)), // ปีล่าสุดก่อน
-        month: THAI_M.filter((m) => monthSet.has(m)), // ม.ค. → ธ.ค.
-      },
-    };
-
-    return NextResponse.json(result);
+    return NextResponse.json(data);
   } catch (err) {
     return sheetsError(err, "AncAnemiaMap");
   }

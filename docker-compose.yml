@@ -11,7 +11,25 @@ services:
     # อ่าน env ตอน runtime จากไฟล์เดียวกับที่ build ใช้
     env_file:
       - .env.production
+    # ชี้ app ไปหา redis ผ่านชื่อ service (docker network ภายใน)
+    environment:
+      - REDIS_URL=redis://redis:6379
     # ให้ container เรียก MySQL ที่รันบน "เครื่อง host เดียวกัน" ผ่าน host.docker.internal ได้
     # (ถ้า HosXP อยู่คนละเครื่องในวง LAN ให้ใส่ IP จริงใน DB_HOST/DB_HOST2 แทน แล้วบรรทัดนี้ไม่จำเป็น)
     extra_hosts:
       - "host.docker.internal:host-gateway"
+    depends_on:
+      - redis
+
+  redis:
+    image: redis:7-alpine
+    container_name: ppc-redis
+    restart: unless-stopped
+    # จำกัด memory 256MB พอเต็มให้เขี่ย key เก่าออกเอง (LRU)
+    command: redis-server --maxmemory 256mb --maxmemory-policy allkeys-lru
+    volumes:
+      - redis-data:/data
+    # ไม่ expose port ออกนอก container network — app คุยกับ redis ภายในพอ
+
+volumes:
+  redis-data:
