@@ -284,6 +284,12 @@ export const DASHBOARD_GROUPS: SidebarSubGroup[] = [
         icon: Brain,
         group: "disease",
       },
+      {
+        label: "โรคหลอดเลือดหัวใจ",
+        href: "/pages/acs-dashboard",
+        icon: HeartPulse,
+        group: "disease",
+      },
     ],
   },
 
