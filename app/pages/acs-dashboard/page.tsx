@@ -6,14 +6,15 @@ import {
 } from "recharts";
 import {
   Info, Clock, Users, Activity, HeartPulse, Zap, Ambulance,
-  Target, Cigarette, ClipboardList,
+  Target, ClipboardList,
 } from "lucide-react";
 import {
   useAutoRefresh, timeAgo, CountdownRing, KpiCard, HBarList,
   SectionCard, MiniPagination, LiveBadge, ConnectionStatus, RefreshButton,
 } from "@/app/components/dashboard/live";
+import { motion } from "framer-motion";
 import { usePagination } from "@/hooks/usePagination";
-import type { AcsSheetsData, AcsPatient } from "@/app/api/acs-sheets/route";
+import type { AcsSheetsData, AcsPatient, AcsKpiItem, AcsKpiBlock } from "@/app/api/acs-sheets/route";
 import AiSummaryCard from "@/app/components/ai/AiSummaryCard";
 
 // ─── Colors (ชุดเดียวกับ drug/sepsis) ────────────────────────────────────────
@@ -63,42 +64,109 @@ function Donut({ data }: { data: { name: string; value: number; color: string }[
   );
 }
 
-// ─── ตาราง KPI (แสดงตามชีตเลย — หน้างานคีย์เอง) ─────────────────────────────
-function KpiSheetTable({ rows }: { rows: string[][] }) {
-  const isBlank = (r: string[]) => r.every((c) => c === "");
-  const isHeader = (r: string[]) =>
-    r.some((c) => /^25\d{2}$/.test(c)) || r.includes("เป้าหมาย");
+// ─── ตัวชี้วัด KPI (จากชีต "KPI" — หน้างานคีย์เอง, สไตล์เดียวกับ drug) ────────
+/** เช็คผ่านเป้าหมาย เช่น "<ร้อยละ 8", ">=ร้อยละ 70" */
+function passTarget(target: string, percent: number | null): boolean | null {
+  if (percent == null) return null;
+  const m = target.match(/([<>]=?)\s*ร้อยละ\s*(\d+(?:\.\d+)?)/);
+  if (!m) return null;
+  const t = Number(m[2]);
+  switch (m[1]) {
+    case "<": return percent < t;
+    case "<=": return percent <= t;
+    case ">": return percent > t;
+    default: return percent >= t; // ">="
+  }
+}
+
+function AcsKpiIndicatorCard({ item }: { item: AcsKpiItem }) {
+  // ปีล่าสุดที่มีข้อมูล (ไล่จากท้ายมาหน้า ข้าม NA/ว่าง)
+  const filled = [...item.values].reverse()
+    .find((v) => v.raw !== "" && !/^na$/i.test(v.raw));
+  const percent = filled?.percent ?? null;
+  const pass = item.target ? passTarget(item.target, percent) : null;
+
+  const { accent, bg } =
+    pass === true ? { accent: C.green, bg: C.greenL }
+      : pass === false ? { accent: C.red, bg: C.redL }
+        : percent != null ? { accent: C.teal, bg: C.tealL }
+          : { accent: C.gray, bg: C.grayL };
+  const barWidth = percent != null ? Math.min(Math.max(percent, 0), 100) : 0;
 
   return (
-    <div className="overflow-x-auto">
-      <table className="min-w-full text-xs border-collapse">
-        <tbody>
-          {rows.map((r, i) =>
-            isBlank(r) ? (
-              <tr key={i}><td colSpan={12} className="h-3" /></tr>
-            ) : (
-              <tr key={i}
-                className={isHeader(r)
-                  ? "bg-red-700 text-white font-semibold"
-                  : i % 2 === 0 ? "bg-white" : "bg-gray-50"}>
-                {r.map((c, j) => (
-                  <td key={j}
-                    className={`border border-gray-100 px-3 py-2 ${j === 0
-                      ? "min-w-[280px] max-w-[420px] whitespace-pre-wrap text-left"
-                      : "whitespace-nowrap text-center tabular-nums"
-                      }`}>
-                    {c}
-                  </td>
-                ))}
-              </tr>
-            ),
-          )}
-        </tbody>
-      </table>
+    <motion.div
+      className="rounded-2xl p-5 flex flex-col gap-3"
+      style={{ backgroundColor: bg }}
+      initial={{ opacity: 0, y: 12 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ type: "spring", stiffness: 260, damping: 22 }}
+    >
+      <div className="flex items-start justify-between gap-2">
+        <p className="text-xs font-bold leading-snug whitespace-pre-line" style={{ color: accent }}>{item.name}</p>
+        <Target size={16} style={{ color: accent }} className="shrink-0 mt-0.5" />
+      </div>
+
+      <div className="flex items-end gap-2 flex-wrap">
+        <p className="text-3xl font-extrabold tabular-nums" style={{ color: accent }}>
+          {percent != null ? `${percent}%` : (filled?.raw || "-")}
+        </p>
+        {filled && (
+          <p className="text-[11px] pb-1" style={{ color: accent + "99" }}>
+            ปี {filled.year}{percent != null && filled.raw !== `${percent}` ? ` · คีย์ "${filled.raw}"` : ""}
+          </p>
+        )}
+      </div>
+
+      <div className="h-1.5 rounded-full bg-white/60 overflow-hidden">
+        <div className="h-full rounded-full transition-all" style={{ width: `${barWidth}%`, backgroundColor: accent }} />
+      </div>
+
+      {item.target && (
+        <p className="text-[11px] font-semibold" style={{ color: accent }}>
+          เป้าหมาย {item.target}{pass != null ? (pass ? " · ✓ ผ่าน" : " · ✗ ไม่ผ่าน") : ""}
+        </p>
+      )}
+
+      <div className="flex flex-wrap gap-x-3 gap-y-1 pt-2 border-t" style={{ borderColor: accent + "22" }}>
+        {item.values.map((v) => (
+          <span key={v.year} className="text-[10px] tabular-nums" style={{ color: accent + "99" }}>
+            {v.year.slice(2)}: {v.percent != null ? `${v.percent}%` : (v.raw || "-")}
+          </span>
+        ))}
+      </div>
+    </motion.div>
+  );
+}
+
+function AcsKpiBlockSection({ block, index }: { block: AcsKpiBlock; index: number }) {
+  const nLatest = Object.entries(block.nByYear).sort(([a], [b]) => Number(b) - Number(a))[0];
+  return (
+    <SectionCard
+      title={block.title || "ตัวชี้วัดโรคหลอดเลือดหัวใจ (I20–I25)"}
+      icon={Target}
+      titleColor="#991b1b"
+    >
+      {nLatest && (
+        <p className="text-xs text-gray-400 mb-3">
+          จำนวนผู้ป่วยปี {nLatest[0]}: <strong className="text-gray-700">{nLatest[1]}</strong>
+        </p>
+      )}
+      <div className={`grid grid-cols-1 sm:grid-cols-2 ${index === 0 ? "lg:grid-cols-3" : ""} gap-3`}>
+        {block.items.map((item) => (
+          <AcsKpiIndicatorCard key={item.name} item={item} />
+        ))}
+      </div>
+      {block.notes.length > 0 && (
+        <div className="mt-3 pt-3 border-t border-gray-100 space-y-0.5">
+          {block.notes.map((n) => (
+            <p key={n} className="text-[11px] text-gray-400">{n}</p>
+          ))}
+        </div>
+      )}
       <p className="mt-2 text-[11px] text-gray-400">
-        * ค่าตัวชี้วัดแสดงตามที่หน่วยงานคีย์ในชีต &quot;KPI&quot; โดยตรง
+        * ค่าตัวชี้วัดตามที่หน่วยงานคีย์ในชีต &quot;KPI&quot; — ค่าที่อ่านเป็นร้อยละไม่ได้จะแสดงตามที่คีย์
       </p>
-    </div>
+    </SectionCard>
   );
 }
 
@@ -212,12 +280,20 @@ function PatientTable({ rows }: { rows: AcsPatient[] }) {
 }
 
 // ─── Main Page ────────────────────────────────────────────────────────────────
+type AcsTab = "overview" | "kpi";
+
 export default function AcsDashboardPage() {
   const [year, setYear] = useState("");
+  const [tab, setTab] = useState<AcsTab>("overview");
   const { data, loading, error, connected, secondsLeft, refetch } =
     useAutoRefresh<AcsSheetsData>(`/api/acs-sheets${year ? `?year=${year}` : ""}`, REFRESH_INTERVAL_MS);
   const s = data?.summary;
   const pct = (n: number, d: number) => (d > 0 ? `${((n / d) * 100).toFixed(1)}%` : "-");
+
+  const TABS: { key: AcsTab; label: string }[] = [
+    { key: "overview", label: "ภาพรวม" },
+    { key: "kpi", label: "ตัวชี้วัด (KPI)" },
+  ];
 
   return (
     <div className="space-y-4">
@@ -251,6 +327,19 @@ export default function AcsDashboardPage() {
         </div>
       </div>
 
+      {/* Tabs */}
+      <div className="flex gap-2">
+        {TABS.map((t) => (
+          <button key={t.key} onClick={() => setTab(t.key)}
+            className={`px-4 py-2 rounded-xl text-xs font-bold transition-colors ${tab === t.key
+                ? "bg-red-700 text-white shadow-sm"
+                : "bg-white text-gray-500 border border-gray-200 hover:bg-gray-50"
+              }`}>
+            {t.label}
+          </button>
+        ))}
+      </div>
+
       {/* Error */}
       {error && (
         <div className="bg-red-50 border border-red-200 rounded-2xl p-4 flex items-start gap-3">
@@ -270,49 +359,60 @@ export default function AcsDashboardPage() {
         </div>
       )}
 
-      {/* KPI Cards */}
-      {s && (
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
-          <KpiCard icon={Users} label={`ผู้ป่วย ACS ปี ${data!.year}`} value={`${fmt(s.total)} ราย`}
-            sub={`อายุเฉลี่ย ${s.avgAge ?? "-"} ปี`} accent={C.blue} bg={C.blueL} />
-          <KpiCard icon={HeartPulse} label="STEMI" value={`${fmt(s.stemi)} ราย`}
-            sub={pct(s.stemi, s.total)} accent={C.red} bg={C.redL} />
-          <KpiCard icon={Activity} label="NSTEMI" value={`${fmt(s.nstemi)} ราย`}
-            sub={pct(s.nstemi, s.total)} accent={C.amber} bg={C.amberL} />
-          <KpiCard icon={Zap} label="ได้รับยา SK" value={`${fmt(s.skGiven)} ราย`}
-            sub={pct(s.skGiven, s.total)} accent={C.green} bg={C.greenL} />
-          <KpiCard icon={Target} label="EKG ≤ 10 นาที" value={`${s.ekgWithin10}/${s.ekgRecorded}`}
-            sub={pct(s.ekgWithin10, s.ekgRecorded)} accent={C.teal} bg={C.tealL} />
-          <KpiCard icon={Ambulance} label="Refer" value={`${fmt(s.refer)} ราย`}
-            sub={`สูบบุหรี่ ${s.smoking} · 1669 ${s.ems1669}`} accent={C.purple} bg="#EEEDFE" />
-        </div>
+      {/* ─── Tab: ภาพรวม ─── */}
+      {tab === "overview" && (
+        <>
+          {s && (
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+              <KpiCard icon={Users} label={`ผู้ป่วย ACS ปี ${data!.year}`} value={`${fmt(s.total)} ราย`}
+                sub={`อายุเฉลี่ย ${s.avgAge ?? "-"} ปี`} accent={C.blue} bg={C.blueL} />
+              <KpiCard icon={HeartPulse} label="STEMI" value={`${fmt(s.stemi)} ราย`}
+                sub={pct(s.stemi, s.total)} accent={C.red} bg={C.redL} />
+              <KpiCard icon={Activity} label="NSTEMI" value={`${fmt(s.nstemi)} ราย`}
+                sub={pct(s.nstemi, s.total)} accent={C.amber} bg={C.amberL} />
+              <KpiCard icon={Zap} label="ได้รับยา SK" value={`${fmt(s.skGiven)} ราย`}
+                sub={pct(s.skGiven, s.total)} accent={C.green} bg={C.greenL} />
+              <KpiCard icon={Target} label="EKG ≤ 10 นาที" value={`${s.ekgWithin10}/${s.ekgRecorded}`}
+                sub={pct(s.ekgWithin10, s.ekgRecorded)} accent={C.teal} bg={C.tealL} />
+              <KpiCard icon={Ambulance} label="Refer" value={`${fmt(s.refer)} ราย`}
+                sub={`สูบบุหรี่ ${s.smoking} · 1669 ${s.ems1669}`} accent={C.purple} bg="#EEEDFE" />
+            </div>
+          )}
+
+          {s && s.total > 0 && <DashboardCharts s={s} />}
+          {data && data.rows.length > 0 && <PatientTable rows={data.rows} />}
+
+          {/* Empty */}
+          {!loading && !error && data && s?.total === 0 && (
+            <div className="bg-amber-50 border border-amber-200 rounded-2xl p-8 flex flex-col items-center gap-3 text-center">
+              <Info size={32} className="text-amber-500" />
+              <p className="text-sm font-bold text-amber-800">ยังไม่มีข้อมูลผู้ป่วยในปี {data.year}</p>
+              <p className="text-xs text-amber-700">เพิ่มข้อมูลลงใน Google Sheets แล้ว Dashboard จะอัปเดตอัตโนมัติทุก 30 วินาที</p>
+            </div>
+          )}
+
+          {/* AI */}
+          <AiSummaryCard
+            summary={s}
+            context={`Dashboard โรคหลอดเลือดหัวใจ ACS โรงพยาบาลพลับพลาชัย ปี ${data?.year ?? ""} (STEMI/NSTEMI การให้ยา SK เวลาทำ EKG หน่วยบริการแรกรับ เขตที่อยู่ Outcome)`}
+            disabled={!s}
+          />
+        </>
       )}
 
-      {/* ตัวชี้วัด KPI จากชีต */}
-      {data && data.kpiRows.length > 0 && (
-        <SectionCard title="ตัวชี้วัด (KPI) — ตามข้อมูลที่หน่วยงานคีย์" icon={Target} titleColor="#991b1b">
-          <KpiSheetTable rows={data.kpiRows} />
-        </SectionCard>
+      {/* ─── Tab: ตัวชี้วัด KPI ─── */}
+      {tab === "kpi" && (
+        <>
+          {data?.kpiBlocks?.map((block, i) => (
+            <AcsKpiBlockSection key={i} block={block} index={i} />
+          ))}
+          {!loading && data && (!data.kpiBlocks || data.kpiBlocks.length === 0) && (
+            <div className="bg-amber-50 border border-amber-200 rounded-2xl p-8 text-center">
+              <p className="text-sm font-bold text-amber-800">ยังไม่มีข้อมูลตัวชี้วัดในชีต &quot;KPI&quot;</p>
+            </div>
+          )}
+        </>
       )}
-
-      {s && s.total > 0 && <DashboardCharts s={s} />}
-      {data && data.rows.length > 0 && <PatientTable rows={data.rows} />}
-
-      {/* Empty */}
-      {!loading && !error && data && s?.total === 0 && (
-        <div className="bg-amber-50 border border-amber-200 rounded-2xl p-8 flex flex-col items-center gap-3 text-center">
-          <Info size={32} className="text-amber-500" />
-          <p className="text-sm font-bold text-amber-800">ยังไม่มีข้อมูลผู้ป่วยในปี {data.year}</p>
-          <p className="text-xs text-amber-700">เพิ่มข้อมูลลงใน Google Sheets แล้ว Dashboard จะอัปเดตอัตโนมัติทุก 30 วินาที</p>
-        </div>
-      )}
-
-      {/* AI */}
-      <AiSummaryCard
-        summary={s}
-        context={`Dashboard โรคหลอดเลือดหัวใจ ACS โรงพยาบาลพลับพลาชัย ปี ${data?.year ?? ""} (STEMI/NSTEMI การให้ยา SK เวลาทำ EKG หน่วยบริการแรกรับ เขตที่อยู่ Outcome)`}
-        disabled={!s}
-      />
     </div>
   );
 }
