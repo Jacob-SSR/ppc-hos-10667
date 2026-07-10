@@ -4,7 +4,17 @@ import { jwtVerify } from "jose";
 
 const secret = new TextEncoder().encode(process.env.JWT_SECRET as string);
 
-// เส้นทางที่ guest เข้าได้โดยไม่ต้อง login
+// ─────────────────────────────────────────────────────────────────────────────
+// หลักการ: DENY BY DEFAULT
+// ทุก /api/* และ /pages/* ต้อง login เสมอ ยกเว้นที่ระบุไว้ข้างล่างนี้เท่านั้น
+// → สร้าง route ใหม่ไม่ต้องมาแก้ไฟล์นี้ มันถูกล็อกให้อัตโนมัติ
+// (ของเดิมเป็น opt-in รายชื่อ — route ใหม่ๆ เช่น tb-map, servicetime หลุดไม่มี auth)
+// ─────────────────────────────────────────────────────────────────────────────
+
+// เปิด public จริงๆ (ไม่ต้องมี token เลย)
+const PUBLIC_PATHS = ["/api/login", "/api/logout", "/api/me"];
+
+// guest (ไม่ login) เข้าดูได้ — จอ dashboard กลางที่แขวนทีวี ฯลฯ
 const GUEST_ALLOWED_PATHS = [
   "/pages/dashboard",
   "/api/dashboard",
@@ -14,11 +24,14 @@ const GUEST_ALLOWED_PATHS = [
   "/api/ppa/ncd01",
   "/api/ppa/mch01",
   "/api/ppa/mch02",
-  "/api/me",
 ];
 
-function isGuestAllowed(pathname: string): boolean {
-  return GUEST_ALLOWED_PATHS.some(
+// cache warmer ยิงจาก loopback ภายใน container พร้อม key ลับ (env เดียวกัน)
+// คนนอกไม่รู้ key นี้ — และ key ไม่เคยออกนอกเครื่องเพราะ warmer คุยกับตัวเอง
+const WARMER_KEY = process.env.WARMER_KEY ?? process.env.JWT_SECRET;
+
+function matchesAny(pathname: string, list: string[]): boolean {
+  return list.some(
     (p) =>
       pathname === p ||
       pathname.startsWith(p + "/") ||
@@ -26,87 +39,57 @@ function isGuestAllowed(pathname: string): boolean {
   );
 }
 
+function clearTokenCookie(res: NextResponse): NextResponse {
+  res.cookies.set("token", "", {
+    httpOnly: true,
+    expires: new Date(0),
+    path: "/",
+  });
+  return res;
+}
+
+/** ปฏิเสธ: API ตอบ 401 JSON, หน้าเว็บ redirect ไป login */
+function deny(request: NextRequest, hadBadToken: boolean): NextResponse {
+  const { pathname } = request.nextUrl;
+  const res = pathname.startsWith("/api")
+    ? NextResponse.json({ error: "กรุณาเข้าสู่ระบบ" }, { status: 401 })
+    : NextResponse.redirect(new URL("/auth/login", request.url));
+  return hadBadToken ? clearTokenCookie(res) : res;
+}
+
 export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
-  const token = request.cookies.get("token")?.value;
 
-  if (!token) {
-    if (isGuestAllowed(pathname)) {
-      return NextResponse.next();
-    }
-    return NextResponse.redirect(new URL("/auth/login", request.url));
+  // 1) public เสมอ
+  if (matchesAny(pathname, PUBLIC_PATHS)) return NextResponse.next();
+
+  // 2) cache warmer (loopback ภายใน + key ตรง)
+  if (WARMER_KEY && request.headers.get("x-warmer-key") === WARMER_KEY) {
+    return NextResponse.next();
   }
 
+  const token = request.cookies.get("token")?.value;
+
+  // 3) ไม่มี token → เข้าได้เฉพาะโซน guest
+  if (!token) {
+    if (matchesAny(pathname, GUEST_ALLOWED_PATHS)) return NextResponse.next();
+    return deny(request, false);
+  }
+
+  // 4) มี token → ตรวจ
   try {
     await jwtVerify(token, secret);
     return NextResponse.next();
   } catch {
-    if (isGuestAllowed(pathname)) {
-      const res = NextResponse.next();
-      res.cookies.set("token", "", {
-        httpOnly: true,
-        expires: new Date(0),
-        path: "/",
-      });
-      return res;
+    // token เสีย/หมดอายุ: เคลียร์ cookie แล้วปฏิบัติเหมือน guest
+    if (matchesAny(pathname, GUEST_ALLOWED_PATHS)) {
+      return clearTokenCookie(NextResponse.next());
     }
-    const response = NextResponse.redirect(new URL("/auth/login", request.url));
-    response.cookies.set("token", "", {
-      httpOnly: true,
-      expires: new Date(0),
-      path: "/",
-    });
-    return response;
+    return deny(request, true);
   }
 }
 
 export const config = {
-  matcher: [
-    "/pages/:path*",
-    "/api/accident-sheets/:path*",
-    "/api/ai/:path*",
-    "/api/anc-nursing/:path*",
-    "/api/anc-sheets/:path*",
-    "/api/billing-dashboard/:path*",
-    "/api/change-password/:path*",
-    "/api/condom-report/:path*",
-    "/api/dashboard/:path*",
-    "/api/death-not-discharged/:path*",
-    "/api/dental-dashboard/:path*",
-    "/api/dept-status/:path*",
-    "/api/dmht-new/:path*",
-    "/api/dmtb-dashboard/:path*",
-    "/api/drug-sheets/:path*",
-    "/api/fall-report/:path*",
-    "/api/high-risk-procedures/:path*",
-    "/api/homeward-sheets/:path*",
-    "/api/imc-sheets/:path*",
-    "/api/incomplete-visit/:path*",
-    "/api/ip-homeward-sheets/:path*",
-    "/api/ipd/:path*",
-    "/api/it-worklog-form/:path*",
-    "/api/it-worklog-sheets/:path*",
-    "/api/ktb-dashboard/:path*",
-    "/api/me",
-    "/api/no-endpoint/:path*",
-    "/api/patient-no-person/:path*",
-    "/api/ppa/:path*",
-    "/api/productivity-er/:path*",
-    "/api/productivity-ipd/:path*",
-    "/api/productivity-lr/:path*",
-    "/api/productivity-opd/:path*",
-    "/api/pt-dashboard/:path*",
-    "/api/rabies-followup/:path*",
-    "/api/rdu-dashboard/:path*",
-    "/api/report/:path*",
-    "/api/sepsis-sheets/:path*",
-    "/api/service-unit/:path*",
-    "/api/shift-stats/:path*",
-    "/api/stm-dashboard/:path*",
-    "/api/stroke-sheets/:path*",
-    "/api/tb-dashboard/:path*",
-    "/api/ttm-dashboard/:path*",
-    "/api/uc-outside/:path*",
-    "/api/uc-outside-dental/:path*",
-  ],
+  // ครอบทุก /api และ /pages — ข้อยกเว้นจัดการในโค้ดข้างบน ไม่ใช่ใน matcher
+  matcher: ["/api/:path*", "/pages/:path*"],
 };

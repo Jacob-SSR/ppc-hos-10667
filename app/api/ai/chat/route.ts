@@ -124,7 +124,7 @@ export async function POST(req: Request) {
     // ── Rate limit: chat ถี่กว่า summarize ได้ — 30 ครั้ง / 5 นาที ──
     const user = await getUsername();
     const rlKey = user ? `ai:chat:${user}` : `ai:chat:ip:${getClientIp(req)}`;
-    const rl = rateLimit(rlKey, 30, 5 * 60_000);
+    const rl = await rateLimit(rlKey, 30, 5 * 60_000);
     if (!rl.ok) {
       return tooManyRequests(rl, "ส่งคำถามบ่อยเกินไป กรุณารอสักครู่");
     }

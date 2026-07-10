@@ -18,7 +18,7 @@ export async function POST(req: Request) {
   const ip = getClientIp(req);
 
   // ── ชั้นที่ 1: จำกัดตาม IP — 10 ครั้ง / 5 นาที ──
-  const ipLimit = rateLimit(`login:ip:${ip}`, 10, 5 * MINUTE);
+  const ipLimit = await rateLimit(`login:ip:${ip}`, 10, 5 * MINUTE);
   if (!ipLimit.ok) {
     return tooManyRequests(ipLimit, "พยายาม login บ่อยเกินไป กรุณารอสักครู่");
   }
@@ -32,7 +32,7 @@ export async function POST(req: Request) {
   }
 
   // ── ชั้นที่ 2: จำกัดตาม username — 5 ครั้ง / 15 นาที ──
-  const userLimit = rateLimit(
+  const userLimit = await rateLimit(
     `login:user:${username.toLowerCase()}`,
     5,
     15 * MINUTE,
@@ -84,9 +84,6 @@ export async function POST(req: Request) {
     { expiresIn: "8h" },
   );
 
-  // ⚠️ secure cookie ส่งได้เฉพาะผ่าน HTTPS — ตอนนี้ยังเป็น HTTP จึงคุมด้วย env
-  //    ตั้ง COOKIE_SECURE=false ระหว่างยังไม่มี HTTPS ; พอขึ้น HTTPS แล้วเปลี่ยนเป็น true
-  //    (ถ้า true บน HTTP browser จะไม่เก็บ cookie → login แล้วกลายเป็น guest)
   const secureCookie = process.env.COOKIE_SECURE === "true";
 
   // ส่ง role กลับให้ client ใช้ตัดสินใจ redirect หลัง login

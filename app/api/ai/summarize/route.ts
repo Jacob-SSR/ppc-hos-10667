@@ -143,7 +143,7 @@ export async function POST(req: Request) {
     const rlKey = user
       ? `ai:summarize:${user}`
       : `ai:summarize:ip:${getClientIp(req)}`;
-    const rl = rateLimit(rlKey, 15, 5 * 60_000);
+    const rl = await rateLimit(rlKey, 15, 5 * 60_000);
     if (!rl.ok) {
       return tooManyRequests(rl, "เรียกใช้ AI บ่อยเกินไป กรุณารอสักครู่");
     }
