@@ -16,14 +16,17 @@ RUN npm ci
 # ---------- builder ----------
 FROM base AS builder
 # Next 16 + Turbopack build กินแรมเยอะ (โปรเจกมี ~69 route) เพิ่ม heap กัน OOM
-ENV NODE_OPTIONS=--max-old-space-size=4096
+# หมายเหตุ: เครื่อง host/WSL ต้องมีแรมให้ Docker มากกว่าค่านี้ ไม่งั้นโดน OOM kill ก่อน
+ENV NODE_OPTIONS=--max-old-space-size=6144
 ENV NEXT_TELEMETRY_DISABLED=1
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
-# หมายเหตุสำคัญ 2 อย่างตอน build:
+# หมายเหตุสำคัญตอน build:
 #  1) ต้องมีไฟล์ .env.production ใน context — next build จะอ่านค่า env จากไฟล์นี้
 #     (โดยเฉพาะ NEXT_PUBLIC_SYNC_SECRET ที่ถูก inline เข้า bundle + ผ่านด่านเช็ค env ใน lib/db.ts)
 #  2) เครื่องที่ build ต้องต่อเน็ตได้ เพราะ next/font/google โหลดฟอนต์ Prompt ตอน build
+#  3) ข้าม type-check ใน container (ตั้ง ignoreBuildErrors ใน next.config.ts)
+#     เพราะขั้นนี้กินแรมหนักจน OOM — deploy script ต้องรัน `npx tsc --noEmit` ก่อน docker build เสมอ
 RUN npm run build
 
 # ---------- runner (production) ----------
