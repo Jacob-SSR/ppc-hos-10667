@@ -1,9 +1,6 @@
 // app/api/minithan-sheets/route.ts
-// ดึงข้อมูลผู้ป่วยมินิธัญญารักษ์ (โปรแกรม IMC) จาก Google Sheets แบบ real-time
-// Spreadsheet: "ผู้ป่วยยาเสพติด 2569" — กรองเฉพาะแถวที่คอลัมน์ HW/IMC/MP มีคำว่า "IMC"
-// (รวมเคส IMC/MP, IMC/MP/IMC, IMC ล้วน ฯลฯ)
-
 import { NextResponse } from "next/server";
+import { cachedQuery } from "@/lib/cache";
 import {
   getSheetClient,
   getFirstSheetTitle,
@@ -15,9 +12,12 @@ import {
   sheetsError,
 } from "@/lib/sheets";
 
-const SPREADSHEET_ID =
-  process.env.MINITHAN_SPREADSHEET_ID ||
-  "1NokZz-8JYoK99X6996VG-DWPl940VsSkQqPjDjq3X-s";
+const SPREADSHEET_ID = process.env.MINITHAN_SPREADSHEET_ID!;
+
+// cache 10 นาที — ทะเบียนมินิธัญญารักษ์คีย์มือลง Sheets ไม่ realtime
+// (hard TTL ใน lib/cache.ts = ttl * 4 → stale แจกต่อได้ ~40 นาทีถ้า Sheets ล่ม/โควต้าหมด)
+const TTL_SECONDS = 600;
+const CACHE_KEY = "minithan-sheets";
 
 const TOTAL_WEEKS = 16;
 const FOLLOWUP_KEYS = ["w2", "m1", "m2", "m3", "m6", "m9", "y1"] as const;
@@ -411,30 +411,37 @@ function buildSummary(rows: MiniThanRow[]): MiniThanSummary {
   };
 }
 
+/** ดึงจาก Sheets + parse + สรุป — เก็บก้อนเดียวใน cache (รวม debug info เสมอ) */
+async function buildMiniThanData(): Promise<MiniThanDashboardData> {
+  const sheets = await getSheetClient();
+  const firstSheet = await getFirstSheetTitle(sheets, SPREADSHEET_ID);
+  const raw = await getValues(sheets, SPREADSHEET_ID, `${firstSheet}!A:BK`);
+
+  const { rows, headers } = parseRows(raw);
+  const summary = buildSummary(rows);
+
+  return {
+    updatedAt: new Date().toISOString(),
+    sheetName: firstSheet,
+    summary,
+    rows,
+    debug: { headers, sampleRow: raw[1] ?? [] },
+  };
+}
+
 // ─── GET ──────────────────────────────────────────────────────────────────────
 export async function GET(req: Request) {
   const debug = new URL(req.url).searchParams.get("debug") === "1";
 
   try {
-    const sheets = await getSheetClient();
-    const firstSheet = await getFirstSheetTitle(sheets, SPREADSHEET_ID);
-    const raw = await getValues(sheets, SPREADSHEET_ID, `${firstSheet}!A:BK`);
-
-    const { rows, headers } = parseRows(raw);
-    const summary = buildSummary(rows);
-
-    const result: MiniThanDashboardData = {
-      updatedAt: new Date().toISOString(),
-      sheetName: firstSheet,
-      summary,
-      rows,
-    };
+    const data = await cachedQuery([CACHE_KEY], buildMiniThanData, TTL_SECONDS);
 
     if (debug) {
-      result.debug = { headers, sampleRow: raw[1] ?? [] };
+      return NextResponse.json(data); // รวม debug + updatedAt = เวลา query จริง
     }
 
-    return NextResponse.json(result);
+    const { debug: _d, ...publicData } = data;
+    return NextResponse.json(publicData);
   } catch (err) {
     return sheetsError(err, "MiniThanSheets");
   }
