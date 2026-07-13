@@ -1,4 +1,6 @@
+// app/api/drug-sheets/route.ts
 import { NextResponse } from "next/server";
+import { cachedQuery } from "@/lib/cache";
 import {
   getSheetClient,
   getAllSheetTitles,
@@ -13,6 +15,11 @@ import {
 } from "@/lib/sheets";
 
 const SPREADSHEET_ID = process.env.DRUG_SPREADSHEET_ID!;
+
+// cache 10 นาที — ทะเบียนผู้ป่วยยาเสพติดคีย์มือลง Sheets ไม่ realtime
+// (hard TTL ใน lib/cache.ts = ttl * 4 → stale แจกต่อได้ ~40 นาทีถ้า Sheets ล่ม/โควต้าหมด)
+const TTL_SECONDS = 600;
+const CACHE_KEY = "drug-sheets";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 export interface DrugSheetRow {
@@ -381,6 +388,61 @@ function parseKpiSheet(raw: string[][]): DrugKpiData | null {
     : null;
 }
 
+// ─── Builder: ดึง Sheets + parse ทั้งหมด เก็บก้อนเดียวใน cache ────────────────
+async function buildDrugSheetsData(): Promise<DrugSheetsDashboardData> {
+  const sheets = await getSheetClient();
+
+  // เลือก sheet: หาที่มีชื่อเกี่ยวกับผู้ป่วย/ข้อมูล หรือใช้แผ่นแรก
+  const allTitles = await getAllSheetTitles(sheets, SPREADSHEET_ID);
+  const targetSheet =
+    allTitles.find((title) => {
+      const t = title.toLowerCase();
+      return (
+        t.includes("ผู้ป่วย") ||
+        t.includes("patient") ||
+        t.includes("ข้อมูล") ||
+        t.includes("data") ||
+        t.includes("drug")
+      );
+    }) ??
+    allTitles[0] ??
+    "Sheet1";
+
+  const raw = await getValues(sheets, SPREADSHEET_ID, `${targetSheet}!A:AJ`);
+  const rows = parseRows(raw);
+  const summary = buildSummary(rows);
+
+  // ─── ชีต "kpi" — ตัวชี้วัดผลการดำเนินงานรายเดือน ───────────────────────────
+  let kpi: DrugKpiData | null = null;
+  const kpiSheetTitle = allTitles.find((t) => {
+    const tl = t.toLowerCase().trim();
+    return tl === "kpi" || tl.includes("kpi") || t.includes("ตัวชี้วัด");
+  });
+  if (kpiSheetTitle) {
+    try {
+      const kpiRaw = await getValues(
+        sheets,
+        SPREADSHEET_ID,
+        `${kpiSheetTitle}!A1:R200`,
+      );
+      kpi = parseKpiSheet(kpiRaw);
+    } catch (e) {
+      console.error("DrugSheets: อ่านชีต kpi ไม่สำเร็จ", e);
+    }
+  }
+
+  return {
+    updatedAt: new Date().toISOString(),
+    sheetName: targetSheet,
+    summary,
+    rows,
+    kpi,
+    // เก็บ debug info ลง cache เสมอ — ตอนตอบแบบปกติค่อยตัดออก
+    debug:
+      raw.length > 0 ? { headers: raw[0], sampleRow: raw[1] ?? [] } : undefined,
+  };
+}
+
 // ─── GET ──────────────────────────────────────────────────────────────────────
 export async function GET(req: Request) {
   try {
@@ -394,64 +456,18 @@ export async function GET(req: Request) {
     const { searchParams } = new URL(req.url);
     const debug = searchParams.get("debug") === "1";
 
-    const sheets = await getSheetClient();
+    const data = await cachedQuery(
+      [CACHE_KEY],
+      buildDrugSheetsData,
+      TTL_SECONDS,
+    );
 
-    // เลือก sheet: หาที่มีชื่อเกี่ยวกับผู้ป่วย/ข้อมูล หรือใช้แผ่นแรก
-    const allTitles = await getAllSheetTitles(sheets, SPREADSHEET_ID);
-    const targetSheet =
-      allTitles.find((title) => {
-        const t = title.toLowerCase();
-        return (
-          t.includes("ผู้ป่วย") ||
-          t.includes("patient") ||
-          t.includes("ข้อมูล") ||
-          t.includes("data") ||
-          t.includes("drug")
-        );
-      }) ??
-      allTitles[0] ??
-      "Sheet1";
-
-    const raw = await getValues(sheets, SPREADSHEET_ID, `${targetSheet}!A:AJ`);
-    const rows = parseRows(raw);
-    const summary = buildSummary(rows);
-
-    // ─── ชีต "kpi" — ตัวชี้วัดผลการดำเนินงานรายเดือน ───────────────────────────
-    let kpi: DrugKpiData | null = null;
-    const kpiSheetTitle = allTitles.find((t) => {
-      const tl = t.toLowerCase().trim();
-      return tl === "kpi" || tl.includes("kpi") || t.includes("ตัวชี้วัด");
-    });
-    if (kpiSheetTitle) {
-      try {
-        const kpiRaw = await getValues(
-          sheets,
-          SPREADSHEET_ID,
-          `${kpiSheetTitle}!A1:R200`,
-        );
-        kpi = parseKpiSheet(kpiRaw);
-      } catch (e) {
-        console.error("DrugSheets: อ่านชีต kpi ไม่สำเร็จ", e);
-      }
+    if (debug) {
+      return NextResponse.json(data); // รวม debug info + updatedAt = เวลาที่ query จริง
     }
 
-    const result: DrugSheetsDashboardData = {
-      updatedAt: new Date().toISOString(),
-      sheetName: targetSheet,
-      summary,
-      rows,
-      kpi,
-    };
-
-    // Debug mode: ส่ง header + sample row กลับมาด้วย
-    if (debug && raw.length > 0) {
-      result.debug = {
-        headers: raw[0],
-        sampleRow: raw[1] ?? [],
-      };
-    }
-
-    return NextResponse.json(result);
+    const { debug: _d, ...publicData } = data;
+    return NextResponse.json(publicData);
   } catch (err) {
     return sheetsError(err, "DrugSheets");
   }
