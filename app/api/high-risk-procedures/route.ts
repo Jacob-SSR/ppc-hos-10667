@@ -1,13 +1,15 @@
 // app/api/high-risk-procedures/route.ts
-// รายงานจำนวนหัตถการเสี่ยงสูง
-// รับ ?start=YYYY-MM-DD&end=YYYY-MM-DD (default = ปีงบประมาณปัจจุบัน 1 ต.ค.–30 ก.ย.)
-// เพิ่ม &debug=1 เพื่อดู sample row สำหรับตรวจสอบ mapping
 import { NextResponse } from "next/server";
 import { getHighRiskProcedures } from "@/lib/highRiskProcedures.service";
+import { cachedQuery } from "@/lib/cache";
 import { db } from "@/lib/db";
 import { RowDataPacket } from "mysql2";
 
 export const dynamic = "force-dynamic";
+
+// cache 10 นาที — หัตถการเสี่ยงสูงดู default เป็นปีงบ ไม่ realtime
+// (hard TTL ใน lib/cache.ts = ttl * 4 → stale แจกต่อได้ ~40 นาทีถ้า DB มีปัญหา)
+const TTL_SECONDS = 600;
 
 const ER_OPER_CODES = "12,13,14,15,22,125,134";
 const ICD9_MATCH = (col: string) =>
@@ -108,14 +110,18 @@ export async function GET(req: Request) {
     const debug = searchParams.get("debug") === "1";
     const diag = searchParams.get("diag") === "1";
 
-    // โหมดวินิจฉัย: ดูว่ารหัส 5 ตัวอยู่ตารางไหน/รูปแบบอะไร (ทั้งฐานข้อมูล ไม่ติดช่วงวัน)
+    // โหมดวินิจฉัย: ดูสภาพข้อมูลสด ๆ — ตั้งใจไม่ cache (ใช้ตอน investigate ว่าข้อมูลอยู่ตารางไหน)
     if (diag) {
       return NextResponse.json({
         diagnostics: await runDiagnostics(start, end),
       });
     }
 
-    const data = await getHighRiskProcedures(start, end);
+    const data = await cachedQuery(
+      ["high-risk-procedures", start, end],
+      () => getHighRiskProcedures(start, end),
+      TTL_SECONDS,
+    );
 
     if (debug) {
       return NextResponse.json({
