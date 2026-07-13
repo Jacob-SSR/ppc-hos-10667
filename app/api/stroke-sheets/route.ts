@@ -1,8 +1,6 @@
 // app/api/stroke-sheets/route.ts
-// ดึงข้อมูลผู้ป่วย Stroke จาก Google Sheets แบบ real-time
-// Spreadsheet ID เก็บใน .env: STROKE_SPREADSHEET_ID
-
 import { NextResponse } from "next/server";
+import { cachedQuery } from "@/lib/cache";
 import {
   getSheetClient,
   getFirstSheetTitle,
@@ -14,6 +12,9 @@ import {
 } from "@/lib/sheets";
 
 const SPREADSHEET_ID = process.env.STROKE_SPREADSHEET_ID!;
+
+const TTL_SECONDS = 600;
+const CACHE_KEY = "stroke-sheets";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 export interface StrokeSheetRow {
@@ -179,6 +180,23 @@ function parseRows(raw: string[][]): StrokeSheetRow[] {
   return rows;
 }
 
+/** ดึงจาก Sheets + parse — เก็บก้อนเดียวใน cache (รวม debug info เสมอ) */
+async function buildStrokeSheetsData(): Promise<StrokeSheetsDashboardData> {
+  const sheets = await getSheetClient();
+  const targetSheet = await getFirstSheetTitle(sheets, SPREADSHEET_ID);
+  const raw = await getValues(sheets, SPREADSHEET_ID, `${targetSheet}!A:V`);
+
+  const rows = parseRows(raw);
+
+  return {
+    updatedAt: new Date().toISOString(),
+    sheetName: targetSheet,
+    rows,
+    debug:
+      raw.length > 0 ? { headers: raw[0], sampleRow: raw[1] ?? [] } : undefined,
+  };
+}
+
 // ─── GET ──────────────────────────────────────────────────────────────────────
 export async function GET(req: Request) {
   try {
@@ -192,28 +210,18 @@ export async function GET(req: Request) {
     const { searchParams } = new URL(req.url);
     const debug = searchParams.get("debug") === "1";
 
-    const sheets = await getSheetClient();
+    const data = await cachedQuery(
+      [CACHE_KEY],
+      buildStrokeSheetsData,
+      TTL_SECONDS,
+    );
 
-    const targetSheet = await getFirstSheetTitle(sheets, SPREADSHEET_ID);
-
-    const raw = await getValues(sheets, SPREADSHEET_ID, `${targetSheet}!A:V`);
-
-    const rows = parseRows(raw);
-
-    const result: StrokeSheetsDashboardData = {
-      updatedAt: new Date().toISOString(),
-      sheetName: targetSheet,
-      rows,
-    };
-
-    if (debug && raw.length > 0) {
-      result.debug = {
-        headers: raw[0],
-        sampleRow: raw[1] ?? [],
-      };
+    if (debug) {
+      return NextResponse.json(data); // รวม debug + updatedAt = เวลา query จริง
     }
 
-    return NextResponse.json(result);
+    const { debug: _d, ...publicData } = data;
+    return NextResponse.json(publicData);
   } catch (err) {
     return sheetsError(err, "StrokeSheets");
   }
