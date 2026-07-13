@@ -14,6 +14,7 @@ import {
 import { SectionCard } from "@/app/components/dashboard/live";
 import { Shimmer } from "@/app/components/ui/Shimmer";
 import { KpiCard } from "@/app/components/dashboard/live";
+import AiSummaryCard from "@/app/components/ai/AiSummaryCard";
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 type StaffType = "ทันตแพทย์" | "ทันตาภิบาล" | "อื่นๆ";
@@ -281,6 +282,44 @@ export default function DentalDashboardPage() {
             return { doc, dRows, dIncome: dRows.reduce((s, r) => s + r.total_income, 0), dPt: new Set(dRows.map((r) => r.hn)).size };
         });
     }, [patientFiltered]);
+
+    // ── สรุปสำหรับ AI — ส่งเฉพาะสถิติรวม (ไม่ส่งชื่อ/HN ผู้ป่วย) ──
+    const aiSummary = useMemo(() => {
+        if (!data) return null;
+        const s = data.summary || [];
+        return {
+            ช่วงข้อมูล: rangeLabel,
+            ผู้ป่วยรวม_ราย: kpi.totalPatients,
+            รายได้รวม_บาท: kpi.totalIncome,
+            visits_ทันตแพทย์: kpi.dentistVisits,
+            visits_ทันตาภิบาล: kpi.therapistVisits,
+            ผลงานรายบุคลากร: s.map((r) => ({
+                ชื่อ: r.doctor_name, ประเภท: r.staff_type,
+                ผู้ป่วย: r.patient_count, visits: r.visit_count, รายได้: r.total_income,
+            })),
+            แยกตามเวร: shiftDerived.kpis.map((k) => ({
+                เวร: SHIFT_META[k.sh].short, ผู้ป่วย: k.pt, รายได้: k.inc,
+            })),
+            หัตถการที่ทำบ่อย: (() => {
+                const m: Record<string, number> = {};
+                (data.procedures || []).forEach((p) => {
+                    m[p.procedure_name] = (m[p.procedure_name] || 0) + p.count;
+                });
+                return Object.fromEntries(Object.entries(m).sort(([, a], [, b]) => b - a).slice(0, 10));
+            })(),
+            รายได้แยกตามสิทธิ์: (() => {
+                const m: Record<string, number> = {};
+                (data.income_by_doctor_pttype || []).forEach((r) => {
+                    m[r.pttype_name] = (m[r.pttype_name] || 0) + r.total_income;
+                });
+                return Object.fromEntries(Object.entries(m).sort(([, a], [, b]) => b - a).slice(0, 8));
+            })(),
+            แนวโน้มรายวัน: trendDerived.table.slice(0, 14).map((t) => ({
+                วันที่: t.d, ผู้ป่วย: t.tp, รายได้: t.ti,
+            })),
+            คิววันนี้_คงเหลือ: (data.queue || []).length,
+        };
+    }, [data, rangeLabel, kpi, shiftDerived, trendDerived]);
 
     const exportCSV = () => {
         const rows = patientFiltered;
@@ -849,6 +888,13 @@ export default function DentalDashboardPage() {
                     ) : <Empty />}
                 </SectionCard>
             )}
+
+            {/* ── AI สรุป + แชท (ปุ่มลอยมุมขวาล่าง + modal กลางจอ) ── */}
+            <AiSummaryCard
+                summary={aiSummary}
+                context="แดชบอร์ดงานทันตกรรม รพ.พลับพลาชัย จ.บุรีรัมย์ — วิเคราะห์ผลงานบริการของทันตแพทย์และทันตาภิบาล ครอบคลุมจำนวนผู้ป่วย visits รายได้ หัตถการที่ทำบ่อย การกระจายตามเวร (ในเวลา/นอกเวลา/วันหยุด) สิทธิการรักษา และแนวโน้มรายวัน เพื่อช่วยวิเคราะห์ภาระงานและรายได้ของกลุ่มงานทันตกรรม"
+                disabled={!aiSummary}
+            />
         </div>
     );
 }

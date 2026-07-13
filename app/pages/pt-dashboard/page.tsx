@@ -19,6 +19,7 @@ import { Shimmer } from "@/app/components/ui/Shimmer";
 import { EmptyState } from "@/app/components/ui/EmptyState";
 import ThaiDateInput from "@/app/components/ThaiDateInput";
 import { formatThaiDate } from "@/lib/dateUtils";
+import AiSummaryCard from "@/app/components/ai/AiSummaryCard";
 // ─── Types ──────────────────────────────────────────────────────────────────
 interface PtRecord {
     date: string;
@@ -341,6 +342,41 @@ export default function PtDashboardPage() {
         const grandI = groups.reduce((a, g) => a + g.grpI, 0);
         return { groups, grandV, grandI };
     }, [records, q, fRight, fShift, fRole]);
+
+    // ── สรุปสำหรับ AI — ส่งเฉพาะสถิติรวม (ไม่ส่งชื่อ/HN ผู้ป่วย) ──
+    const aiSummary = useMemo(() => {
+        if (!records.length) return null;
+        const topN = (obj: Record<string, number>, n = 8) =>
+            Object.fromEntries(Object.entries(obj).sort(([, a], [, b]) => b - a).slice(0, n));
+        const shiftAgg: Record<string, { visits: number; income: number }> = {};
+        const rightAgg: Record<string, number> = {};
+        const procAgg: Record<string, number> = {};
+        records.forEach((r) => {
+            const sh = SHIFT_LABEL[r.shift] || r.shift;
+            if (!shiftAgg[sh]) shiftAgg[sh] = { visits: 0, income: 0 };
+            shiftAgg[sh].visits++; shiftAgg[sh].income += r.income;
+            rightAgg[r.right] = (rightAgg[r.right] || 0) + r.income;
+            if (r.procedure && r.procedure !== "-") procAgg[r.procedure] = (procAgg[r.procedure] || 0) + 1;
+        });
+        return {
+            ช่วงข้อมูล: data ? `${data.start} ถึง ${data.end}` : preset,
+            ผู้ป่วยไม่ซ้ำ_ราย: kpi.pts,
+            จำนวนครั้งบริการ_visits: kpi.vis,
+            รายได้รวม_บาท: kpi.inc,
+            แยกตามประเภทเจ้าหน้าที่: {
+                นักกายภาพบำบัด_PT: { visits: kpi.ptV, รายได้: kpi.ptI },
+                ผู้ช่วย_PTA: { visits: kpi.ptaV, รายได้: kpi.ptaI },
+            },
+            ภาระงานรายเจ้าหน้าที่: staffRows.map((s) => ({
+                ชื่อ: s.name, ประเภท: s.role === "pt" ? "PT" : "PTA",
+                ผู้ป่วย: s.pts.size, visits: s.vis, รายได้: s.inc,
+            })),
+            แยกตามเวร: shiftAgg,
+            รายได้แยกตามสิทธิ์: topN(rightAgg),
+            หัตถการที่ทำบ่อย: topN(procAgg),
+            คิวคงเหลือ: queue.length,
+        };
+    }, [records, data, preset, kpi, staffRows, queue]);
 
     // ── export ──
     const onExportExcel = () => {
@@ -903,6 +939,13 @@ export default function PtDashboardPage() {
                     </SectionCard>
                 </>
             )}
+
+            {/* ── AI สรุป + แชท (ปุ่มลอยมุมขวาล่าง + modal กลางจอ) ── */}
+            <AiSummaryCard
+                summary={aiSummary}
+                context="แดชบอร์ดงานกายภาพบำบัด รพ.พลับพลาชัย จ.บุรีรัมย์ — วิเคราะห์ผลงานบริการของนักกายภาพบำบัด (PT) และผู้ช่วย (PTA) ครอบคลุมจำนวนผู้ป่วย visits รายได้ ภาระงานรายบุคคล การกระจายตามเวรเช้า/บ่าย สิทธิการรักษา และหัตถการที่ทำบ่อย เพื่อช่วยวิเคราะห์ภาระงานและการเกลี่ยอัตรากำลัง"
+                disabled={!aiSummary}
+            />
         </div>
     );
 }

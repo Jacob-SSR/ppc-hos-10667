@@ -17,6 +17,7 @@ import {
 import { Shimmer } from "@/app/components/ui/Shimmer";
 import { EmptyState } from "@/app/components/ui/EmptyState";
 import { formatThaiDate } from "@/lib/dateUtils";
+import AiSummaryCard from "@/app/components/ai/AiSummaryCard";
 
 // ─── Types (ตรงกับ lib/ttm.service.ts) ────────────────────────────────────────
 interface Shift { visit_count: number; revenue: number; }
@@ -314,6 +315,36 @@ export default function TtmDashboardPage() {
     };
 
     const periodLabel = preset === "custom" ? `${customStart || "?"} – ${customEnd || "?"}` : PRESET_LABEL[preset];
+
+    // ── สรุปสำหรับ AI — ส่งเฉพาะสถิติรวม (ไม่ส่งชื่อ/HN ผู้ป่วย) ──
+    const aiSummary = useMemo(() => {
+        if (!data || !doctors.length) return null;
+        const rightAgg: Record<string, { visits: number; รายได้: number }> = {};
+        rightRows.forEach((r) => {
+            if (!rightAgg[r.right_name]) rightAgg[r.right_name] = { visits: 0, รายได้: 0 };
+            rightAgg[r.right_name].visits += r.visit_count;
+            rightAgg[r.right_name].รายได้ += r.revenue;
+        });
+        return {
+            ช่วงข้อมูล: periodLabel,
+            ผู้ป่วยรวม_ราย: kpi.patients,
+            visits_รวม: kpi.visits,
+            รายได้รวม_บาท: kpi.revenue,
+            รายได้เฉลี่ยต่อ_visit: Math.round(kpi.avg),
+            ผลงานรายแพทย์แผนไทย: doctors.map((d) => ({
+                ชื่อ: d.doctor_name,
+                ผู้ป่วย: d.patient_count, visits: d.visit_count, รายได้: d.revenue,
+                แยกเวร: Object.fromEntries(
+                    Object.entries(d.shifts).map(([sh, v]) => [sh, { visits: v.visit_count, รายได้: v.revenue }]),
+                ),
+            })),
+            แยกตามสิทธิ์: rightAgg,
+            ICD10_ที่ใช้บ่อย: icdRows.slice(0, 10).map((r) => ({
+                รหัส: r.icd10_code, ชื่อ: r.icd10_name, ครั้ง: r.use_count,
+            })),
+            คิวคงเหลือ: queueRows.length,
+        };
+    }, [data, doctors, rightRows, icdRows, queueRows, kpi, periodLabel]);
 
     const PT_COLUMNS: [string, string][] = [
         ["vstdate", "วันที่"], ["hn", "HN"], ["patient_name", "ชื่อ-สกุล"],
@@ -695,6 +726,13 @@ export default function TtmDashboardPage() {
                     </SectionCard>
                 </>
             )}
+
+            {/* ── AI สรุป + แชท (ปุ่มลอยมุมขวาล่าง + modal กลางจอ) ── */}
+            <AiSummaryCard
+                summary={aiSummary}
+                context="แดชบอร์ดงานแพทย์แผนไทย (TTM) รพ.พลับพลาชัย จ.บุรีรัมย์ — วิเคราะห์ผลงานบริการแพทย์แผนไทย ครอบคลุมจำนวนผู้ป่วย visits รายได้ ผลงานรายบุคคลแยกตามเวร (เช้า/บ่าย/นอกเวลา) สิทธิการรักษา และรหัส ICD-10 (U-code) ที่ใช้บ่อย เพื่อช่วยวิเคราะห์ภาระงานและรายได้ของกลุ่มงานแพทย์แผนไทย"
+                disabled={!aiSummary}
+            />
         </div>
     );
 }

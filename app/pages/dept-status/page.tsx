@@ -27,6 +27,7 @@ import {
     timeAgo,
 } from "@/app/components/dashboard/live";
 import { fmtDate, toThaiDate, getBangkokToday } from "@/lib/thaiDate";
+import AiSummaryCard from "@/app/components/ai/AiSummaryCard";
 import type {
     DeptStatusData,
     DeptStatusCard,
@@ -355,6 +356,29 @@ export default function DeptStatusPage() {
     const patients = useMemo(() => data?.patients ?? [], [data]);
     const byStatus = data?.byStatus ?? [];
 
+    // ── สรุปสำหรับ AI — ส่งเฉพาะสถิติรวมรายแผนก (ไม่ส่งชื่อ/HN ผู้ป่วย) ──
+    const aiSummary = useMemo(() => {
+        if (!data) return null;
+        return {
+            วันที่ข้อมูล: infoLabel,
+            ผู้รับบริการทั้งหมด_ราย: data.totalVisits,
+            ยังไม่เสร็จทั้งโรงพยาบาล_ราย: data.totalActive,
+            เสร็จหรือออกจากOPDแล้ว_ราย: data.totalDone,
+            สถานะรายแผนก: sortedCards
+                .filter((c) => !c.isExit)
+                .map((c) => ({
+                    แผนก: c.dep_name,
+                    เข้าแผนกวันนี้: c.entered,
+                    คงค้าง: c.active,
+                    เสร็จแล้ว: c.done,
+                    ร้อยละคงค้าง: c.percent,
+                })),
+            แยกตามชื่อสถานะ: byStatus.map((s) => ({
+                สถานะ: s.name, ราย: s.count, ถือว่าเสร็จ: s.finished,
+            })),
+        };
+    }, [data, infoLabel, sortedCards, byStatus]);
+
     return (
         <div className="p-4 md:p-6 space-y-5">
             {/* Header */}
@@ -599,6 +623,13 @@ export default function DeptStatusPage() {
             {selected && (
                 <DeptModal card={selected} patients={patients} onClose={() => setSelected(null)} />
             )}
+
+            {/* ── AI สรุป + แชท (ปุ่มลอยมุมขวาล่าง + modal กลางจอ) ── */}
+            <AiSummaryCard
+                summary={aiSummary}
+                context="แดชบอร์ดสถานะผู้ป่วย OPD ตามแผนก (Real-time) รพ.พลับพลาชัย จ.บุรีรัมย์ — วิเคราะห์การไหลของผู้ป่วย OPD ในแต่ละแผนก จำนวนคงค้าง (%) จุดคอขวด (bottleneck) ของแผนกที่มีผู้ป่วยค้างมาก และสถานะที่ผู้ป่วยติดค้างบ่อย (เช่น รอตรวจ รอรับยา รอชำระเงิน) เพื่อช่วยบริหารจัดการคิวและอัตรากำลังหน้างาน"
+                disabled={!aiSummary}
+            />
         </div>
     );
 }

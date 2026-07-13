@@ -16,6 +16,7 @@ import {
     SectionCard, LiveBadge, ConnectionStatus, RefreshButton,
 } from "@/app/components/dashboard/live";
 import type { IpHomeWardData, FundKey } from "@/lib/ip-homeward.types";
+import AiSummaryCard from "@/app/components/ai/AiSummaryCard";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 const REFRESH_INTERVAL_MS = 60_000;
@@ -54,6 +55,45 @@ export default function IpHomeWardDashboardPage() {
     const { data, loading, error, connected, secondsLeft, refetch } =
         useAutoRefresh<IpHomeWardData>("/api/ip-homeward-sheets", REFRESH_INTERVAL_MS);
     const [tab, setTab] = useState<Tab>("overview");
+
+    // ── สรุปสำหรับ AI — ส่งเฉพาะสถิติรวม (ไม่ส่งข้อมูลผู้ป่วยรายบุคคล) ──
+    const aiSummary = useMemo(() => {
+        if (!data) return null;
+        return {
+            ปีงบประมาณ: data.fiscalYear,
+            KPI_รวม: {
+                DC_รวมทุกสิทธิ: data.kpi.dcTotal,
+                UC_ผ่านA_ส่งเบิก: data.kpi.ucPassA,
+                ADJRW_รวม: Math.round(data.kpi.adjrwTotal * 100) / 100,
+                CMI_เฉลี่ย: data.kpi.cmiAvg,
+                จ่ายชดเชย_UC_บาท: data.kpi.payTotal,
+                ยอดสุทธิหลังหักเงินเดือน_บาท: data.kpi.netTotal,
+                เฉลี่ยระยะส่งClaim_วัน: data.kpi.avgSendDays,
+            },
+            รายเดือน: data.monthly.map((m) => ({
+                เดือน: m.label, DC: m.dc, UC: m.uc, "OFC/LGO": m.ofc, SSS: m.sss, อื่นๆ: m.other,
+                adjRW: Math.round(m.postRW * 100) / 100, CMI: m.cmi, ระยะส่งข้อมูล_วัน: m.sendDays,
+            })),
+            ผลงานรายแพทย์: data.doctors.map((d) => ({
+                ชื่อ: d.name, ราย: d.cases,
+                adjRW: Math.round(d.adjrw * 100) / 100,
+                RWเฉลี่ย: Math.round(d.avgRw * 1000) / 1000,
+                วันนอนเฉลี่ย: Math.round(d.avgLos * 10) / 10,
+            })),
+            แยกตามกองทุน: data.funds.map((f) => ({
+                กองทุน: f.name, ราย: f.cases,
+                adjRW: Math.round(f.adjrw * 100) / 100, วันนอนเฉลี่ย: Math.round(f.avgLos * 10) / 10,
+            })),
+            HomeWard: {
+                DC_ทั้งหมด: data.homeward.dc,
+                ลงรหัสแล้ว: data.homeward.coded,
+                ส่งClaimแล้ว: data.homeward.sent,
+                ยังไม่ส่ง: data.homeward.notSent,
+                ชดเชยแล้ว_บาท: data.homeward.paid,
+                เริ่มโครงการ: data.homeward.startDate,
+            },
+        };
+    }, [data]);
 
     return (
         <div className="space-y-4">
@@ -152,6 +192,13 @@ export default function IpHomeWardDashboardPage() {
                     {tab === "homeward" && <HomeWardTab data={data} />}
                 </>
             )}
+
+            {/* ── AI สรุป + แชท (ปุ่มลอยมุมขวาล่าง + modal กลางจอ) ── */}
+            <AiSummaryCard
+                summary={aiSummary}
+                context="แดชบอร์ด IP & Home Ward ปีงบ 2569 รพ.พลับพลาชัย จ.บุรีรัมย์ — วิเคราะห์ผลงานผู้ป่วยใน (IPD) และ Home Ward ครอบคลุมจำนวน D/C, adjRW, CMI, การจ่ายชดเชย UC จาก สปสช. (statement), ยอดสุทธิหลังหักเงินเดือน, ผลงานรายแพทย์ (RW เฉลี่ย วันนอนเฉลี่ย), การกระจายตามกองทุน (UC/OFC/SSS) และความคืบหน้าการส่ง Claim ของ Home Ward"
+                disabled={!aiSummary}
+            />
         </div>
     );
 }

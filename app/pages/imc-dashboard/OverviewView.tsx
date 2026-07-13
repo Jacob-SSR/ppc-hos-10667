@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import {
     AreaChart, Area, BarChart, Bar, XAxis, YAxis, CartesianGrid,
     Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend,
@@ -12,6 +12,7 @@ import {
     useAutoRefresh, timeAgo, CountdownRing, KpiCard, HBarList,
     SectionCard, LiveBadge, ConnectionStatus, RefreshButton,
 } from "@/app/components/dashboard/live";
+import AiSummaryCard from "@/app/components/ai/AiSummaryCard";
 
 // ─── Types (ตรงกับ /api/imc-sheets) ───────────────────────────────────────────
 interface BiDx { admit: number; dc: number; n: number; }
@@ -301,6 +302,34 @@ export default function ImcOverviewView() {
     const tabs = ["all", ...years];
     const activeTab = tabs.includes(tab) ? tab : "all";
 
+    // ── สรุปสำหรับ AI — ใช้สถิติรวมตามแท็บที่เลือก (ไม่ส่งข้อมูลรายบุคคล) ──
+    const aiSummary = useMemo(() => {
+        if (!data || data.all.total === 0) return null;
+        const d = activeTab === "all" ? data.all : data.byYear[activeTab];
+        if (!d) return null;
+        return {
+            ช่วงข้อมูล: activeTab === "all" ? "ทุกปีงบประมาณ" : `ปีงบ ${activeTab}`,
+            ผู้ป่วย_IMC_ทั้งหมด: d.total,
+            การวินิจฉัยหลัก: d.dx,
+            ช่องทางรับเข้า: d.channel,
+            สถานะปัจจุบัน: d.status,
+            ภาวะแทรกซ้อน: d.comp,
+            BarthelIndex: {
+                เฉลี่ยแรกรับ: d.biAdmitAvg,
+                เฉลี่ยจำหน่าย: d.biDcAvg,
+                แยกตามการวินิจฉัย: Object.fromEntries(
+                    Object.entries(d.biDx).map(([k, v]) => [k, { แรกรับ: v.admit, จำหน่าย: v.dc, จำนวน: v.n }]),
+                ),
+            },
+            ตัวชี้วัด: {
+                อัตราการฟื้นตัว_ImprovementRate_ร้อยละ: d.improvementRate,
+                อัตราปลอดภาวะแทรกซ้อน_ร้อยละ: d.compFreeRate,
+            },
+            ยอดเบิกจ่ายรวม_บาท: d.totalClaim,
+            จำนวนรายเดือน: d.monthly.map((m) => ({ เดือน: m.label, ราย: m.count })),
+        };
+    }, [data, activeTab]);
+
     return (
         <div className="space-y-4">
             {/* Header */}
@@ -386,6 +415,13 @@ export default function ImcOverviewView() {
                     ? <AllPage d={data.all} years={years} byYear={data.byYear} />
                     : <YearPage yr={activeTab} d={data.byYear[activeTab]} />
             )}
+
+            {/* ── AI สรุป + แชท (ปุ่มลอยมุมขวาล่าง + modal กลางจอ) ── */}
+            <AiSummaryCard
+                summary={aiSummary}
+                context="แดชบอร์ดผู้ป่วยระยะกลาง (Intermediate Care: IMC) รพ.พลับพลาชัย จ.บุรีรัมย์ — วิเคราะห์ผู้ป่วย Stroke, Traumatic Brain Injury, Fracture hip, Spinal cord injury ที่เข้าโปรแกรมฟื้นฟู ครอบคลุม Barthel Index (BI) แรกรับ-จำหน่าย อัตราการฟื้นตัว (Improvement Rate) ภาวะแทรกซ้อน ช่องทางรับเข้า และยอดเบิกจ่าย ตามแนวทาง Service Plan สาขา IMC"
+                disabled={!aiSummary}
+            />
         </div>
     );
 }
