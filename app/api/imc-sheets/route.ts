@@ -1,4 +1,6 @@
+// app/api/imc-sheets/route.ts
 import { NextResponse } from "next/server";
+import { cachedQuery } from "@/lib/cache";
 import {
   getSheetClient,
   getFirstSheetTitle,
@@ -11,6 +13,11 @@ import {
 } from "@/lib/sheets";
 
 const SPREADSHEET_ID = process.env.IMC_SPREADSHEET_ID!;
+
+// cache 10 นาที — ทะเบียน IMC คีย์มือลง Sheets ไม่ realtime
+// (hard TTL ใน lib/cache.ts = ttl * 4 → stale แจกต่อได้ ~40 นาทีถ้า Sheets ล่ม/โควต้าหมด)
+const TTL_SECONDS = 600;
+const CACHE_KEY = "imc-sheets";
 
 // ─── Column map (ตรงกับ header จริงในชีต) ────────────────────────────────────
 const COLUMN_MAP: Record<string, keyof ImcRow> = {
@@ -251,43 +258,57 @@ function breakdown(rows: ImcRow[]): FiscalBreakdown {
   };
 }
 
+/** ดึงจาก Sheets + parse + breakdown ทุกปีงบ — เก็บก้อนเดียวใน cache (รวม headers ให้ debug) */
+async function buildImcSheetsData() {
+  const sheets = await getSheetClient();
+  const firstSheet = await getFirstSheetTitle(sheets, SPREADSHEET_ID);
+  const raw = await getValues(sheets, SPREADSHEET_ID, `${firstSheet}!A:AZ`);
+
+  const { rows, headers } = parseRows(raw);
+
+  const years = Array.from(
+    new Set(rows.map((r) => r.fiscalYear).filter((y) => /^\d{4}$/.test(y))),
+  ).sort();
+  const byYear: Record<string, FiscalBreakdown> = {};
+  years.forEach((y) => {
+    byYear[y] = breakdown(rows.filter((r) => r.fiscalYear === y));
+  });
+  const all = breakdown(rows);
+
+  return {
+    updatedAt: new Date().toISOString(),
+    sheetName: firstSheet,
+    years,
+    all,
+    byYear,
+    rows,
+    headers,
+  };
+}
+
 export async function GET(req: Request) {
   const debug = new URL(req.url).searchParams.get("debug") === "1";
 
   try {
-    const sheets = await getSheetClient();
-    const firstSheet = await getFirstSheetTitle(sheets, SPREADSHEET_ID);
-    const raw = await getValues(sheets, SPREADSHEET_ID, `${firstSheet}!A:AZ`);
-
-    const { rows, headers } = parseRows(raw);
-
-    const years = Array.from(
-      new Set(rows.map((r) => r.fiscalYear).filter((y) => /^\d{4}$/.test(y))),
-    ).sort();
-    const byYear: Record<string, FiscalBreakdown> = {};
-    years.forEach((y) => {
-      byYear[y] = breakdown(rows.filter((r) => r.fiscalYear === y));
-    });
-    const all = breakdown(rows);
+    const data = await cachedQuery(
+      [CACHE_KEY],
+      buildImcSheetsData,
+      TTL_SECONDS,
+    );
 
     if (debug) {
       return NextResponse.json({
-        headers,
-        totalRows: rows.length,
-        years,
-        sample: rows.slice(0, 3),
-        all,
+        headers: data.headers,
+        totalRows: data.rows.length,
+        years: data.years,
+        sample: data.rows.slice(0, 3),
+        all: data.all,
+        cachedAt: data.updatedAt,
       });
     }
 
-    return NextResponse.json({
-      updatedAt: new Date().toISOString(),
-      sheetName: firstSheet,
-      years,
-      all,
-      byYear,
-      rows,
-    });
+    const { headers: _h, ...publicData } = data;
+    return NextResponse.json(publicData);
   } catch (err) {
     return sheetsError(err, "ImcSheets");
   }
