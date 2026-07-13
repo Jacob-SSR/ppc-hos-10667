@@ -1,7 +1,6 @@
 // app/api/ip-homeward-sheets/route.ts
-// อ่าน Google Sheet "IP & HomeWard Report PPCH 2569" แล้วสรุปข้อมูล IP + Home Ward
-// ทำตามแพทเทิร์นเดียวกับ accident-sheets (lib/sheets helpers + sheetsError)
 import { NextResponse } from "next/server";
+import { cachedQuery } from "@/lib/cache";
 import {
   getSheetClient,
   getAllSheetTitles,
@@ -21,9 +20,12 @@ import type {
 } from "@/lib/ip-homeward.types";
 
 // Sheet ID ของ "IP & HomeWard Report PPCH 2569"
-const SPREADSHEET_ID =
-  process.env.IP_HOMEWARD_SPREADSHEET_ID ??
-  "1jWkNXFIeP_uZ7tTyJA3wosmZPYnknOtJS3QMuG2GJz8";
+const SPREADSHEET_ID = process.env.IP_HOMEWARD_SPREADSHEET_ID!;
+
+// cache 15 นาที — route นี้ยิง Sheets ~11 call/req (แท็บรายเดือน + สรุป + Home Ward)
+// เป็นตัวกินโควต้าหนักสุด TTL ยาวหน่อยคุ้ม (hard TTL = ttl * 4 → stale ~1 ชม.ถ้า Sheets ล่ม)
+const TTL_SECONDS = 900;
+const CACHE_KEY = "ip-homeward-sheets";
 
 // แท็บรายเดือน เรียงตามเวลา (ต.ค.68 → พ.ค.69) — ปีงบ 2569
 const MONTH_SHEETS: { sheet: string; label: string }[] = [
@@ -396,170 +398,195 @@ function parseHomeWard(rows: string[][]): HomeWardSummary {
 const round2 = (n: number) => Math.round(n * 100) / 100;
 const round4 = (n: number) => Math.round(n * 10000) / 10000;
 
+// ─── Builder: ดึงทุกชีต + aggregate ทั้งหมด เก็บก้อนเดียวใน cache ───────────────
+interface CachedIpHomeWard {
+  data: IpHomeWardData;
+  debugInfo: {
+    titles: string[];
+    monthSheetsPresent: string[];
+    statementCount: number;
+    doctorCount: number;
+    sample: IpMonthRow | undefined;
+  };
+}
+
+async function buildIpHomeWardData(): Promise<CachedIpHomeWard> {
+  const sheets = await getSheetClient();
+  const titles = await getAllSheetTitles(sheets, SPREADSHEET_ID);
+
+  // 1) statement (ชีต "สรุป")
+  const sumTitle = titles.find((t) => t.trim() === "สรุป") ?? "สรุป";
+  const sumRaw = await getValues(sheets, SPREADSHEET_ID, `${sumTitle}!A:J`);
+  const { rows: statement, total: statementTotal } = parseStatement(sumRaw);
+  const cmiByLabel: Record<string, number | null> = {};
+  statement.forEach((s) => (cmiByLabel[s.label] = s.cmi));
+
+  // 2) รายเดือน — เฉพาะแท็บที่มีจริง
+  const present = MONTH_SHEETS.filter((m) => titles.includes(m.sheet));
+  const monthParses: MonthParse[] = [];
+  for (const m of present) {
+    const raw = await getValues(sheets, SPREADSHEET_ID, `${m.sheet}!A:T`);
+    const p = parseMonthSheet(m.label, m.sheet, raw);
+    p.row.cmi = cmiByLabel[m.label] ?? null;
+    monthParses.push(p);
+  }
+  const monthly: IpMonthRow[] = monthParses.map((p) => p.row);
+  const monthLabels = monthly.map((m) => m.label);
+
+  // 3) aggregate รายแพทย์ (รวมทุกเดือน)
+  const docAgg = new Map<string, IpDoctorRow>();
+  monthParses.forEach((p, mi) => {
+    p.doctors.forEach((d, name) => {
+      let row = docAgg.get(name);
+      if (!row) {
+        row = {
+          name,
+          cases: 0,
+          adjrw: 0,
+          avgRw: 0,
+          avgLos: 0,
+          cost: 0,
+          funds: { UC: 0, "OFC/LGO": 0, SSS: 0, Other: 0 },
+          monthlyCases: new Array(monthParses.length).fill(0),
+          monthlyRw: new Array(monthParses.length).fill(0),
+        };
+        docAgg.set(name, row);
+      }
+      row.cases += d.cases;
+      row.adjrw += d.rw;
+      row.avgLos += d.los; // sum ก่อน เฉลี่ยทีหลัง
+      row.cost += d.cost;
+      FUND_KEYS.forEach((k) => (row!.funds[k] += d.funds[k]));
+      row.monthlyCases[mi] = d.cases;
+      row.monthlyRw[mi] = round2(d.rw);
+    });
+  });
+  const doctors: IpDoctorRow[] = Array.from(docAgg.values())
+    .map((d) => ({
+      ...d,
+      adjrw: round2(d.adjrw),
+      avgRw: d.cases > 0 ? round4(d.adjrw / d.cases) : 0,
+      avgLos: d.cases > 0 ? round2(d.avgLos / d.cases) : 0,
+      cost: Math.round(d.cost),
+    }))
+    .sort((a, b) => b.cases - a.cases);
+
+  // 4) aggregate รายกองทุน
+  const fundAgg: Record<FundKey, IpFundRow> = {} as Record<FundKey, IpFundRow>;
+  FUND_KEYS.forEach((k) => {
+    fundAgg[k] = {
+      name: k,
+      cases: 0,
+      adjrw: 0,
+      avgRw: 0,
+      avgLos: 0,
+      cost: 0,
+      monthlyCases: new Array(monthParses.length).fill(0),
+      monthlyRw: new Array(monthParses.length).fill(0),
+    };
+  });
+  monthParses.forEach((p, mi) => {
+    FUND_KEYS.forEach((k) => {
+      const f = p.funds[k];
+      fundAgg[k].cases += f.cases;
+      fundAgg[k].adjrw += f.rw;
+      fundAgg[k].avgLos += f.los;
+      fundAgg[k].cost += f.cost;
+      fundAgg[k].monthlyCases[mi] = f.cases;
+      fundAgg[k].monthlyRw[mi] = round2(f.rw);
+    });
+  });
+  const funds: IpFundRow[] = FUND_KEYS.map((k) => {
+    const f = fundAgg[k];
+    return {
+      ...f,
+      adjrw: round2(f.adjrw),
+      avgRw: f.cases > 0 ? round4(f.adjrw / f.cases) : 0,
+      avgLos: f.cases > 0 ? round2(f.avgLos / f.cases) : 0,
+      cost: Math.round(f.cost),
+    };
+  });
+
+  // 5) Home Ward
+  const hwTitle = titles.find((t) => t.trim().startsWith("Admit Home Ward"));
+  let homeward: HomeWardSummary = {
+    dc: 0,
+    coded: 0,
+    sent: 0,
+    notSent: 0,
+    preRW: 0,
+    postRW: 0,
+    paid: 0,
+    startDate: "",
+    funds: { UC: 0, "OFC/LGO": 0, SSS: 0, Other: 0 },
+  };
+  if (hwTitle) {
+    const hwRaw = await getValues(sheets, SPREADSHEET_ID, `${hwTitle}!A:T`);
+    homeward = parseHomeWard(hwRaw);
+  }
+
+  // 6) KPI รวม
+  const dcTotal = monthly.reduce((a, m) => a + m.dc, 0);
+  const avgSend =
+    monthly.length > 0
+      ? round2(
+          monthly.reduce((a, m) => a + m.sendDays, 0) /
+            monthly.filter((m) => m.sendDays > 0).length || 0,
+        )
+      : 0;
+  const data: IpHomeWardData = {
+    updatedAt: new Date().toISOString(),
+    fiscalYear: "2569",
+    months: monthLabels,
+    monthly,
+    statement,
+    statementTotal,
+    doctors,
+    funds,
+    homeward,
+    kpi: {
+      dcTotal,
+      ucPassA: statementTotal.cases,
+      adjrwTotal: statementTotal.adjrw,
+      cmiAvg: statementTotal.cmi ?? 0,
+      payTotal: statementTotal.pay,
+      netTotal: statementTotal.net,
+      doctorCount: doctors.length,
+      avgSendDays: avgSend,
+    },
+  };
+
+  return {
+    data,
+    debugInfo: {
+      titles,
+      monthSheetsPresent: present.map((m) => m.sheet),
+      statementCount: statement.length,
+      doctorCount: doctors.length,
+      sample: monthly[0],
+    },
+  };
+}
+
 // ─── GET ────────────────────────────────────────────────────────────────────────
 export async function GET(req: Request) {
   const debug = new URL(req.url).searchParams.get("debug") === "1";
 
   try {
-    const sheets = await getSheetClient();
-    const titles = await getAllSheetTitles(sheets, SPREADSHEET_ID);
-
-    // 1) statement (ชีต "สรุป")
-    const sumTitle = titles.find((t) => t.trim() === "สรุป") ?? "สรุป";
-    const sumRaw = await getValues(sheets, SPREADSHEET_ID, `${sumTitle}!A:J`);
-    const { rows: statement, total: statementTotal } = parseStatement(sumRaw);
-    const cmiByLabel: Record<string, number | null> = {};
-    statement.forEach((s) => (cmiByLabel[s.label] = s.cmi));
-
-    // 2) รายเดือน — เฉพาะแท็บที่มีจริง
-    const present = MONTH_SHEETS.filter((m) => titles.includes(m.sheet));
-    const monthParses: MonthParse[] = [];
-    for (const m of present) {
-      const raw = await getValues(sheets, SPREADSHEET_ID, `${m.sheet}!A:T`);
-      const p = parseMonthSheet(m.label, m.sheet, raw);
-      p.row.cmi = cmiByLabel[m.label] ?? null;
-      monthParses.push(p);
-    }
-    const monthly: IpMonthRow[] = monthParses.map((p) => p.row);
-    const monthLabels = monthly.map((m) => m.label);
-
-    // 3) aggregate รายแพทย์ (รวมทุกเดือน)
-    const docAgg = new Map<string, IpDoctorRow>();
-    monthParses.forEach((p, mi) => {
-      p.doctors.forEach((d, name) => {
-        let row = docAgg.get(name);
-        if (!row) {
-          row = {
-            name,
-            cases: 0,
-            adjrw: 0,
-            avgRw: 0,
-            avgLos: 0,
-            cost: 0,
-            funds: { UC: 0, "OFC/LGO": 0, SSS: 0, Other: 0 },
-            monthlyCases: new Array(monthParses.length).fill(0),
-            monthlyRw: new Array(monthParses.length).fill(0),
-          };
-          docAgg.set(name, row);
-        }
-        row.cases += d.cases;
-        row.adjrw += d.rw;
-        row.avgLos += d.los; // sum ก่อน เฉลี่ยทีหลัง
-        row.cost += d.cost;
-        FUND_KEYS.forEach((k) => (row!.funds[k] += d.funds[k]));
-        row.monthlyCases[mi] = d.cases;
-        row.monthlyRw[mi] = round2(d.rw);
-      });
-    });
-    const doctors: IpDoctorRow[] = Array.from(docAgg.values())
-      .map((d) => ({
-        ...d,
-        adjrw: round2(d.adjrw),
-        avgRw: d.cases > 0 ? round4(d.adjrw / d.cases) : 0,
-        avgLos: d.cases > 0 ? round2(d.avgLos / d.cases) : 0,
-        cost: Math.round(d.cost),
-      }))
-      .sort((a, b) => b.cases - a.cases);
-
-    // 4) aggregate รายกองทุน
-    const fundAgg: Record<FundKey, IpFundRow> = {} as Record<
-      FundKey,
-      IpFundRow
-    >;
-    FUND_KEYS.forEach((k) => {
-      fundAgg[k] = {
-        name: k,
-        cases: 0,
-        adjrw: 0,
-        avgRw: 0,
-        avgLos: 0,
-        cost: 0,
-        monthlyCases: new Array(monthParses.length).fill(0),
-        monthlyRw: new Array(monthParses.length).fill(0),
-      };
-    });
-    monthParses.forEach((p, mi) => {
-      FUND_KEYS.forEach((k) => {
-        const f = p.funds[k];
-        fundAgg[k].cases += f.cases;
-        fundAgg[k].adjrw += f.rw;
-        fundAgg[k].avgLos += f.los;
-        fundAgg[k].cost += f.cost;
-        fundAgg[k].monthlyCases[mi] = f.cases;
-        fundAgg[k].monthlyRw[mi] = round2(f.rw);
-      });
-    });
-    const funds: IpFundRow[] = FUND_KEYS.map((k) => {
-      const f = fundAgg[k];
-      return {
-        ...f,
-        adjrw: round2(f.adjrw),
-        avgRw: f.cases > 0 ? round4(f.adjrw / f.cases) : 0,
-        avgLos: f.cases > 0 ? round2(f.avgLos / f.cases) : 0,
-        cost: Math.round(f.cost),
-      };
-    });
-
-    // 5) Home Ward
-    const hwTitle = titles.find((t) => t.trim().startsWith("Admit Home Ward"));
-    let homeward: HomeWardSummary = {
-      dc: 0,
-      coded: 0,
-      sent: 0,
-      notSent: 0,
-      preRW: 0,
-      postRW: 0,
-      paid: 0,
-      startDate: "",
-      funds: { UC: 0, "OFC/LGO": 0, SSS: 0, Other: 0 },
-    };
-    if (hwTitle) {
-      const hwRaw = await getValues(sheets, SPREADSHEET_ID, `${hwTitle}!A:T`);
-      homeward = parseHomeWard(hwRaw);
-    }
-
-    // 6) KPI รวม
-    const dcTotal = monthly.reduce((a, m) => a + m.dc, 0);
-    const avgSend =
-      monthly.length > 0
-        ? round2(
-            monthly.reduce((a, m) => a + m.sendDays, 0) /
-              monthly.filter((m) => m.sendDays > 0).length || 0,
-          )
-        : 0;
-    const data: IpHomeWardData = {
-      updatedAt: new Date().toISOString(),
-      fiscalYear: "2569",
-      months: monthLabels,
-      monthly,
-      statement,
-      statementTotal,
-      doctors,
-      funds,
-      homeward,
-      kpi: {
-        dcTotal,
-        ucPassA: statementTotal.cases,
-        adjrwTotal: statementTotal.adjrw,
-        cmiAvg: statementTotal.cmi ?? 0,
-        payTotal: statementTotal.pay,
-        netTotal: statementTotal.net,
-        doctorCount: doctors.length,
-        avgSendDays: avgSend,
-      },
-    };
+    const cached = await cachedQuery(
+      [CACHE_KEY],
+      buildIpHomeWardData,
+      TTL_SECONDS,
+    );
 
     if (debug) {
       return NextResponse.json({
-        titles,
-        monthSheetsPresent: present.map((m) => m.sheet),
-        statementCount: statement.length,
-        doctorCount: doctors.length,
-        sample: monthly[0],
+        ...cached.debugInfo,
+        cachedAt: cached.data.updatedAt,
       });
     }
 
-    return NextResponse.json(data);
+    return NextResponse.json(cached.data);
   } catch (err) {
     return sheetsError(err, "IpHomeWardSheets");
   }
