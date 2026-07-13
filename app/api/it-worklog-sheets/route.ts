@@ -1,9 +1,10 @@
 // app/api/it-worklog-sheets/route.ts
-// ดึงข้อมูลจาก Google Sheets — IT Worklog Dashboard
-// Spreadsheet ID: 1erNklVSAmTSXKgPPU1fvd2LXTsLg_iGJgHNGjUpAEpQ
-
 import { NextResponse } from "next/server";
 import { google } from "googleapis";
+import { cachedQuery } from "@/lib/cache";
+
+const TTL_SECONDS = 300;
+const CACHE_KEY_PARTS = ["it-worklog-form", "dashboard"];
 
 export interface WorkRow {
   date: string;
@@ -144,16 +145,25 @@ function parseSheetRows(rows: string[][]): WorkRow[] {
   return result;
 }
 
+/** ดึงชีต + parse เป็น WorkRow[] — เก็บก้อนเดียวใน cache */
+async function buildWorklogDashboard(): Promise<WorkRow[]> {
+  const sheets = await getSheetClient();
+  const res = await sheets.spreadsheets.values.get({
+    spreadsheetId: SPREADSHEET_ID,
+    range: `${SHEET_NAME}!A:AN`,
+  });
+
+  const raw = (res.data.values ?? []) as string[][];
+  return parseSheetRows(raw);
+}
+
 export async function GET() {
   try {
-    const sheets = await getSheetClient();
-    const res = await sheets.spreadsheets.values.get({
-      spreadsheetId: SPREADSHEET_ID,
-      range: `${SHEET_NAME}!A:AN`,
-    });
-
-    const raw = (res.data.values ?? []) as string[][];
-    const rows = parseSheetRows(raw);
+    const rows = await cachedQuery(
+      CACHE_KEY_PARTS,
+      buildWorklogDashboard,
+      TTL_SECONDS,
+    );
 
     return NextResponse.json(rows);
   } catch (err: unknown) {
