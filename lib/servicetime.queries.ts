@@ -55,6 +55,47 @@ function inShift(min: number | null, shift: ServiceShift): boolean {
 const depOf = (dep: string | null | undefined): string =>
   dep?.trim() || "ไม่ระบุ";
 
+// แผนก "จุดผ่าน/จุดออก" — ใช้เฉพาะตอนเลือก "ป้ายคลินิก" ของ visit (ให้ป้ายชี้คลินิกจริงก่อนจุดผ่าน)
+// ❗ ไม่ได้ใช้ตัด dropdown — dropdown แสดงทุกแผนก OPD ยกเว้น ER ตามที่ผู้บริหารกำหนด
+// 👉 ปรับ keyword ให้ตรงกับชื่อแผนกจริงได้ (แนวเดียวกับ FINISHED_STATUS_KEYWORDS ใน deptStatus.service.ts)
+// หมายเหตุ: ใช้ includes — "กลับบ้าน" จะครอบ "ให้คำปรึกษาก่อนกลับบ้าน" ด้วย
+const NON_CLINIC_KEYWORDS = [
+  "กลับบ้าน",
+  "อื่นๆ",
+  "ห้องบัตร",
+  "เวชระเบียน",
+  "ซักประวัติ",
+  "ห้องยา",
+  "จ่ายยา",
+  "เก็บเงิน",
+  "สิทธิบัตร",
+  "ชันสูตร",
+  "ฉายรังสี",
+];
+const isNonClinic = (name: string): boolean =>
+  NON_CLINIC_KEYWORDS.some((k) => name.includes(k));
+
+// แผนกทั้งหมดที่ visit เกี่ยวข้อง (ห้องเรียกตรวจ → แผนกส่งตรวจ → แผนกตามนัด → last → cur) ไม่ซ้ำ
+const depsOf = (r: VisitRow): string[] => {
+  const out: string[] = [];
+  const push = (d: string | null | undefined) => {
+    const n = d?.trim();
+    if (n && !out.includes(n)) out.push(n);
+  };
+  push(r.dep_service5);
+  push(r.dep_main);
+  for (const d of (r.dep_appt ?? "").split("|")) push(d);
+  push(r.dep_last);
+  push(r.dep_cur);
+  return out;
+};
+
+// ป้ายคลินิกของ visit: เอาแผนกแรกที่เป็น "คลินิกจริง" ก่อน ไม่มีเลยค่อย fallback แผนกแรกที่พบ
+const clinicLabelOf = (r: VisitRow): string => {
+  const deps = depsOf(r);
+  return deps.find((d) => !isNonClinic(d)) ?? deps[0] ?? "ไม่ระบุ";
+};
+
 // ─── นิยามขั้นตอน OPD (แหล่งเดียว) — ใช้ทั้งภาพรวมและแยกรายคลินิก ────────────────
 // inFlow = ขั้นตอนหลักในเส้นทาง (ใช้ในแผงภาพรวม + กราฟองค์ประกอบเวลา) · isWait = ขั้นตอน "รอ"
 // lab/xray เป็นขั้นตอนเสริม (เฉพาะ visit ที่มีรายการ) แสดงในตารางรายคลินิก/รายบุคคล
@@ -169,6 +210,16 @@ function assertDate(s: string): string {
   return s;
 }
 
+// รหัสแผนก ER ของ รพ. (kskdepartment.depcode)
+// ⚠️ อย่าใช้ spclty ระบุ ER — spclty คือ "สาขาการแพทย์" (01=อายุรกรรม, 02=ศัลยกรรม, 13=อนามัยเด็กดี)
+//    ไม่มีรหัส ER; ที่ห้องฉุกเฉินได้ '02' เป็นแค่การจัดสาขา ถ้ามีคลินิกศัลยกรรมจริงจะโดนตัดผิด
+const ER_DEPCODES = [
+  "009", // ห้องฉุกเฉิน
+  "054", // ER คุณภาพ
+  "073", // ห้องหัตถการ — ถ้าผู้บริหารให้นับเป็น OPD ลบบรรทัดนี้ออก
+] as const;
+const ER_DEP_SQL = ER_DEPCODES.map((c) => `'${c}'`).join(",");
+
 // scope/visitType → SQL fragment (มาจาก enum เท่านั้น ไม่ใช่ค่า request ตรง ๆ = ปลอดภัย)
 function scopeCond(scope: ServiceScope): string {
   if (scope === "opd") return "AND v.is_er_visit = 0";
@@ -190,7 +241,11 @@ SELECT
   DATE_FORMAT(v.vstdate,'%Y-%m-%d') AS vstdate,
   v.is_appointment_visit,
   v.is_er_visit,
-  v.doctor_department,
+  v.dep_service5,
+  v.dep_main,
+  v.dep_last,
+  v.dep_cur,
+  v.dep_appt,
   HOUR(v.dt_arrive_screening)                                       AS arrival_hour,
   (HOUR(v.dt_arrive_screening)*60 + MINUTE(v.dt_arrive_screening))  AS arrival_minute,
   TIMESTAMPDIFF(MINUTE, v.dt_arrive_screening, v.dt_start_screening) AS wait_screening_min,
@@ -221,8 +276,19 @@ FROM (
     st.hn,
     st.vstdate,
     CASE WHEN ap.hn IS NOT NULL THEN 1 ELSE 0 END AS is_appointment_visit,
-    CASE WHEN d5.spclty = '13' THEN 1 ELSE 0 END  AS is_er_visit,
-    COALESCE(d5.department, dfb.department) AS doctor_department,
+    -- ER = เทียบ depcode ตรง ๆ (ดู ER_DEPCODES ด้านบน) — visit ที่ผ่าน ER จุดใดจุดหนึ่งถือเป็น ER
+    CASE WHEN st.service5_dep IN (${ER_DEP_SQL})
+           OR o.main_dep      IN (${ER_DEP_SQL})
+           OR o.cur_dep       IN (${ER_DEP_SQL})
+           OR o.last_dep      IN (${ER_DEP_SQL})
+         THEN 1 ELSE 0 END AS is_er_visit,
+    -- แผนกตามนัด (oapp) คั่นด้วย | — คลินิกเรื้อรังนัดล่วงหน้าเสมอ ใช้กู้คลินิกกลางทางที่ ovst ทับหาย
+    ap.dep_appt AS dep_appt,
+    -- เก็บแผนกทุกจุดที่ visit ผ่าน (แนวเดียวกับ dept-status ที่นับทั้ง cur_dep + last_dep)
+    d5.department AS dep_service5,  -- ห้องที่กดเรียกตรวจ (แม่นสุดถ้ามี)
+    dm.department AS dep_main,      -- แผนกที่ลงทะเบียนส่งตรวจ
+    kl.department AS dep_last,      -- แผนกก่อนหน้าล่าสุด
+    kc.department AS dep_cur,       -- แผนกปัจจุบัน/สุดท้าย
 
     CASE WHEN st.service3 IS NULL THEN NULL
          WHEN st.service3='24:00:00' THEN STR_TO_DATE(CONCAT(st.vstdate,' 00:00:00'),'%Y-%m-%d %H:%i:%s')+INTERVAL 1 DAY
@@ -271,15 +337,21 @@ FROM (
     HOUR(xr.xray_exam_time)  AS xray_exam_hour
 
   FROM service_time st
-  LEFT JOIN kskdepartment d5 ON d5.depcode = st.service5_dep
-
-  -- fallback คลินิก: กรณี service5_dep ว่าง/ไม่ match kskdepartment (เช่น visit ที่ยังไม่ถึงขั้นตอนเรียกตรวจ)
-  -- ให้ไปดูจาก ovst แทน ตามลำดับ cur_dep (แผนกปัจจุบัน) → last_dep (แผนกล่าสุด) → main_dep (แผนกหลักของ visit)
   LEFT JOIN ovst o ON o.vn = st.vn
-  LEFT JOIN kskdepartment dfb ON dfb.depcode = COALESCE(o.cur_dep, o.last_dep, o.main_dep)
+  LEFT JOIN kskdepartment d5 ON d5.depcode = st.service5_dep
+  LEFT JOIN kskdepartment dm ON dm.depcode = o.main_dep
+  LEFT JOIN kskdepartment kc ON kc.depcode = o.cur_dep
+  LEFT JOIN kskdepartment kl ON kl.depcode = o.last_dep
 
+  -- นัดของวันนั้น + ชื่อแผนกที่นัด (ovst เก็บแผนกแค่ cur/last คลินิกกลางทางเช่นเบาหวาน
+  -- ถูกทับหายตอนคนไข้ไปห้องยา/กลับบ้าน แต่แผนกในใบนัดยังอยู่)
   LEFT JOIN (
-    SELECT DISTINCT hn, nextdate FROM oapp WHERE hn IS NOT NULL AND nextdate IS NOT NULL
+    SELECT a.hn, a.nextdate,
+      GROUP_CONCAT(DISTINCT k.department SEPARATOR '|') AS dep_appt
+    FROM oapp a
+    LEFT JOIN kskdepartment k ON k.depcode = a.depcode
+    WHERE a.hn IS NOT NULL AND a.nextdate BETWEEN ? AND ?
+    GROUP BY a.hn, a.nextdate
   ) ap ON ap.hn = st.hn AND ap.nextdate = st.vstdate
 
   LEFT JOIN (
@@ -322,7 +394,12 @@ interface VisitRow extends RowDataPacket {
   vstdate: string;
   is_appointment_visit: number;
   is_er_visit: number;
-  doctor_department: string | null;
+  doctor_department: string | null; // ป้ายคลินิกของ visit — คำนวณฝั่ง JS จาก dep_* ด้านล่าง
+  dep_service5: string | null;
+  dep_main: string | null;
+  dep_last: string | null;
+  dep_cur: string | null;
+  dep_appt: string | null; // ชื่อแผนกตามนัด (oapp) คั่นด้วย |
   arrival_hour: number | null;
   arrival_minute: number | null;
   wait_screening_min: number | null;
@@ -451,11 +528,21 @@ export async function getServiceTime(
       : ST_TARGETS.total;
 
   const sql = buildRowSql(scope, visitType);
-  const [allRows] = await db.query<VisitRow[]>(sql, [start, end]);
+  // params 2 คู่: BETWEEN ของ oapp (ใน join) + BETWEEN ของ service_time (WHERE หลัก)
+  const [allRows] = await db.query<VisitRow[]>(sql, [start, end, start, end]);
 
-  // รายชื่อคลินิกทั้งหมดในช่วงวันที่ (ก่อนกรองเวร/คลินิก → dropdown คงที่)
+  // ป้ายคลินิกต่อ visit (คำนวณครั้งเดียว → ใช้ต่อในตารางรายคลินิก/รายบุคคล)
+  for (const r of allRows) r.doctor_department = clinicLabelOf(r);
+
+  // dropdown = ทุกแผนกที่ visit OPD ผ่าน "ยกเว้น ER" (visit ที่แตะ ER ถูกตัดตั้งแต่ชั้น SQL: scope=opd)
+  // visit ที่ไม่มีข้อมูลแผนกเลย → รวมเป็น "ไม่ระบุ" ให้เลือกกรองได้
   const clinics = [
-    ...new Set(allRows.map((r) => depOf(r.doctor_department))),
+    ...new Set(
+      allRows.flatMap((r) => {
+        const deps = depsOf(r);
+        return deps.length ? deps : ["ไม่ระบุ"];
+      }),
+    ),
   ].sort((a, b) => a.localeCompare(b, "th"));
 
   // ชั้นกรอง: เวร → ใช้กับทุกส่วน (รวมตารางรายคลินิก) · คลินิก → ใช้กับทุกส่วน "ยกเว้น" ตารางรายคลินิก
@@ -463,10 +550,14 @@ export async function getServiceTime(
     shift === "all"
       ? allRows
       : allRows.filter((r) => inShift(r.arrival_minute, shift));
+  // เลือกคลินิก = เอา visit ที่ "ผ่าน" แผนกนั้น ไม่ว่าจะเป็นจุดเรียกตรวจ/ส่งตรวจ/last/cur
   const rows =
     clinic === "all"
       ? shiftRows
-      : shiftRows.filter((r) => depOf(r.doctor_department) === clinic);
+      : shiftRows.filter((r) => {
+          const deps = depsOf(r);
+          return deps.length ? deps.includes(clinic) : clinic === "ไม่ระบุ";
+        });
 
   // ── summary flags ──
   const appointmentVisits = rows.filter(
