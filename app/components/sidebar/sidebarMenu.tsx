@@ -33,7 +33,6 @@ import {
   HeartHandshake,
   Syringe,
   Activity,
-  MapPinned,
   Gauge,
 } from "lucide-react";
 
@@ -201,24 +200,6 @@ export const DASHBOARD_GROUPS: SidebarSubGroup[] = [
         group: "disease",
       },
       {
-        label: "แผนที่บ้านผู้ป่วยยาเสพติด",
-        href: "/pages/drug-map",
-        icon: MapPinned,
-        group: "disease",
-      },
-      {
-        label: "แผนที่บ้านมินิธัญญารักษ์",
-        href: "/pages/minithan-map",
-        icon: MapPinned,
-        group: "disease",
-      },
-      {
-        label: "แผนที่บ้าน Home Ward",
-        href: "/pages/homeward-map",
-        icon: MapPinned,
-        group: "disease",
-      },
-      {
         label: "มินิธัญญารักษ์",
         href: "/pages/minithan-dashboard",
         icon: HeartHandshake,
@@ -240,12 +221,6 @@ export const DASHBOARD_GROUPS: SidebarSubGroup[] = [
         label: "วัณโรค (TB)",
         href: "/pages/tb-dashboard",
         icon: Microscope,
-        group: "disease",
-      },
-      {
-        label: "แผนที่บ้านผู้ป่วยวัณโรค",
-        href: "/pages/tb-map",
-        icon: MapPinned,
         group: "disease",
       },
       {
@@ -300,12 +275,6 @@ export const DASHBOARD_GROUPS: SidebarSubGroup[] = [
         label: "งานการพยาบาลผู้คลอด (ANC)",
         href: "/pages/anc-nursing-dashboard",
         icon: Baby,
-        group: "disease",
-      },
-      {
-        label: "แผนที่บ้านหญิงตั้งครรภ์ที่ซีด",
-        href: "/pages/anc-anemia-map",
-        icon: MapPinned,
         group: "disease",
       },
     ],
