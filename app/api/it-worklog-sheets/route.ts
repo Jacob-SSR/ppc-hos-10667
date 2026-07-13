@@ -25,9 +25,7 @@ export interface WorkRow {
 }
 
 const SHEET_NAME = process.env.IT_WORKLOG_SHEET_NAME ?? "บันทึกประจำวัน";
-const SPREADSHEET_ID =
-  process.env.IT_WORKLOG_SPREADSHEET_ID ||
-  "1erNklVSAmTSXKgPPU1fvd2LXTsLg_iGJgHNGjUpAEpQ";
+const SPREADSHEET_ID = process.env.IT_WORKLOG_SPREADSHEET_ID!;
 
 async function getSheetClient() {
   const auth = new google.auth.GoogleAuth({

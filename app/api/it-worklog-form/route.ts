@@ -1,11 +1,18 @@
+// app/api/it-worklog-form/route.ts
 import { NextRequest, NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import jwt from "jsonwebtoken";
 import { db2 } from "@/lib/db";
 import { RowDataPacket } from "mysql2";
 import { getSheetClient, sheetsError } from "@/lib/sheets";
+import { cachedQuery, invalidate } from "@/lib/cache";
 
 type UserRow = RowDataPacket & { user: string; name: string; role: string };
+
+// cache 5 นาที — worklog เขียนโดยทีม IT เองผ่าน POST ซึ่ง invalidate cache ให้ทันที
+// TTL นี้จึงมีผลแค่กรณีมีคนแก้ตรงในชีต Google โดยไม่ผ่านระบบ
+const TTL_SECONDS = 300;
+const CACHE_PREFIX = "it-worklog-form";
 
 async function getUser() {
   const cookieStore = await cookies();
@@ -104,6 +111,26 @@ function calcTimeliness(
   return "ท้นเวลา";
 }
 
+/** อ่านทั้งชีต + แปลงเป็น object รายแถว — cache ก้อนกลาง (ทุกคนใช้ร่วม) แล้วค่อยกรองรายคนตอนตอบ */
+async function buildWorklogRows(): Promise<Record<string, string>[]> {
+  const sheets = await getSheetClient(false);
+  const res = await sheets.spreadsheets.values.get({
+    spreadsheetId: SPREADSHEET_ID,
+    range: `${SHEET_NAME}!A:AN`,
+  });
+  const rows = res.data.values ?? [];
+  if (rows.length < 2) return [];
+
+  const header = rows[0];
+  return rows.slice(1).map((row) => {
+    const obj: Record<string, string> = {};
+    header.forEach((h: string, i: number) => {
+      obj[h] = row[i] ?? "";
+    });
+    return obj;
+  });
+}
+
 // GET: ดึงรายการ entries (สำหรับแสดงประวัติ)
 export async function GET(req: NextRequest) {
   const user = await getUser();
@@ -113,23 +140,13 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
   try {
-    const sheets = await getSheetClient(false);
-    const res = await sheets.spreadsheets.values.get({
-      spreadsheetId: SPREADSHEET_ID,
-      range: `${SHEET_NAME}!A:AN`,
-    });
-    const rows = res.data.values ?? [];
-    if (rows.length < 2) return NextResponse.json({ rows: [] });
+    const data = await cachedQuery(
+      [CACHE_PREFIX, "rows"],
+      buildWorklogRows,
+      TTL_SECONDS,
+    );
 
-    const header = rows[0];
-    const data = rows.slice(1).map((row) => {
-      const obj: Record<string, string> = {};
-      header.forEach((h: string, i: number) => {
-        obj[h] = row[i] ?? "";
-      });
-      return obj;
-    });
-    // คืนแค่แถวของคนนี้
+    // กรองรายคนหลัง cache — auth ทำก่อนหน้าแล้ว cache ไม่มีผลต่อสิทธิ์เข้าถึง
     const mine = data.filter((r) => r["ชื่อเจ้าหน้าที่ไอที"] === user.name);
     return NextResponse.json({ rows: mine, name: user.name });
   } catch (err) {
@@ -249,6 +266,10 @@ export async function POST(req: NextRequest) {
       insertDataOption: "INSERT_ROWS",
       requestBody: { values: [row] },
     });
+
+    // เขียนสำเร็จ → ล้าง cache ให้ GET ถัดไปเห็นรายการใหม่ทันที
+    // (invalidate กลืน error เองถ้า Redis ล่ม — ไม่ทำให้การบันทึกที่สำเร็จแล้วกลายเป็น fail)
+    await invalidate(CACHE_PREFIX);
 
     return NextResponse.json({ success: true, message: "บันทึกสำเร็จ" });
   } catch (err) {
