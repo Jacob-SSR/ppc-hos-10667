@@ -154,6 +154,13 @@ html.dark {
     z-index: 2000 !important;
 }
 
+/* ─── Leaflet: ขัง z-index (400–700) ไว้ภายในแผนที่
+   ไม่ให้ทะลุออกมาบัง Navbar (z-50) / Dropdown ─── */
+.leaflet-container {
+    z-index: 0;
+    isolation: isolate;
+}
+
 /* ─────────────────────────────────────────────────
    BASE STYLES
 ───────────────────────────────────────────────── */

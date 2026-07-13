@@ -423,7 +423,7 @@ export default function HomeWardMapPage() {
                 </div>
 
                 {/* Map */}
-                <div className="flex-1 relative min-w-0">
+                <div className="flex-1 relative z-0 isolate min-w-0">
                     <button
                         onClick={() => setShowFilters((v) => !v)}
                         className="absolute top-3 left-3 z-[500] bg-white shadow-md rounded-lg px-3 py-2 text-xs font-medium text-gray-600 flex items-center gap-1.5 hover:bg-gray-50"
