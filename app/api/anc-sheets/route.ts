@@ -1,7 +1,6 @@
 // app/api/anc-sheets/route.ts
-// Dashboard งานเคลม ANC — ดึงข้อมูลจาก Google Sheets แบบ real-time
-// โครงสร้างเดียวกับ app/api/accident-sheets/route.ts
 import { NextResponse } from "next/server";
+import { cachedQuery } from "@/lib/cache";
 import {
   getSheetClient,
   getAllSheetTitles,
@@ -16,15 +15,18 @@ import {
 } from "@/lib/sheets";
 
 // ใส่ ANC_SPREADSHEET_ID ใน .env ได้ (fallback = ชีตที่ส่งมา)
-const SPREADSHEET_ID =
-  process.env.ANC_SPREADSHEET_ID ??
-  "1ZWBNkGX7zQSTaB16kKir0UwDa2GnoB2SfMcJ9A_tsqs";
+const SPREADSHEET_ID = process.env.ANC_SPREADSHEET_ID!;
 
 // ชีตข้อมูลหลัก (master) — ถ้าไม่เจอจะ fallback ไปชีตแรก
 const PREFERRED_SHEETS = ["ทั้งหมด"];
 
 // อัตราคาดว่าจะได้รับชดเชยต่อราย (ค่าบริการดูแลฝากครรภ์ ADP 30011 = 360 บาท)
 const EXPECTED_PER_CASE = 360;
+
+// cache 10 นาที — ข้อมูลชดเชย ANC อัปเดตเป็นรอบจาก REP/FDH ไม่ realtime
+// (hard TTL ใน lib/cache.ts = ttl * 4 → มี stale แจกต่อได้ ~40 นาทีถ้า Sheets ล่ม/โควต้าหมด)
+const TTL_SECONDS = 600;
+const CACHE_KEY = "anc-sheets";
 
 const COLUMN_MAP: Record<string, keyof AncRow> = {
   เดือน: "month",
@@ -276,33 +278,47 @@ function buildSummary(rows: AncRow[]) {
   };
 }
 
+/** ดึงจาก Sheets + parse + สรุป — เก็บทั้งก้อนเดียวใน cache (รวม headers ไว้ให้ debug ใช้ด้วย) */
+async function buildAncSheetsData() {
+  const sheets = await getSheetClient();
+  const sheetName = await pickDataSheet(sheets);
+  const raw = await getValues(sheets, SPREADSHEET_ID, `${sheetName}!A:BZ`);
+
+  const { rows, headers } = parseRows(raw);
+  const summary = buildSummary(rows);
+
+  return {
+    updatedAt: new Date().toISOString(),
+    sheetName,
+    rows,
+    summary,
+    headers,
+  };
+}
+
 export async function GET(req: Request) {
   const debug = new URL(req.url).searchParams.get("debug") === "1";
 
   try {
-    const sheets = await getSheetClient();
-    const sheetName = await pickDataSheet(sheets);
-    const raw = await getValues(sheets, SPREADSHEET_ID, `${sheetName}!A:BZ`);
-
-    const { rows, headers } = parseRows(raw);
-    const summary = buildSummary(rows);
+    const data = await cachedQuery(
+      [CACHE_KEY],
+      buildAncSheetsData,
+      TTL_SECONDS,
+    );
 
     if (debug) {
       return NextResponse.json({
-        sheetName,
-        headers,
-        totalRows: rows.length,
-        sample: rows.slice(0, 5),
-        summary,
+        sheetName: data.sheetName,
+        headers: data.headers,
+        totalRows: data.rows.length,
+        sample: data.rows.slice(0, 5),
+        summary: data.summary,
+        cachedAt: data.updatedAt, // debug กำลังดูข้อมูล ณ เวลาไหน
       });
     }
 
-    return NextResponse.json({
-      updatedAt: new Date().toISOString(),
-      sheetName,
-      rows,
-      summary,
-    });
+    const { headers: _h, ...publicData } = data;
+    return NextResponse.json(publicData);
   } catch (err) {
     return sheetsError(err, "AncSheets");
   }
