@@ -1,5 +1,47 @@
+// app/api/fall-report/route.ts
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
+import { cachedQuery } from "@/lib/cache";
+
+// cache 5 นาที — รายงานพลัดตกหกล้ม (W00–W09) จาก HosXP มักดูช่วงที่รวมวันนี้
+// (hard TTL ใน lib/cache.ts = ttl * 4 → stale แจกต่อได้ ~20 นาทีถ้า DB มีปัญหา)
+const TTL_SECONDS = 300;
+
+async function buildFallReport(start: string, end: string) {
+  const [rows] = await db.query(
+    `
+    SELECT
+      v.vn,
+      v.hn,
+      v.cid,
+      v.vstdate                                        AS "วันที่รับบริการ",
+      CONCAT(p.pname, p.fname, ' ', p.lname)          AS "ชื่อ-นามสกุล",
+      v.age_y                                          AS "อายุ",
+      IF(p.sex = '1', 'ชาย', 'หญิง')                 AS "เพศ",
+      o.icd10                                          AS "รหัส ICD10",
+      i.name                                           AS "การวินิจฉัย",
+      oo.name                                          AS "สถานะผู้ป่วย",
+      p.addrpart                                       AS "บ้านเลขที่",
+      p.moopart                                        AS "หมู่",
+      t.full_name                                      AS "ตำบล"
+    FROM ovstdiag o
+    LEFT JOIN vn_stat v    ON v.vn = o.vn
+    LEFT JOIN ovst ov      ON ov.vn = v.vn
+    LEFT JOIN ovstost oo   ON ov.ovstost = oo.ovstost
+    LEFT JOIN patient p    ON p.hn = v.hn
+    LEFT JOIN thaiaddress t
+      ON t.chwpart = p.chwpart
+     AND t.amppart = p.amppart
+     AND t.tmbpart = p.tmbpart
+    LEFT JOIN icd101 i     ON i.code = o.icd10
+    WHERE o.icd10 BETWEEN 'W00' AND 'W09'
+      AND o.vstdate BETWEEN ? AND ?
+    ORDER BY o.vstdate DESC, v.hn
+    `,
+    [start, end],
+  );
+  return rows;
+}
 
 export async function GET(req: NextRequest) {
   try {
@@ -14,37 +56,10 @@ export async function GET(req: NextRequest) {
       );
     }
 
-    const [rows] = await db.query(
-      `
-      SELECT
-        v.vn,
-        v.hn,
-        v.cid,
-        v.vstdate                                        AS "วันที่รับบริการ",
-        CONCAT(p.pname, p.fname, ' ', p.lname)          AS "ชื่อ-นามสกุล",
-        v.age_y                                          AS "อายุ",
-        IF(p.sex = '1', 'ชาย', 'หญิง')                 AS "เพศ",
-        o.icd10                                          AS "รหัส ICD10",
-        i.name                                           AS "การวินิจฉัย",
-        oo.name                                          AS "สถานะผู้ป่วย",
-        p.addrpart                                       AS "บ้านเลขที่",
-        p.moopart                                        AS "หมู่",
-        t.full_name                                      AS "ตำบล"
-      FROM ovstdiag o
-      LEFT JOIN vn_stat v    ON v.vn = o.vn
-      LEFT JOIN ovst ov      ON ov.vn = v.vn
-      LEFT JOIN ovstost oo   ON ov.ovstost = oo.ovstost
-      LEFT JOIN patient p    ON p.hn = v.hn
-      LEFT JOIN thaiaddress t
-        ON t.chwpart = p.chwpart
-       AND t.amppart = p.amppart
-       AND t.tmbpart = p.tmbpart
-      LEFT JOIN icd101 i     ON i.code = o.icd10
-      WHERE o.icd10 BETWEEN 'W00' AND 'W09'
-        AND o.vstdate BETWEEN ? AND ?
-      ORDER BY o.vstdate DESC, v.hn
-      `,
-      [start, end],
+    const rows = await cachedQuery(
+      ["fall-report", start, end],
+      () => buildFallReport(start, end),
+      TTL_SECONDS,
     );
 
     return NextResponse.json(rows);
