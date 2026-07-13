@@ -1,4 +1,6 @@
+// app/api/tb-sheets/route.ts
 import { NextResponse } from "next/server";
+import { cachedQuery } from "@/lib/cache";
 import {
   getSheetClient,
   getAllSheetTitles,
@@ -10,6 +12,11 @@ import {
 export const dynamic = "force-dynamic";
 
 const SPREADSHEET_ID = process.env.TB_SPREADSHEET_ID!;
+
+// cache 10 นาที — ทะเบียนผู้ป่วย TB คีย์มือลง Sheets ไม่ realtime
+// (hard TTL ใน lib/cache.ts = ttl * 4 → stale แจกต่อได้ ~40 นาทีถ้า Sheets ล่ม/โควต้าหมด)
+const TTL_SECONDS = 600;
+const CACHE_KEY = "tb-sheets";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 export interface TBRow {
@@ -591,34 +598,45 @@ function buildSummary(rows: TBRow[]): TBSummary {
   return { total: rows.length, byYear, yearlyTrend, allTambon, allOutcome };
 }
 
+/** ดึงจาก Sheets + parse + สรุป — เก็บก้อนเดียวใน cache (รวม headers/sampleRow ให้ debug) */
+async function buildTbSheetsData() {
+  const sheets = await getSheetClient();
+  const sheetName = await pickPatientSheet(sheets);
+  const raw = await getValues(sheets, SPREADSHEET_ID, `${sheetName}!A:Z`);
+
+  const rows = parseRows(raw);
+  const summary = buildSummary(rows);
+
+  return {
+    updatedAt: new Date().toISOString(),
+    sheetName,
+    summary,
+    rows,
+    headers: raw[0] ?? [],
+    sampleRow: raw[1] ?? [],
+  };
+}
+
 // ─── GET ──────────────────────────────────────────────────────────────────────
 export async function GET(req: Request) {
   const debug = new URL(req.url).searchParams.get("debug") === "1";
 
   try {
-    const sheets = await getSheetClient();
-    const sheetName = await pickPatientSheet(sheets);
-    const raw = await getValues(sheets, SPREADSHEET_ID, `${sheetName}!A:Z`);
-
-    const rows = parseRows(raw);
-    const summary = buildSummary(rows);
+    const data = await cachedQuery([CACHE_KEY], buildTbSheetsData, TTL_SECONDS);
 
     if (debug) {
       return NextResponse.json({
-        sheetName,
-        headers: raw[0] ?? [],
-        sampleRow: raw[1] ?? [],
-        totalRows: rows.length,
-        firstRows: rows.slice(0, 3),
+        sheetName: data.sheetName,
+        headers: data.headers,
+        sampleRow: data.sampleRow,
+        totalRows: data.rows.length,
+        firstRows: data.rows.slice(0, 3),
+        cachedAt: data.updatedAt,
       });
     }
 
-    return NextResponse.json({
-      updatedAt: new Date().toISOString(),
-      sheetName,
-      summary,
-      rows,
-    } satisfies TBDashboardData);
+    const { headers: _h, sampleRow: _s, ...publicData } = data;
+    return NextResponse.json(publicData satisfies TBDashboardData);
   } catch (err) {
     return sheetsError(err, "TBSheets");
   }
