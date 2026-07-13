@@ -1,6 +1,12 @@
+// app/api/patients/route.ts
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
+import { cachedQuery } from "@/lib/cache";
 import { RowDataPacket } from "mysql2";
+
+// cache สั้น 3 นาที — drill-down มักดูช่วงที่รวม "วันนี้" ข้อมูลเปลี่ยนตลอด
+// (hard TTL ใน lib/cache.ts = ttl * 4 → stale แจกต่อได้ ~12 นาทีถ้า DB มีปัญหา)
+const TTL_SECONDS = 180;
 
 interface PatientRow extends RowDataPacket {
   vn: string;
@@ -105,6 +111,258 @@ function buildFilter(cardType: string, start: string, end: string) {
   return filters[cardType] ?? filters.all;
 }
 
+// ── Builders (แยกจาก GET เพื่อห่อด้วย cachedQuery ได้) ──────────────────────
+
+async function buildHistory(hn: string) {
+  const [histRows] = await db.query<HistoryRow[]>(
+    `SELECT v.vn, v.vstdate, o.vsttime, v.pdx,
+      COALESCE(ic.name, v.pdx) AS dx_name,
+      COALESCE(k.department, '') AS department,
+      COALESCE(p2.name, '') AS pttype_name,
+      COALESCE(CONCAT(d.licenseno, ' ', d.name), '') AS doctor_name
+    FROM vn_stat v
+    INNER JOIN ovst o ON o.vn = v.vn
+    LEFT JOIN icd101 ic ON ic.code = v.pdx
+    LEFT JOIN kskdepartment k ON k.depcode = o.main_dep
+    LEFT JOIN pttype p2 ON p2.pttype = v.pttype
+    LEFT JOIN doctor d ON d.code = o.doctor
+    WHERE v.hn = ? AND o.an IS NULL
+    ORDER BY v.vstdate DESC, o.vsttime DESC`,
+    [hn],
+  );
+  return { history: histRows };
+}
+
+async function buildAdmit(start: string, end: string) {
+  const [rows] = await db.query<PatientRow[]>(
+    `SELECT a.an AS vn, a.hn, COALESCE(pt.cid,'') AS cid,
+      COALESCE(pt.pname,'') AS pname, COALESCE(pt.fname,'') AS fname,
+      COALESCE(pt.lname,'') AS lname, COALESCE(a.age_y,0) AS age_y,
+      COALESCE(pt.sex,'1') AS sex, a.regdate AS vstdate, '' AS vsttime,
+      COALESCE(a.pdx,'') AS pdx, COALESCE(ic.name,a.pdx,'') AS dx_name,
+      COALESCE(wr.name,'') AS department, COALESCE(p2.pttype,'') AS pttype,
+      COALESCE(p2.name,'') AS pttype_name, COALESCE(d.name,'') AS doctor_name, 0 AS income
+    FROM an_stat a
+    INNER JOIN patient pt ON pt.hn = a.hn
+    LEFT JOIN icd101 ic ON ic.code = a.pdx
+    LEFT JOIN ward wr ON wr.ward = a.ward
+    LEFT JOIN pttype p2 ON p2.pttype = a.pttype
+    LEFT JOIN ipt ip ON ip.an = a.an
+    LEFT JOIN doctor d ON d.code = ip.dch_doctor
+    WHERE a.regdate BETWEEN ? AND ?
+    ORDER BY a.regdate DESC`,
+    [start, end],
+  );
+  return { patients: rows };
+}
+
+async function buildErEmergency(start: string, end: string) {
+  const [rows] = await db.query<ErPatientRow[]>(
+    `SELECT o.vn, o.hn, COALESCE(pt.cid,'') AS cid,
+      COALESCE(pt.pname,'') AS pname, COALESCE(pt.fname,'') AS fname,
+      COALESCE(pt.lname,'') AS lname, COALESCE(vs.age_y,0) AS age_y,
+      COALESCE(pt.sex,'1') AS sex, o.vstdate, o.vsttime,
+      COALESCE(vs.pdx,'') AS pdx, COALESCE(ic.name,vs.pdx,'') AS dx_name,
+      'ER' AS department,
+      COALESCE(p2.pttype,'') AS pttype, COALESCE(p2.name,'') AS pttype_name,
+      COALESCE(d.name,'') AS doctor_name, COALESCE(vs.income,0) AS income,
+      er.er_pt_type,
+      COALESCE(ept.name,'') AS er_pt_type_name,
+      er.er_emergency_level_id,
+      COALESCE(el.er_emergency_level_name,'') AS er_emergency_level_name,
+      COALESCE(edt.name,'') AS er_dch_type_name,
+      end_.er_accident_type_id,
+      COALESCE(eat.er_accident_type_name,'') AS er_accident_type_name,
+      COALESCE(att.accident_transport_type_name,'') AS accident_transport_type_name
+    FROM er_regist er
+    INNER JOIN ovst o ON o.vn = er.vn
+    INNER JOIN patient pt ON pt.hn = o.hn
+    LEFT JOIN vn_stat vs ON vs.vn = o.vn
+    LEFT JOIN icd101 ic ON ic.code = vs.pdx
+    LEFT JOIN pttype p2 ON p2.pttype = vs.pttype
+    LEFT JOIN doctor d ON d.code = o.doctor
+    LEFT JOIN er_emergency_level el ON el.er_emergency_level_id = er.er_emergency_level_id
+    LEFT JOIN er_pt_type ept ON ept.er_pt_type = er.er_pt_type
+    LEFT JOIN er_dch_type edt ON edt.er_dch_type = er.er_dch_type
+    LEFT JOIN er_nursing_detail end_ ON end_.vn = er.vn
+    LEFT JOIN er_accident_type eat ON eat.er_accident_type_id = end_.er_accident_type_id
+    LEFT JOIN accident_transport_type att ON att.accident_transport_type_id = end_.accident_transport_type_id
+    WHERE o.vstdate BETWEEN ? AND ?
+    ORDER BY o.vstdate DESC, o.vsttime DESC`,
+    [start, end],
+  );
+
+  // ── Build summaries ──
+  const levelSummary: Record<string, number> = {};
+  const ptTypeSummary: Record<string, number> = {};
+  const dchByPtType: Record<string, Record<string, number>> = {};
+  const vehicleSummary: Record<string, number> = {};
+  const transportDchSummary: Record<string, number> = {};
+  const accidentTypeSummary: Record<string, number> = {};
+  const otherDchSummary: Record<string, number> = {};
+
+  rows.forEach((r) => {
+    // level
+    const lv = r.er_emergency_level_name || "ไม่ระบุ level";
+    levelSummary[lv] = (levelSummary[lv] || 0) + 1;
+
+    // pt_type
+    const pt = r.er_pt_type_name || "ไม่ระบุประเภท";
+    ptTypeSummary[pt] = (ptTypeSummary[pt] || 0) + 1;
+
+    // dch per pt_type
+    if (!dchByPtType[pt]) dchByPtType[pt] = {};
+    const dch = r.er_dch_type_name || "ไม่ระบุ";
+    dchByPtType[pt][dch] = (dchByPtType[pt][dch] || 0) + 1;
+
+    // accident breakdown
+    const accId = r.er_accident_type_id ? String(r.er_accident_type_id) : null;
+    if (accId === "1") {
+      // transport accident
+      const v = r.accident_transport_type_name || "ไม่ระบุ";
+      vehicleSummary[v] = (vehicleSummary[v] || 0) + 1;
+      transportDchSummary[dch] = (transportDchSummary[dch] || 0) + 1;
+    } else if (accId) {
+      // other accident
+      const a = r.er_accident_type_name || "ไม่ระบุ";
+      accidentTypeSummary[a] = (accidentTypeSummary[a] || 0) + 1;
+      otherDchSummary[dch] = (otherDchSummary[dch] || 0) + 1;
+    }
+  });
+
+  const transportCount = rows.filter(
+    (r) => r.er_accident_type_id && String(r.er_accident_type_id) === "1",
+  ).length;
+  const otherAccidentCount = rows.filter(
+    (r) => r.er_accident_type_id && String(r.er_accident_type_id) !== "1",
+  ).length;
+
+  return {
+    patients: rows,
+    levelSummary,
+    ptTypeSummary,
+    dchByPtType,
+    vehicleSummary,
+    transportDchSummary,
+    accidentTypeSummary,
+    otherDchSummary,
+    transportCount,
+    otherAccidentCount,
+  };
+}
+
+async function buildErTransport(start: string, end: string) {
+  const [rows] = await db.query<AccidentPatientRow[]>(
+    `SELECT
+      p.hn,
+      CONCAT(p.pname, p.fname, ' ', p.lname) AS ptname,
+      COALESCE(p.sex, '1') AS sex,
+      p.addrpart, p.moopart, t.full_name, v.vstdate,
+      COALESCE(ed.transporter,'') AS transporter,
+      COALESCE(att.accident_transport_type_name,'') AS accident_transport_type_name,
+      COALESCE(edt.name,'') AS er_dch_type_name,
+      COALESCE(eee.er_accident_type_name,'') AS er_accident_type_name
+    FROM er_nursing_detail ed
+    LEFT JOIN accident_transport_type att ON att.accident_transport_type_id = ed.accident_transport_type_id
+    LEFT JOIN vn_stat v ON v.vn = ed.vn
+    LEFT JOIN er_regist e ON e.vn = v.vn
+    LEFT JOIN er_dch_type edt ON edt.er_dch_type = e.er_dch_type
+    LEFT JOIN patient p ON p.hn = v.hn
+    LEFT JOIN thaiaddress t ON t.addressid = v.aid
+    LEFT JOIN er_accident_type eee ON eee.er_accident_type_id = ed.er_accident_type_id
+    WHERE ed.er_accident_type_id = '1'
+      AND v.vstdate BETWEEN ? AND ?
+    ORDER BY v.vstdate DESC`,
+    [start, end],
+  );
+
+  const vehicleSummary: Record<string, number> = {};
+  const dchSummary: Record<string, number> = {};
+  const transporterSummary: Record<string, number> = {};
+  rows.forEach((r) => {
+    const v = r.accident_transport_type_name || "ไม่ระบุ";
+    vehicleSummary[v] = (vehicleSummary[v] || 0) + 1;
+    const d = r.er_dch_type_name || "ไม่ระบุ";
+    dchSummary[d] = (dchSummary[d] || 0) + 1;
+    const tr = r.transporter || "ไม่ระบุ";
+    transporterSummary[tr] = (transporterSummary[tr] || 0) + 1;
+  });
+
+  return {
+    patients: rows,
+    vehicleSummary,
+    dchSummary,
+    transporterSummary,
+  };
+}
+
+async function buildErOtherAccident(start: string, end: string) {
+  const [rows] = await db.query<AccidentPatientRow[]>(
+    `SELECT
+      p.hn,
+      CONCAT(p.pname, p.fname, ' ', p.lname) AS ptname,
+      COALESCE(p.sex, '1') AS sex,
+      p.addrpart, p.moopart, t.full_name, v.vstdate,
+      COALESCE(ed.transporter,'') AS transporter,
+      COALESCE(att.accident_transport_type_name,'') AS accident_transport_type_name,
+      COALESCE(edt.name,'') AS er_dch_type_name,
+      COALESCE(eee.er_accident_type_name,'') AS er_accident_type_name
+    FROM er_nursing_detail ed
+    LEFT JOIN accident_transport_type att ON att.accident_transport_type_id = ed.accident_transport_type_id
+    LEFT JOIN vn_stat v ON v.vn = ed.vn
+    LEFT JOIN er_regist e ON e.vn = v.vn
+    LEFT JOIN er_dch_type edt ON edt.er_dch_type = e.er_dch_type
+    LEFT JOIN patient p ON p.hn = v.hn
+    LEFT JOIN thaiaddress t ON t.addressid = v.aid
+    LEFT JOIN er_accident_type eee ON eee.er_accident_type_id = ed.er_accident_type_id
+    WHERE ed.er_accident_type_id IS NOT NULL
+      AND ed.er_accident_type_id != '1'
+      AND v.vstdate BETWEEN ? AND ?
+    ORDER BY v.vstdate DESC`,
+    [start, end],
+  );
+
+  const accidentTypeSummary: Record<string, number> = {};
+  const dchSummary: Record<string, number> = {};
+  rows.forEach((r) => {
+    const a = r.er_accident_type_name || "ไม่ระบุ";
+    accidentTypeSummary[a] = (accidentTypeSummary[a] || 0) + 1;
+    const d = r.er_dch_type_name || "ไม่ระบุ";
+    dchSummary[d] = (dchSummary[d] || 0) + 1;
+  });
+
+  return {
+    patients: rows,
+    accidentTypeSummary,
+    dchSummary,
+  };
+}
+
+async function buildOpdStandard(cardType: string, start: string, end: string) {
+  const { where, params } = buildFilter(cardType, start, end);
+  const [rows] = await db.query<PatientRow[]>(
+    `SELECT v.vn, v.hn, COALESCE(pt.cid,'') AS cid,
+      COALESCE(pt.pname,'') AS pname, COALESCE(pt.fname,'') AS fname,
+      COALESCE(pt.lname,'') AS lname, COALESCE(v.age_y,0) AS age_y,
+      COALESCE(pt.sex,'1') AS sex, v.vstdate, o.vsttime,
+      COALESCE(v.pdx,'') AS pdx, COALESCE(ic.name,v.pdx,'') AS dx_name,
+      COALESCE(k.department,'') AS department, COALESCE(v.pttype,'') AS pttype,
+      COALESCE(p2.name,'') AS pttype_name, COALESCE(d.name,'') AS doctor_name,
+      COALESCE(v.income,0) AS income
+    FROM vn_stat v
+    INNER JOIN ovst o ON o.vn = v.vn
+    INNER JOIN patient pt ON pt.hn = v.hn
+    LEFT JOIN icd101 ic ON ic.code = v.pdx
+    LEFT JOIN kskdepartment k ON k.depcode = o.main_dep
+    LEFT JOIN pttype p2 ON p2.pttype = v.pttype
+    LEFT JOIN doctor d ON d.code = o.doctor
+    WHERE ${where}
+    ORDER BY v.vstdate DESC, o.vsttime DESC`,
+    params,
+  );
+  return { patients: rows };
+}
+
 export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);
   const start = searchParams.get("start");
@@ -117,262 +375,62 @@ export async function GET(req: Request) {
   }
 
   try {
-    // ── History ──────────────────────────────────────────────────────────────
+    // ── History ──
     if (hn) {
-      const [histRows] = await db.query<HistoryRow[]>(
-        `SELECT v.vn, v.vstdate, o.vsttime, v.pdx,
-          COALESCE(ic.name, v.pdx) AS dx_name,
-          COALESCE(k.department, '') AS department,
-          COALESCE(p2.name, '') AS pttype_name,
-          COALESCE(CONCAT(d.licenseno, ' ', d.name), '') AS doctor_name
-        FROM vn_stat v
-        INNER JOIN ovst o ON o.vn = v.vn
-        LEFT JOIN icd101 ic ON ic.code = v.pdx
-        LEFT JOIN kskdepartment k ON k.depcode = o.main_dep
-        LEFT JOIN pttype p2 ON p2.pttype = v.pttype
-        LEFT JOIN doctor d ON d.code = o.doctor
-        WHERE v.hn = ? AND o.an IS NULL
-        ORDER BY v.vstdate DESC, o.vsttime DESC`,
-        [hn],
+      const data = await cachedQuery(
+        ["patients", "history", hn],
+        () => buildHistory(hn),
+        TTL_SECONDS,
       );
-      return NextResponse.json({ history: histRows });
+      return NextResponse.json(data);
     }
 
-    // ── Admit ─────────────────────────────────────────────────────────────────
+    // ── Branch ตาม cardType (key แยกกัน จะได้ไม่ต้อง query ทุก branch พร้อมกัน) ──
+    const key = ["patients", cardType, start, end];
+
     if (cardType === "admitToday") {
-      const [rows] = await db.query<PatientRow[]>(
-        `SELECT a.an AS vn, a.hn, COALESCE(pt.cid,'') AS cid,
-          COALESCE(pt.pname,'') AS pname, COALESCE(pt.fname,'') AS fname,
-          COALESCE(pt.lname,'') AS lname, COALESCE(a.age_y,0) AS age_y,
-          COALESCE(pt.sex,'1') AS sex, a.regdate AS vstdate, '' AS vsttime,
-          COALESCE(a.pdx,'') AS pdx, COALESCE(ic.name,a.pdx,'') AS dx_name,
-          COALESCE(wr.name,'') AS department, COALESCE(p2.pttype,'') AS pttype,
-          COALESCE(p2.name,'') AS pttype_name, COALESCE(d.name,'') AS doctor_name, 0 AS income
-        FROM an_stat a
-        INNER JOIN patient pt ON pt.hn = a.hn
-        LEFT JOIN icd101 ic ON ic.code = a.pdx
-        LEFT JOIN ward wr ON wr.ward = a.ward
-        LEFT JOIN pttype p2 ON p2.pttype = a.pttype
-        LEFT JOIN ipt ip ON ip.an = a.an
-        LEFT JOIN doctor d ON d.code = ip.dch_doctor
-        WHERE a.regdate BETWEEN ? AND ?
-        ORDER BY a.regdate DESC`,
-        [start, end],
+      const data = await cachedQuery(
+        key,
+        () => buildAdmit(start, end),
+        TTL_SECONDS,
       );
-      return NextResponse.json({ patients: rows });
+      return NextResponse.json(data);
     }
 
-    // ── ER (extended with accident/dch data) ──────────────────────────────────
     if (cardType === "erEmergency") {
-      const [rows] = await db.query<ErPatientRow[]>(
-        `SELECT o.vn, o.hn, COALESCE(pt.cid,'') AS cid,
-          COALESCE(pt.pname,'') AS pname, COALESCE(pt.fname,'') AS fname,
-          COALESCE(pt.lname,'') AS lname, COALESCE(vs.age_y,0) AS age_y,
-          COALESCE(pt.sex,'1') AS sex, o.vstdate, o.vsttime,
-          COALESCE(vs.pdx,'') AS pdx, COALESCE(ic.name,vs.pdx,'') AS dx_name,
-          'ER' AS department,
-          COALESCE(p2.pttype,'') AS pttype, COALESCE(p2.name,'') AS pttype_name,
-          COALESCE(d.name,'') AS doctor_name, COALESCE(vs.income,0) AS income,
-          er.er_pt_type,
-          COALESCE(ept.name,'') AS er_pt_type_name,
-          er.er_emergency_level_id,
-          COALESCE(el.er_emergency_level_name,'') AS er_emergency_level_name,
-          COALESCE(edt.name,'') AS er_dch_type_name,
-          end_.er_accident_type_id,
-          COALESCE(eat.er_accident_type_name,'') AS er_accident_type_name,
-          COALESCE(att.accident_transport_type_name,'') AS accident_transport_type_name
-        FROM er_regist er
-        INNER JOIN ovst o ON o.vn = er.vn
-        INNER JOIN patient pt ON pt.hn = o.hn
-        LEFT JOIN vn_stat vs ON vs.vn = o.vn
-        LEFT JOIN icd101 ic ON ic.code = vs.pdx
-        LEFT JOIN pttype p2 ON p2.pttype = vs.pttype
-        LEFT JOIN doctor d ON d.code = o.doctor
-        LEFT JOIN er_emergency_level el ON el.er_emergency_level_id = er.er_emergency_level_id
-        LEFT JOIN er_pt_type ept ON ept.er_pt_type = er.er_pt_type
-        LEFT JOIN er_dch_type edt ON edt.er_dch_type = er.er_dch_type
-        LEFT JOIN er_nursing_detail end_ ON end_.vn = er.vn
-        LEFT JOIN er_accident_type eat ON eat.er_accident_type_id = end_.er_accident_type_id
-        LEFT JOIN accident_transport_type att ON att.accident_transport_type_id = end_.accident_transport_type_id
-        WHERE o.vstdate BETWEEN ? AND ?
-        ORDER BY o.vstdate DESC, o.vsttime DESC`,
-        [start, end],
+      const data = await cachedQuery(
+        key,
+        () => buildErEmergency(start, end),
+        TTL_SECONDS,
       );
-
-      // ── Build summaries ────────────────────────────────────────────────────
-      const levelSummary: Record<string, number> = {};
-      const ptTypeSummary: Record<string, number> = {};
-      const dchByPtType: Record<string, Record<string, number>> = {};
-      const vehicleSummary: Record<string, number> = {};
-      const transportDchSummary: Record<string, number> = {};
-      const accidentTypeSummary: Record<string, number> = {};
-      const otherDchSummary: Record<string, number> = {};
-
-      rows.forEach((r) => {
-        // level
-        const lv = r.er_emergency_level_name || "ไม่ระบุ level";
-        levelSummary[lv] = (levelSummary[lv] || 0) + 1;
-
-        // pt_type
-        const pt = r.er_pt_type_name || "ไม่ระบุประเภท";
-        ptTypeSummary[pt] = (ptTypeSummary[pt] || 0) + 1;
-
-        // dch per pt_type
-        if (!dchByPtType[pt]) dchByPtType[pt] = {};
-        const dch = r.er_dch_type_name || "ไม่ระบุ";
-        dchByPtType[pt][dch] = (dchByPtType[pt][dch] || 0) + 1;
-
-        // accident breakdown
-        const accId = r.er_accident_type_id
-          ? String(r.er_accident_type_id)
-          : null;
-        if (accId === "1") {
-          // transport accident
-          const v = r.accident_transport_type_name || "ไม่ระบุ";
-          vehicleSummary[v] = (vehicleSummary[v] || 0) + 1;
-          transportDchSummary[dch] = (transportDchSummary[dch] || 0) + 1;
-        } else if (accId) {
-          // other accident
-          const a = r.er_accident_type_name || "ไม่ระบุ";
-          accidentTypeSummary[a] = (accidentTypeSummary[a] || 0) + 1;
-          otherDchSummary[dch] = (otherDchSummary[dch] || 0) + 1;
-        }
-      });
-
-      const transportCount = rows.filter(
-        (r) => r.er_accident_type_id && String(r.er_accident_type_id) === "1",
-      ).length;
-      const otherAccidentCount = rows.filter(
-        (r) => r.er_accident_type_id && String(r.er_accident_type_id) !== "1",
-      ).length;
-
-      return NextResponse.json({
-        patients: rows,
-        levelSummary,
-        ptTypeSummary,
-        dchByPtType,
-        vehicleSummary,
-        transportDchSummary,
-        accidentTypeSummary,
-        otherDchSummary,
-        transportCount,
-        otherAccidentCount,
-      });
+      return NextResponse.json(data);
     }
 
-    // ── อุบัติเหตุการขนส่ง ───────────────────────────────────────────────────
     if (cardType === "erTransport") {
-      const [rows] = await db.query<AccidentPatientRow[]>(
-        `SELECT
-          p.hn,
-          CONCAT(p.pname, p.fname, ' ', p.lname) AS ptname,
-          COALESCE(p.sex, '1') AS sex,
-          p.addrpart, p.moopart, t.full_name, v.vstdate,
-          COALESCE(ed.transporter,'') AS transporter,
-          COALESCE(att.accident_transport_type_name,'') AS accident_transport_type_name,
-          COALESCE(edt.name,'') AS er_dch_type_name,
-          COALESCE(eee.er_accident_type_name,'') AS er_accident_type_name
-        FROM er_nursing_detail ed
-        LEFT JOIN accident_transport_type att ON att.accident_transport_type_id = ed.accident_transport_type_id
-        LEFT JOIN vn_stat v ON v.vn = ed.vn
-        LEFT JOIN er_regist e ON e.vn = v.vn
-        LEFT JOIN er_dch_type edt ON edt.er_dch_type = e.er_dch_type
-        LEFT JOIN patient p ON p.hn = v.hn
-        LEFT JOIN thaiaddress t ON t.addressid = v.aid
-        LEFT JOIN er_accident_type eee ON eee.er_accident_type_id = ed.er_accident_type_id
-        WHERE ed.er_accident_type_id = '1'
-          AND v.vstdate BETWEEN ? AND ?
-        ORDER BY v.vstdate DESC`,
-        [start, end],
+      const data = await cachedQuery(
+        key,
+        () => buildErTransport(start, end),
+        TTL_SECONDS,
       );
-
-      const vehicleSummary: Record<string, number> = {};
-      const dchSummary: Record<string, number> = {};
-      const transporterSummary: Record<string, number> = {};
-      rows.forEach((r) => {
-        const v = r.accident_transport_type_name || "ไม่ระบุ";
-        vehicleSummary[v] = (vehicleSummary[v] || 0) + 1;
-        const d = r.er_dch_type_name || "ไม่ระบุ";
-        dchSummary[d] = (dchSummary[d] || 0) + 1;
-        const tr = r.transporter || "ไม่ระบุ";
-        transporterSummary[tr] = (transporterSummary[tr] || 0) + 1;
-      });
-
-      return NextResponse.json({
-        patients: rows,
-        vehicleSummary,
-        dchSummary,
-        transporterSummary,
-      });
+      return NextResponse.json(data);
     }
 
-    // ── อุบัติเหตุอื่นๆ ──────────────────────────────────────────────────────
     if (cardType === "erOtherAccident") {
-      const [rows] = await db.query<AccidentPatientRow[]>(
-        `SELECT
-          p.hn,
-          CONCAT(p.pname, p.fname, ' ', p.lname) AS ptname,
-          COALESCE(p.sex, '1') AS sex,
-          p.addrpart, p.moopart, t.full_name, v.vstdate,
-          COALESCE(ed.transporter,'') AS transporter,
-          COALESCE(att.accident_transport_type_name,'') AS accident_transport_type_name,
-          COALESCE(edt.name,'') AS er_dch_type_name,
-          COALESCE(eee.er_accident_type_name,'') AS er_accident_type_name
-        FROM er_nursing_detail ed
-        LEFT JOIN accident_transport_type att ON att.accident_transport_type_id = ed.accident_transport_type_id
-        LEFT JOIN vn_stat v ON v.vn = ed.vn
-        LEFT JOIN er_regist e ON e.vn = v.vn
-        LEFT JOIN er_dch_type edt ON edt.er_dch_type = e.er_dch_type
-        LEFT JOIN patient p ON p.hn = v.hn
-        LEFT JOIN thaiaddress t ON t.addressid = v.aid
-        LEFT JOIN er_accident_type eee ON eee.er_accident_type_id = ed.er_accident_type_id
-        WHERE ed.er_accident_type_id IS NOT NULL
-          AND ed.er_accident_type_id != '1'
-          AND v.vstdate BETWEEN ? AND ?
-        ORDER BY v.vstdate DESC`,
-        [start, end],
+      const data = await cachedQuery(
+        key,
+        () => buildErOtherAccident(start, end),
+        TTL_SECONDS,
       );
-
-      const accidentTypeSummary: Record<string, number> = {};
-      const dchSummary: Record<string, number> = {};
-      rows.forEach((r) => {
-        const a = r.er_accident_type_name || "ไม่ระบุ";
-        accidentTypeSummary[a] = (accidentTypeSummary[a] || 0) + 1;
-        const d = r.er_dch_type_name || "ไม่ระบุ";
-        dchSummary[d] = (dchSummary[d] || 0) + 1;
-      });
-
-      return NextResponse.json({
-        patients: rows,
-        accidentTypeSummary,
-        dchSummary,
-      });
+      return NextResponse.json(data);
     }
 
-    // ── OPD Standard ──────────────────────────────────────────────────────────
-    const { where, params } = buildFilter(cardType, start, end);
-    const [rows] = await db.query<PatientRow[]>(
-      `SELECT v.vn, v.hn, COALESCE(pt.cid,'') AS cid,
-        COALESCE(pt.pname,'') AS pname, COALESCE(pt.fname,'') AS fname,
-        COALESCE(pt.lname,'') AS lname, COALESCE(v.age_y,0) AS age_y,
-        COALESCE(pt.sex,'1') AS sex, v.vstdate, o.vsttime,
-        COALESCE(v.pdx,'') AS pdx, COALESCE(ic.name,v.pdx,'') AS dx_name,
-        COALESCE(k.department,'') AS department, COALESCE(v.pttype,'') AS pttype,
-        COALESCE(p2.name,'') AS pttype_name, COALESCE(d.name,'') AS doctor_name,
-        COALESCE(v.income,0) AS income
-      FROM vn_stat v
-      INNER JOIN ovst o ON o.vn = v.vn
-      INNER JOIN patient pt ON pt.hn = v.hn
-      LEFT JOIN icd101 ic ON ic.code = v.pdx
-      LEFT JOIN kskdepartment k ON k.depcode = o.main_dep
-      LEFT JOIN pttype p2 ON p2.pttype = v.pttype
-      LEFT JOIN doctor d ON d.code = o.doctor
-      WHERE ${where}
-      ORDER BY v.vstdate DESC, o.vsttime DESC`,
-      params,
+    // ── OPD Standard ──
+    const data = await cachedQuery(
+      key,
+      () => buildOpdStandard(cardType, start, end),
+      TTL_SECONDS,
     );
-
-    return NextResponse.json({ patients: rows });
+    return NextResponse.json(data);
   } catch (error) {
     console.error("Patients API error:", error);
     return NextResponse.json(
