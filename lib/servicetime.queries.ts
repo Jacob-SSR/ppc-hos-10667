@@ -75,12 +75,22 @@ const NON_CLINIC_KEYWORDS = [
 const isNonClinic = (name: string): boolean =>
   NON_CLINIC_KEYWORDS.some((k) => name.includes(k));
 
+// ❗ แผนกที่ "ซ่อน" จากทุกที่ — ไม่ใช้เป็นป้ายคลินิก ไม่เข้า dropdown ไม่ใช้กรอง
+// - ตึกผู้ป่วยใน: ไม่ใช่คลินิก OPD — visit OPD จริงที่ถูกเรียกตรวจจากเครื่องบนตึก (เช่น เด็ก WBC)
+//   จะได้ป้ายเป็นคลินิกจริงของตัวเองแทน (ส่วนคน admit จริงถูกตัดที่ชั้น SQL ด้วย an_stat/ipt แล้ว)
+// - ศูนย์คอม: ไม่ใช่จุดบริการคนไข้
+// ใช้ includes — "ศูนย์คอม" ครอบ "ศูนย์คอมพิวเตอร์" ด้วย
+const EXCLUDED_DEP_KEYWORDS = ["ตึกผู้ป่วยใน", "ศูนย์คอม"];
+const isExcludedDep = (name: string): boolean =>
+  EXCLUDED_DEP_KEYWORDS.some((k) => name.includes(k));
+
 // แผนกทั้งหมดที่ visit เกี่ยวข้อง (ห้องเรียกตรวจ → แผนกส่งตรวจ → แผนกตามนัด → last → cur) ไม่ซ้ำ
+// ❗ ตัดแผนก excluded ทิ้งตั้งแต่ตรงนี้ → ป้ายคลินิก/dropdown/ตัวกรอง ไม่เห็นแผนกพวกนี้เลย
 const depsOf = (r: VisitRow): string[] => {
   const out: string[] = [];
   const push = (d: string | null | undefined) => {
     const n = d?.trim();
-    if (n && !out.includes(n)) out.push(n);
+    if (n && !isExcludedDep(n) && !out.includes(n)) out.push(n);
   };
   push(r.dep_service5);
   push(r.dep_main);
@@ -88,6 +98,19 @@ const depsOf = (r: VisitRow): string[] => {
   push(r.dep_last);
   push(r.dep_cur);
   return out;
+};
+
+// visit ที่ "มีแต่" แผนก excluded (เช่น เดินเรื่องที่ศูนย์คอมล้วน ๆ ไม่มีคลินิกจริงเลย)
+// → ตัดทิ้งทั้งแถว ไม่นับเวลา (ต่างจาก visit ที่มีคลินิกจริงปนอยู่ ซึ่งเก็บไว้ใต้คลินิกจริง)
+const hasOnlyExcludedDeps = (r: VisitRow): boolean => {
+  const hasAnyDep = [
+    r.dep_service5,
+    r.dep_main,
+    ...(r.dep_appt ?? "").split("|"),
+    r.dep_last,
+    r.dep_cur,
+  ].some((d) => d?.trim());
+  return hasAnyDep && depsOf(r).length === 0;
 };
 
 // ป้ายคลินิกของ visit: เอาแผนกแรกที่เป็น "คลินิกจริง" ก่อน ไม่มีเลยค่อย fallback แผนกแรกที่พบ
@@ -282,6 +305,9 @@ FROM (
            OR o.cur_dep       IN (${ER_DEP_SQL})
            OR o.last_dep      IN (${ER_DEP_SQL})
          THEN 1 ELSE 0 END AS is_er_visit,
+    -- admit = vn ของ visit ไป match เจอใน an_stat/ipt (ถูกรับเป็นผู้ป่วยใน) — ตัดออกจากสถิติ OPD
+    -- ❗ ห้ามตัดสิน admit จากชื่อแผนก "ตึกผู้ป่วยใน" — visit OPD จริง (เช่น WBC) อาจถูกเรียกตรวจจากเครื่องบนตึกได้
+    CASE WHEN adm.vn IS NOT NULL THEN 1 ELSE 0 END AS is_admit_visit,
     -- แผนกตามนัด (oapp) คั่นด้วย | — คลินิกเรื้อรังนัดล่วงหน้าเสมอ ใช้กู้คลินิกกลางทางที่ ovst ทับหาย
     ap.dep_appt AS dep_appt,
     -- เก็บแผนกทุกจุดที่ visit ผ่าน (แนวเดียวกับ dept-status ที่นับทั้ง cur_dep + last_dep)
@@ -343,6 +369,14 @@ FROM (
   LEFT JOIN kskdepartment kc ON kc.depcode = o.cur_dep
   LEFT JOIN kskdepartment kl ON kl.depcode = o.last_dep
 
+  -- admission ของ visit นี้ — admit = vn ไป match เจอใน an_stat (หรือ ipt เผื่อยังไม่ถูกสรุปเข้า an_stat)
+  -- UNION ตัดซ้ำในตัว — GROUP BY กัน vn ซ้ำ (เผื่อ re-admit ใน visit เดียว) ไม่ให้แถวบวม
+  LEFT JOIN (
+    SELECT vn FROM an_stat WHERE vn IS NOT NULL AND vn <> '' GROUP BY vn
+    UNION
+    SELECT vn FROM ipt WHERE vn IS NOT NULL AND vn <> '' GROUP BY vn
+  ) adm ON adm.vn = st.vn
+
   -- นัดของวันนั้น + ชื่อแผนกที่นัด (ovst เก็บแผนกแค่ cur/last คลินิกกลางทางเช่นเบาหวาน
   -- ถูกทับหายตอนคนไข้ไปห้องยา/กลับบ้าน แต่แผนกในใบนัดยังอยู่)
   LEFT JOIN (
@@ -382,6 +416,7 @@ FROM (
   WHERE st.vstdate BETWEEN ? AND ?
 ) v
 WHERE 1=1
+  AND v.is_admit_visit = 0 -- ❗ ตัดคนไข้ที่ admit ออกทั้งหมด — dashboard นี้วัดเฉพาะ OPD flow
   ${scopeCond(scope)}
   ${visitCond(vt)}
 `;
@@ -529,7 +564,11 @@ export async function getServiceTime(
 
   const sql = buildRowSql(scope, visitType);
   // params 2 คู่: BETWEEN ของ oapp (ใน join) + BETWEEN ของ service_time (WHERE หลัก)
-  const [allRows] = await db.query<VisitRow[]>(sql, [start, end, start, end]);
+  const [rawRows] = await db.query<VisitRow[]>(sql, [start, end, start, end]);
+
+  // ตัดเฉพาะ visit ที่ "ไม่มีคลินิกจริงเลย" (มีแต่แผนก excluded เช่น ศูนย์คอมล้วน) — ไม่นับเวลา
+  // visit ที่มีคลินิกจริงปนอยู่ (เช่น เด็ก WBC ที่ถูกเรียกตรวจจากเครื่องบนตึก) เก็บไว้ นับใต้คลินิกจริง
+  const allRows = rawRows.filter((r) => !hasOnlyExcludedDeps(r));
 
   // ป้ายคลินิกต่อ visit (คำนวณครั้งเดียว → ใช้ต่อในตารางรายคลินิก/รายบุคคล)
   for (const r of allRows) r.doctor_department = clinicLabelOf(r);
