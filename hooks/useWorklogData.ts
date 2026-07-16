@@ -10,7 +10,12 @@ import {
   taskGroup,
   SLA_SECTIONS,
 } from "@/lib/worklog.constants";
-import { fmtShort, fmtMonth, getCutoffDate } from "@/lib/worklog.utils";
+import {
+  fmtShort,
+  fmtMonth,
+  getDateBounds,
+  type TimeFilter,
+} from "@/lib/worklog.utils";
 
 export interface WorkRow {
   date: string;
@@ -35,7 +40,9 @@ export function useWorklogData() {
   const [error, setError] = useState<string | null>(null);
 
   const [selectedStaff, setSelectedStaff] = useState("ทั้งหมด");
-  const [dateRange, setDateRange] = useState(30);
+  const [timeFilter, setTimeFilter] = useState<TimeFilter>({
+    type: "thisMonth",
+  });
   const [viewMode, setViewMode] = useState<ViewMode>("day");
   const [selectedMainForSub, setSelectedMainForSub] = useState("");
 
@@ -71,13 +78,13 @@ export function useWorklogData() {
   );
 
   const filtered = useMemo(() => {
-    const cutStr = getCutoffDate(dateRange);
+    const { start, end } = getDateBounds(timeFilter);
     return allData.filter((r) => {
       if (selectedStaff !== "ทั้งหมด" && r.staff !== selectedStaff)
         return false;
-      return r.date >= cutStr;
+      return r.date >= start && r.date <= end;
     });
-  }, [allData, selectedStaff, dateRange]);
+  }, [allData, selectedStaff, timeFilter]);
 
   const kpis = useMemo(() => {
     const totalJobs = filtered.length;
@@ -395,8 +402,8 @@ export function useWorklogData() {
     staffList,
     selectedStaff,
     setSelectedStaff,
-    dateRange,
-    setDateRange,
+    timeFilter,
+    setTimeFilter,
     viewMode,
     setViewMode,
     selectedMainForSub,

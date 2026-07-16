@@ -1,7 +1,4 @@
 // lib/worklog.utils.ts
-// date/label helpers สำหรับ IT Worklog
-// แยกออกจาก app/pages/it-worklog/page.tsx
-
 import { THAI_MONTHS } from "./worklog.constants";
 
 // ── Date formatters ───────────────────────────────────────────────────────────
@@ -18,14 +15,51 @@ export function fmtMonth(d: string): string {
   return `${THAI_MONTHS[m]} ${String(y + 543).slice(2)}`;
 }
 
-// ── Cutoff helper ─────────────────────────────────────────────────────────────
+// ── Time filter ───────────────────────────────────────────────────────────────
 
-/**
- * คืน ISO date string ของวันที่ dateRange วันที่แล้ว
- * ใช้ filter allData ใน useWorklogData
- */
-export function getCutoffDate(dateRange: number): string {
-  const cutoff = new Date();
-  cutoff.setDate(cutoff.getDate() - dateRange);
-  return cutoff.toISOString().slice(0, 10);
+/** ตัวกรองช่วงเวลาแบบใหม่: วันนี้ / เดือนนี้ / รายปี พ.ศ. / กำหนดเอง */
+export type TimeFilter =
+  | { type: "today" }
+  | { type: "thisMonth" }
+  | { type: "year"; beYear: number } // ปี พ.ศ. เช่น 2569
+  | { type: "custom"; start: string; end: string }; // ISO "YYYY-MM-DD"
+
+/** ปี พ.ศ. ที่ให้เลือกบนหน้า it-worklog */
+export const BE_YEARS = [2569, 2568, 2567, 2566, 2565];
+
+/** Date → "YYYY-MM-DD" ตามเวลาท้องถิ่น (เลี่ยง timezone เพี้ยนจาก toISOString) */
+function isoLocal(d: Date): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
+export function getDateBounds(f: TimeFilter): { start: string; end: string } {
+  const now = new Date();
+  switch (f.type) {
+    case "today": {
+      const t = isoLocal(now);
+      return { start: t, end: t };
+    }
+    case "thisMonth": {
+      const y = now.getFullYear();
+      const m = String(now.getMonth() + 1).padStart(2, "0");
+      const lastDay = new Date(y, now.getMonth() + 1, 0).getDate();
+      return {
+        start: `${y}-${m}-01`,
+        end: `${y}-${m}-${String(lastDay).padStart(2, "0")}`,
+      };
+    }
+    case "year": {
+      const ce = f.beYear - 543; // พ.ศ. → ค.ศ.
+      return { start: `${ce}-01-01`, end: `${ce}-12-31` };
+    }
+    case "custom": {
+      return {
+        start: f.start || "0000-01-01",
+        end: f.end || "9999-12-31",
+      };
+    }
+  }
 }

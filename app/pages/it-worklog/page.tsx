@@ -15,6 +15,7 @@ import {
 import { SubTaskSection } from "./components/SubTaskSection";
 import { useWorklogData } from "@/hooks/useWorklogData";
 import { STAFF_COLORS } from "@/lib/worklog.constants";
+import { BE_YEARS } from "@/lib/worklog.utils";
 import {
     TrendingUp, Clock, AlertTriangle,
     Activity, Users, Info, Calendar,
@@ -27,7 +28,7 @@ export default function ItWorklogPage() {
     const {
         allData, loading, error,
         staffList, selectedStaff, setSelectedStaff,
-        dateRange, setDateRange,
+        timeFilter, setTimeFilter,
         viewMode, setViewMode,
         selectedMainForSub, setSelectedMainForSub,
         filtered, kpis,
@@ -70,27 +71,75 @@ export default function ItWorklogPage() {
                             <span className="text-[10px] font-semibold uppercase tracking-wide hidden sm:inline">ช่วงเวลา</span>
                         </div>
                         <div className="flex rounded-lg overflow-hidden border border-gray-200">
-                            {[7, 30, 90, 180, 365].map((d) => (
-                                <button key={d} onClick={() => setDateRange(d)}
-                                    className="px-2.5 md:px-3 py-1.5 text-xs transition-colors"
-                                    style={{
-                                        backgroundColor: dateRange === d ? MINT[500] : "white",
-                                        color: dateRange === d ? "white" : "#4b5563",
-                                        fontWeight: dateRange === d ? 600 : 400,
-                                    }}>
-                                    {d}ว.
-                                </button>
-                            ))}
-                            <button onClick={() => setDateRange(99999)}
-                                className="px-2.5 md:px-3 py-1.5 text-xs transition-colors"
-                                style={{
-                                    backgroundColor: dateRange === 99999 ? MINT[500] : "white",
-                                    color: dateRange === 99999 ? "white" : "#4b5563",
-                                    fontWeight: dateRange === 99999 ? 600 : 400,
-                                }}>
-                                ทั้งหมด
-                            </button>
+                            {([
+                                { key: "custom", label: "กำหนดเอง" },
+                                { key: "today", label: "วันนี้" },
+                                { key: "thisMonth", label: "เดือนนี้" },
+                            ] as const).map(({ key, label }) => {
+                                const active = timeFilter.type === key;
+                                return (
+                                    <button key={key}
+                                        onClick={() =>
+                                            setTimeFilter(
+                                                key === "custom"
+                                                    ? { type: "custom", start: "", end: "" }
+                                                    : { type: key },
+                                            )
+                                        }
+                                        className="px-2.5 md:px-3 py-1.5 text-xs transition-colors"
+                                        style={{
+                                            backgroundColor: active ? MINT[500] : "white",
+                                            color: active ? "white" : "#4b5563",
+                                            fontWeight: active ? 600 : 400,
+                                        }}>
+                                        {label}
+                                    </button>
+                                );
+                            })}
                         </div>
+
+                        {/* year dropdown (พ.ศ.) */}
+                        <select
+                            value={timeFilter.type === "year" ? timeFilter.beYear : ""}
+                            onChange={(e) => {
+                                const v = e.target.value;
+                                if (v) setTimeFilter({ type: "year", beYear: Number(v) });
+                            }}
+                            className="border rounded-lg px-2.5 py-1.5 text-xs bg-white focus:outline-none focus:border-[#3aa36a]"
+                            style={{
+                                borderColor: timeFilter.type === "year" ? MINT[500] : "#e5e7eb",
+                                color: timeFilter.type === "year" ? MINT[700] : "#4b5563",
+                                fontWeight: timeFilter.type === "year" ? 600 : 400,
+                            }}
+                        >
+                            <option value="" disabled>เลือกปี พ.ศ.</option>
+                            {BE_YEARS.map((y) => (
+                                <option key={y} value={y}>ปี {y}</option>
+                            ))}
+                        </select>
+
+                        {/* custom date range */}
+                        {timeFilter.type === "custom" && (
+                            <div className="flex items-center gap-1.5">
+                                <input
+                                    type="date"
+                                    value={timeFilter.start}
+                                    onChange={(e) =>
+                                        setTimeFilter({ ...timeFilter, start: e.target.value })
+                                    }
+                                    className="border border-gray-200 rounded-lg px-2 py-1 text-xs text-gray-600 bg-white focus:outline-none focus:border-[#3aa36a]"
+                                />
+                                <span className="text-xs text-gray-400">ถึง</span>
+                                <input
+                                    type="date"
+                                    value={timeFilter.end}
+                                    onChange={(e) =>
+                                        setTimeFilter({ ...timeFilter, end: e.target.value })
+                                    }
+                                    className="border border-gray-200 rounded-lg px-2 py-1 text-xs text-gray-600 bg-white focus:outline-none focus:border-[#3aa36a]"
+                                />
+                            </div>
+                        )}
 
                         {/* view mode */}
                         <div className="flex rounded-lg overflow-hidden border border-gray-200">
