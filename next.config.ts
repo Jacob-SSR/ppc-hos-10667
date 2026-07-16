@@ -5,6 +5,7 @@ const nextConfig: NextConfig = {
   typescript: {
     ignoreBuildErrors: true,
   },
+  serverExternalPackages: ["node-ssh", "ssh2", "systeminformation"],
 };
 
 export default nextConfig;
