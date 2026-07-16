@@ -53,3 +53,29 @@ export function taskColor(task: string): string {
 export function taskShort(task: string): string {
   return TASK_CFG[task]?.short ?? task;
 }
+
+// ── กลุ่มงาน Software / Hardware ──────────────────────────────────────────────
+// ใช้สรุปความทันเวลาแยกกลุ่ม — เพิ่ม/ย้ายรายการได้ที่นี่ที่เดียว
+export const HARDWARE_TASKS = new Set<string>([
+  "คอมพิวเตอร์และอุปกรณ์ต่อพ่วง",
+  "ระบบ Network",
+]);
+
+export type TaskGroup = "Software" | "Hardware";
+
+export function taskGroup(task: string): TaskGroup {
+  return HARDWARE_TASKS.has((task ?? "").trim()) ? "Hardware" : "Software";
+}
+
+// ── SLA Report sections ───────────────────────────────────────────────────────
+// Service Desk = งานให้คำปรึกษา, Report = ระบบข้อมูลและรายงาน — แยกรายงานคนละ section
+export const SLA_SECTIONS = [
+  {
+    title: "Service Desk (Service Level Agreement)",
+    mainTask: "ให้คำปรึกษาด้านไอที",
+  },
+  {
+    title: "Report (Service Level Agreement)",
+    mainTask: "ระบบข้อมูล และรายงาน",
+  },
+] as const;

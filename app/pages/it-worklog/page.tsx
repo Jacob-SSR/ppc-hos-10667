@@ -5,42 +5,27 @@ import { Shimmer } from "@/app/components/ui/Shimmer";
 import {
     DailyBarChart,
     AvgDurationChart,
-    StaffUrgencySection,
+    StaffLoadSection,
+    StatusDonutSection,
+    StatusTrendChart,
+    StaffTimelinessChart,
+    GroupTimelinessSection,
+    SlaReportSection,
 } from "./components/WorklogCharts";
 import { SubTaskSection } from "./components/SubTaskSection";
 import { useWorklogData } from "@/hooks/useWorklogData";
 import { STAFF_COLORS } from "@/lib/worklog.constants";
 import {
     TrendingUp, Clock, AlertTriangle,
-    Activity, Users, Info, Calendar, RefreshCw, Wifi, WifiOff,
+    Activity, Users, Info, Calendar,
 } from "lucide-react";
 import { PieChart, Pie, Cell, Tooltip as PieTooltip, ResponsiveContainer } from "recharts";
-import { useEffect, useRef, useState } from "react";
 
 const MINT = { 500: "#3aa36a", 700: "#236b43" };
-const REFRESH_SEC = 30;
-
-// ─── Countdown Ring ───────────────────────────────────────────────────────────
-function CountdownRing({ secondsLeft, total }: { secondsLeft: number; total: number }) {
-    const r = 10, circ = 2 * Math.PI * r;
-    const prog = circ * (1 - secondsLeft / total);
-    return (
-        <svg width={28} height={28} viewBox="0 0 24 24">
-            <circle cx={12} cy={12} r={r} fill="none" stroke="#d6f0e0" strokeWidth={2.5} />
-            <circle cx={12} cy={12} r={r} fill="none" stroke="#7ec8a0" strokeWidth={2.5}
-                strokeDasharray={circ} strokeDashoffset={prog}
-                strokeLinecap="round" transform="rotate(-90 12 12)"
-                style={{ transition: "stroke-dashoffset 1s linear" }} />
-            <text x={12} y={16} textAnchor="middle" fontSize={8} fill="#1a5233" fontWeight={700}>
-                {secondsLeft}
-            </text>
-        </svg>
-    );
-}
 
 export default function ItWorklogPage() {
     const {
-        allData, loading, error, fetchData,
+        allData, loading, error,
         staffList, selectedStaff, setSelectedStaff,
         dateRange, setDateRange,
         viewMode, setViewMode,
@@ -48,43 +33,13 @@ export default function ItWorklogPage() {
         filtered, kpis,
         usedShorts, shortColor,
         barData, areaData,
-        staffLoad, pieData,
+        staffLoad, pieData, statusTrendData, staffTimelinessTrend, timelinessByGroup,
+        slaReports,
         mainTasksWithSub,
     } = useWorklogData();
 
     const { totalJobs, totalMin, avgMin, urgentCount, onTimeCount, devCount, staffCount } = kpis;
     const hasData = !loading && allData.length > 0;
-
-    // ─── Auto-refresh ─────────────────────────────────────────────────────────
-    const [secondsLeft, setSecondsLeft] = useState(REFRESH_SEC);
-    const [connected, setConnected] = useState(true);
-    const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
-    const countRef = useRef<ReturnType<typeof setInterval> | null>(null);
-
-    const silentFetch = () => {
-        fetchData();
-        setSecondsLeft(REFRESH_SEC);
-        setConnected(true);
-    };
-
-    useEffect(() => {
-        timerRef.current = setInterval(silentFetch, REFRESH_SEC * 1000);
-        countRef.current = setInterval(
-            () => setSecondsLeft((s) => (s > 1 ? s - 1 : REFRESH_SEC)),
-            1000,
-        );
-        return () => {
-            if (timerRef.current) clearInterval(timerRef.current);
-            if (countRef.current) clearInterval(countRef.current);
-        };
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, []);
-
-    // ─── Manual refresh ────────────────────────────────────────────────────────
-    const handleRefresh = () => {
-        fetchData();
-        setSecondsLeft(REFRESH_SEC);
-    };
 
     return (
         <div className="space-y-4">
@@ -97,30 +52,12 @@ export default function ItWorklogPage() {
                     className="px-4 md:px-6 py-3 md:py-4 flex flex-wrap items-center justify-between gap-3"
                 >
                     <div>
-                        <div className="flex items-center gap-2">
-                            <h1 className="text-base md:text-lg font-bold text-white">
-                                บันทึกงานประจำวัน — เจ้าหน้าที่ไอที
-                            </h1>
-                            <span className="flex items-center gap-1 bg-white/20 text-white text-[10px] font-bold px-2 py-0.5 rounded-full">
-                                <span className="w-1.5 h-1.5 rounded-full bg-green-300 animate-pulse inline-block" />
-                                LIVE
-                            </span>
-                        </div>
+                        <h1 className="text-base md:text-lg font-bold text-white">
+                            บันทึกงานประจำวัน — เจ้าหน้าที่ไอที
+                        </h1>
                         <p className="text-[11px] mt-0.5" style={{ color: "#a8d5ba" }}>
-                            โหลดจาก Google Sheets · อัปเดตทุก {REFRESH_SEC} วินาที
+                            โหลดจาก Google Sheets
                         </p>
-                    </div>
-                    <div className="flex items-center gap-3">
-                        {connected ? <Wifi size={16} className="text-green-200" /> : <WifiOff size={16} className="text-red-300" />}
-                        <CountdownRing secondsLeft={secondsLeft} total={REFRESH_SEC} />
-                        <button
-                            onClick={handleRefresh}
-                            disabled={loading}
-                            className="flex items-center gap-1.5 bg-white/10 hover:bg-white/20 text-white border border-white/20 rounded-lg px-3 py-1.5 text-sm transition-colors disabled:opacity-40"
-                        >
-                            <RefreshCw size={14} className={loading ? "animate-spin" : ""} />
-                            รีเฟรช
-                        </button>
                     </div>
                 </div>
 
@@ -270,14 +207,40 @@ export default function ItWorklogPage() {
                 />
             )}
 
+            {/* ── Donut: ระดับความเร่งด่วน / ความทันเวลา / ประเภทการดำเนินงาน ── */}
             {hasData && (
-                <StaffUrgencySection
-                    staffLoad={staffLoad}
+                <StatusDonutSection
                     totalJobs={totalJobs}
                     urgentCount={urgentCount}
+                    onTimeCount={onTimeCount}
                     devCount={devCount}
                 />
             )}
+
+            {/* ── แนวโน้มร้อยละ: เร่งด่วน / ทันเวลา / งานพัฒนา ── */}
+            {hasData && (
+                <StatusTrendChart data={statusTrendData} viewMode={viewMode} />
+            )}
+
+            {/* ── ความทันเวลาต่อเจ้าหน้าที่ ── */}
+            {hasData && (
+                <StaffTimelinessChart
+                    staffs={staffTimelinessTrend.staffs}
+                    rows={staffTimelinessTrend.rows}
+                    viewMode={viewMode}
+                />
+            )}
+
+            {/* ── ความทันเวลาแยกกลุ่ม Software / Hardware ── */}
+            {hasData && (
+                <GroupTimelinessSection groups={timelinessByGroup} />
+            )}
+
+            {/* ── SLA: Service Desk / Report — แยกกันคนละ section ── */}
+            {hasData && <SlaReportSection reports={slaReports} />}
+
+            {/* ── ปริมาณงานต่อเจ้าหน้าที่ ── */}
+            {hasData && <StaffLoadSection staffLoad={staffLoad} />}
 
             {/* ── Recent table ── */}
             {hasData && (

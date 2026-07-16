@@ -83,6 +83,12 @@ function parseSheetRows(rows: string[][]): WorkRow[] {
   const iNetwork = idx("เลือกงาน Network");
   const iUrgency = idx("ความเร่งด่วน");
   const iDev = idx("การพัฒนา");
+  // หมวดย่อยที่ Google Form ไม่ได้ตั้งชื่อคอลัมน์ไว้:
+  // "คอลัมน์ 3" = หมวดย่อย KPHIS, "คอลัมน์ 4" = หมวดย่อยให้คำปรึกษา,
+  // "คอลัมน์ 21" = หมวดย่อย GTWOffice / HosOffice
+  const iKphis = header.findIndex((h) => h === "คอลัมน์ 3");
+  const iConsult = header.findIndex((h) => h === "คอลัมน์ 4");
+  const iGtw = header.findIndex((h) => h === "คอลัมน์ 21");
   const iDate = idx("วันที่ปฏิบัติงาน");
   const iStartTime = idx("เวลาเริ่ม");
   const iEndTime = idx("เวลาแล้วเสร็จ");
@@ -99,12 +105,18 @@ function parseSheetRows(rows: string[][]): WorkRow[] {
     if (t === "ระบบ HosXP") return get(row, iHosXP);
     if (t === "ระบบอินทราเน็ต") return get(row, iIntranet);
     if (t === "คอมพิวเตอร์และอุปกรณ์ต่อพ่วง") return get(row, iComputer);
-    if (t === "ระบบ Network") return get(row, iNetwork);
+    if (t === "ระบบ Network") return get(row, iNetwork) || get(row, iGtw);
     if (t === "ระบบข้อมูล และรายงาน") return get(row, iReport);
     if (t === "ระบบอื่นๆ") return get(row, iOther);
     if (t === "ระบบเอกสาร") return get(row, iDoc);
-    if (t === "ระบบ  GTWOffice" || t === "ระบบ Hos Office")
-      return get(row, iHosOff);
+    if (t === "ระบบ KPHIS") return get(row, iKphis);
+    if (t === "ให้คำปรึกษาด้านไอที") return get(row, iConsult);
+    if (
+      t === "ระบบ  GTWOffice" ||
+      t === "ระบบ Hos Office" ||
+      t === "ระบบ  HosOffice"
+    )
+      return get(row, iGtw) || get(row, iHosOff);
     return "";
   }
 
