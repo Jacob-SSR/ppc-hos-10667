@@ -14,6 +14,7 @@ import {
   Moon,
   FilePen,
   MapPinned,
+  Server,
 } from "lucide-react";
 
 import NavGroup from "./NavGroup";
@@ -348,6 +349,36 @@ export default function Sidebar() {
 
                   <div className="text-[10px] text-gray-400">
                     กรอกงานประจำวัน
+                  </div>
+                </div>
+              </Link>
+            )}
+
+            {/* Server Status */}
+            {isIT && (
+              <Link
+                href="/pages/server-status"
+                className={`
+                  flex items-center gap-2.5
+                  px-3 py-2.5 rounded-lg
+                  text-sm font-medium
+                  transition-colors
+                  ${pathname ===
+                    "/pages/server-status"
+                    ? "bg-[#d6f0e0] text-[#1a5233]"
+                    : "text-gray-600 hover:bg-[#e8f5ee]"
+                  }
+                `}
+              >
+                <Server size={16} />
+
+                <div>
+                  <div className="text-xs">
+                    สถานะเซิร์ฟเวอร์
+                  </div>
+
+                  <div className="text-[10px] text-gray-400">
+                    RAM / Harddisk เครื่องแม่ข่าย
                   </div>
                 </div>
               </Link>
