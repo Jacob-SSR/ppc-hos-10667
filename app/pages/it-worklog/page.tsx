@@ -5,6 +5,7 @@ import { Shimmer } from "@/app/components/ui/Shimmer";
 import {
     DailyBarChart,
     AvgDurationChart,
+    TaskDurationChart,
     StaffLoadSection,
     StatusDonutSection,
     StatusTrendChart,
@@ -34,7 +35,7 @@ export default function ItWorklogPage() {
         filtered, kpis,
         usedShorts, shortColor,
         barData, areaData,
-        staffLoad, pieData, statusTrendData, staffTimelinessTrend, timelinessByGroup,
+        staffLoad, pieData, durationByTask, statusTrendData, staffTimelinessTrend, timelinessByGroup,
         slaReports,
         mainTasksWithSub,
     } = useWorklogData();
@@ -246,6 +247,9 @@ export default function ItWorklogPage() {
                     <AvgDurationChart data={areaData} avgMin={avgMin} />
                 </div>
             )}
+
+            {/* ── ระยะเวลาที่ใช้ (ชม.) แยกตามประเภทงาน ── */}
+            {hasData && <TaskDurationChart data={durationByTask} />}
 
             {hasData && (
                 <SubTaskSection

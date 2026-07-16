@@ -380,6 +380,25 @@ export function useWorklogData() {
       .sort((a, b) => b.value - a.value);
   }, [filtered]);
 
+  // ระยะเวลาที่ใช้รวม (ชม.) แยกตามประเภทงานหลัก — สำหรับกราฟแท่ง
+  const durationByTask = useMemo(() => {
+    const map: Record<string, number> = {};
+    filtered.forEach((r) => {
+      if (!r.duration) return;
+      const t = r.mainTask || "อื่นๆ";
+      map[t] = (map[t] || 0) + r.duration;
+    });
+    return Object.entries(map)
+      .map(([name, totalMin]) => ({
+        name,
+        short: taskShort(name),
+        color: taskColor(name),
+        hours: Math.round((totalMin / 60) * 100) / 100, // นาที → ชม. ทศนิยม 2 ตำแหน่ง
+        totalMin,
+      }))
+      .sort((a, b) => a.hours - b.hours);
+  }, [filtered]);
+
   const mainTasksWithSub = useMemo(() => {
     const s = new Set<string>();
     filtered.forEach((r) => {
@@ -419,6 +438,7 @@ export function useWorklogData() {
     slaReports,
     staffLoad,
     pieData,
+    durationByTask,
     mainTasksWithSub,
     shortColor: SHORT_COLOR,
   };

@@ -151,6 +151,61 @@ export function AvgDurationChart({ data, avgMin }: AvgDurationChartProps) {
     );
 }
 
+// ── TaskDurationChart ─────────────────────────────────────────────────────────
+// ระยะเวลาที่ใช้รวม (ชม.) แยกตามประเภทงานหลัก — แท่งละสีตามประเภท พร้อม label บนแท่ง
+
+interface TaskDurationItem {
+    name: string;
+    short: string;
+    color: string;
+    hours: number;
+    totalMin: number;
+}
+
+export function TaskDurationChart({ data }: { data: TaskDurationItem[] }) {
+    return (
+        <div className="bg-white border border-gray-200 rounded-lg p-4">
+            <h4 className="text-base font-bold text-[#717171] mb-4">
+                ระยะเวลาที่ใช้ (ชม.) แยกตามประเภทงาน
+            </h4>
+            {data.length === 0 ? (
+                <div className="h-48 flex items-center justify-center text-sm text-gray-300">
+                    ไม่มีข้อมูลระยะเวลา
+                </div>
+            ) : (
+                <ResponsiveContainer width="100%" height={320}>
+                    <BarChart data={data} margin={{ top: 24, right: 8, left: -10, bottom: 0 }} barCategoryGap="25%">
+                        <CartesianGrid vertical={false} stroke="#e5e7eb" />
+                        <XAxis
+                            dataKey="short"
+                            tick={{ fontSize: 11, fill: "#6b7280" }}
+                            axisLine={false}
+                            tickLine={false}
+                            interval={0}
+                        />
+                        <YAxis tick={{ fontSize: 11, fill: "#6b7280" }} axisLine={false} tickLine={false} />
+                        <Tooltip
+                            cursor={{ fill: "rgba(0,0,0,0.03)" }}
+                            formatter={(v: number | undefined) => [`${(v ?? 0).toLocaleString()} ชม.`, "รวม"]}
+                            labelFormatter={(_, p) => (p?.[0]?.payload as TaskDurationItem | undefined)?.name ?? ""}
+                            contentStyle={{ fontSize: 12, borderRadius: 8, border: "1px solid #e5e7eb" }}
+                        />
+                        <Bar
+                            dataKey="hours"
+                            radius={[3, 3, 0, 0]}
+                            label={{ position: "top", fontSize: 10, fill: "#374151", formatter: (v: unknown) => Number(v).toLocaleString() }}
+                        >
+                            {data.map((e, i) => (
+                                <Cell key={i} fill={e.color} />
+                            ))}
+                        </Bar>
+                    </BarChart>
+                </ResponsiveContainer>
+            )}
+        </div>
+    );
+}
+
 // ── StaffLoadSection ──────────────────────────────────────────────────────────
 
 interface StaffLoadItem { name: string; count: number; color: string; }
