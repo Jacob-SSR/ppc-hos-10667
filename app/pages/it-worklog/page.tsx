@@ -14,6 +14,7 @@ import {
     SlaReportSection,
 } from "./components/WorklogCharts";
 import { SubTaskSection } from "./components/SubTaskSection";
+import { SummaryTablesSection } from "./components/SummaryTablesSection";
 import { useWorklogData } from "@/hooks/useWorklogData";
 import { STAFF_COLORS } from "@/lib/worklog.constants";
 import { BE_YEARS } from "@/lib/worklog.utils";
@@ -200,6 +201,17 @@ export default function ItWorklogPage() {
                     </div>
                 </div>
             </div>
+
+            {/* ── ตารางสรุป: เจ้าหน้าที่ / การพัฒนา / ความเร่งด่วน / ทันเวลา ── */}
+            {hasData && (
+                <SummaryTablesSection
+                    staffLoad={staffLoad}
+                    totalJobs={totalJobs}
+                    devCount={devCount}
+                    urgentCount={urgentCount}
+                    onTimeCount={onTimeCount}
+                />
+            )}
 
             {/* ── Bar Chart ── */}
             {hasData && (
