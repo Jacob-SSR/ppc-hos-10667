@@ -15,6 +15,8 @@ import {
 } from "./components/WorklogCharts";
 import { SubTaskSection } from "./components/SubTaskSection";
 import { SummaryTablesSection } from "./components/SummaryTablesSection";
+import { SolutionLogSection } from "./components/SolutionLogSection";
+import WorklogTabs from "./components/Worklogtabs";
 import { useWorklogData } from "@/hooks/useWorklogData";
 import { STAFF_COLORS } from "@/lib/worklog.constants";
 import { BE_YEARS } from "@/lib/worklog.utils";
@@ -33,7 +35,7 @@ export default function ItWorklogPage() {
         timeFilter, setTimeFilter,
         viewMode, setViewMode,
         selectedMainForSub, setSelectedMainForSub,
-        filtered, kpis,
+        filtered, kpis, activityCross, solutionLogs,
         usedShorts, shortColor,
         barData, areaData,
         staffLoad, pieData, durationByTask, statusTrendData, staffTimelinessTrend, timelinessByGroup,
@@ -202,186 +204,210 @@ export default function ItWorklogPage() {
                 </div>
             </div>
 
-            {/* ── ตารางสรุป: เจ้าหน้าที่ / การพัฒนา / ความเร่งด่วน / ทันเวลา ── */}
-            {hasData && (
-                <SummaryTablesSection
-                    staffLoad={staffLoad}
-                    totalJobs={totalJobs}
-                    devCount={devCount}
-                    urgentCount={urgentCount}
-                    onTimeCount={onTimeCount}
-                />
-            )}
+            {/* ── แท็บแยกหมวด: ภาพรวม / กราฟแนวโน้ม / SLA / การแก้ไขปัญหา ── */}
+            <WorklogTabs
+                overview={
+                    <>
+                        {/* ── ตารางสรุป: เจ้าหน้าที่ / การพัฒนา / ความเร่งด่วน / ทันเวลา ── */}
+                        {hasData && (
+                            <SummaryTablesSection
+                                staffLoad={staffLoad}
+                                totalJobs={totalJobs}
+                                devCount={devCount}
+                                urgentCount={urgentCount}
+                                onTimeCount={onTimeCount}
+                                activityCross={activityCross}
+                            />
+                        )}
 
-            {/* ── Bar Chart ── */}
-            {hasData && (
-                <DailyBarChart data={barData} usedShorts={usedShorts} shortColor={shortColor} viewMode={viewMode} />
-            )}
+                        {/* ── Donut: ระดับความเร่งด่วน / ความทันเวลา / ประเภทการดำเนินงาน ── */}
+                        {hasData && (
+                            <StatusDonutSection
+                                totalJobs={totalJobs}
+                                urgentCount={urgentCount}
+                                onTimeCount={onTimeCount}
+                                devCount={devCount}
+                            />
+                        )}
 
-            {/* ── Pie + Area ── */}
-            {hasData && (
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div className="bg-white border border-gray-200 rounded-2xl p-4">
-                        <h4 className="text-sm font-bold text-[#717171] mb-3">สัดส่วนประเภทงาน</h4>
-                        <div className="flex items-center gap-2 text-xs text-gray-500 mb-3">
-                            <div className="w-2 h-2 rounded-full" style={{ background: MINT[500] }} />
-                            <strong className="text-gray-700">{filtered.length.toLocaleString()} รายการ</strong>
-                        </div>
-                        <div className="flex flex-col items-center gap-3">
-                            <ResponsiveContainer width="100%" height={200}>
-                                <PieChart>
-                                    <Pie data={pieData} cx="50%" cy="50%"
-                                        outerRadius={85} innerRadius={45}
-                                        dataKey="value" paddingAngle={2}
-                                        label={({ percent }) => (percent ?? 0) > 0.05 ? `${((percent ?? 0) * 100).toFixed(0)}%` : ""}
-                                        labelLine={false}>
-                                        {pieData.map((e, i) => (
-                                            <Cell key={i} fill={e.color} stroke="#fff" strokeWidth={2} />
-                                        ))}
-                                    </Pie>
-                                    <PieTooltip
-                                        formatter={(v: number | undefined, _, p) => [`${v ?? 0} งาน`, p?.payload?.name]}
-                                        contentStyle={{ fontSize: 11, borderRadius: 8, border: "1px solid #e5e7eb" }}
-                                    />
-                                </PieChart>
-                            </ResponsiveContainer>
-                            <div className="w-full grid grid-cols-2 gap-x-3 gap-y-1.5">
-                                {pieData.map((t) => (
-                                    <div key={t.name} className="flex items-center gap-1.5 min-w-0">
-                                        <div className="w-2.5 h-2.5 rounded-sm shrink-0" style={{ background: t.color }} />
-                                        <span className="text-[11px] text-gray-600 truncate flex-1">{t.short}</span>
-                                        <span className="text-[11px] font-bold text-gray-800 tabular-nums shrink-0">{t.value}</span>
-                                    </div>
-                                ))}
+                        {/* ── ปริมาณงานต่อเจ้าหน้าที่ ── */}
+                        {hasData && <StaffLoadSection staffLoad={staffLoad} />}
+
+                        {/* ── Recent table ── */}
+                        {hasData && (
+                            <div className="bg-white border border-[#d6f0e0] rounded-2xl p-3 md:p-4">
+                                <div className="flex items-center justify-between mb-3">
+                                    <h4 className="text-sm font-bold text-gray-700">รายการล่าสุด</h4>
+                                    <span className="text-xs font-semibold px-2.5 py-1 rounded-full border"
+                                        style={{ backgroundColor: "#f0faf4", borderColor: "#a8d5ba", color: "#1a5233" }}>
+                                        {filtered.length.toLocaleString()} รายการ
+                                    </span>
+                                </div>
+                                <div className="overflow-auto max-h-72 border border-[#d6f0e0] rounded-xl">
+                                    <table className="min-w-full text-xs border-collapse">
+                                        <thead>
+                                            <tr>
+                                                {["วันที่", "เจ้าหน้าที่", "ประเภทงาน", "หมวดย่อย", "นาที", "เร่งด่วน"].map((h) => (
+                                                    <th key={h}
+                                                        className="sticky top-0 text-white px-2 md:px-3 py-2 text-left font-semibold whitespace-nowrap border-r"
+                                                        style={{ backgroundColor: MINT[700], borderColor: "#1a5233" }}>
+                                                        {h}
+                                                    </th>
+                                                ))}
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {filtered.slice().reverse().slice(0, 100).map((row, i) => {
+                                                const isEven = i % 2 === 0;
+                                                const base = isEven ? "#ffffff" : "#f0faf4";
+                                                return (
+                                                    <tr key={i} className="border-b border-[#e8f5ee] transition-colors"
+                                                        style={{ backgroundColor: base }}
+                                                        onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = "#e8f5ee")}
+                                                        onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = base)}>
+                                                        <td className="px-2 md:px-3 py-2 whitespace-nowrap text-gray-500">
+                                                            {(() => {
+                                                                const [, m, d] = row.date.split("-").map(Number);
+                                                                return `${d} ${["", "ม.ค.", "ก.พ.", "มี.ค.", "เม.ย.", "พ.ค.", "มิ.ย.", "ก.ค.", "ส.ค.", "ก.ย.", "ต.ค.", "พ.ย.", "ธ.ค."][m] ?? ""}`;
+                                                            })()}
+                                                        </td>
+                                                        <td className="px-2 md:px-3 py-2 whitespace-nowrap">
+                                                            <div className="flex items-center gap-1.5">
+                                                                <div className="w-2 h-2 rounded-full shrink-0" style={{ background: STAFF_COLORS[row.staff] ?? MINT[500] }} />
+                                                                <span className="font-medium text-gray-800 truncate max-w-[80px] md:max-w-none">{row.staff}</span>
+                                                            </div>
+                                                        </td>
+                                                        <td className="px-2 md:px-3 py-2 whitespace-nowrap">
+                                                            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold text-white"
+                                                                style={{ background: row.color ?? "#94a3b8" }}>
+                                                                {row.short || row.mainTask}
+                                                            </span>
+                                                        </td>
+                                                        <td className="px-2 md:px-3 py-2 text-gray-600 max-w-[120px] md:max-w-[200px]">
+                                                            {row.subTask
+                                                                ? <span className="inline-block px-1.5 py-0.5 rounded text-[10px] font-medium truncate max-w-full"
+                                                                    style={{ background: (row.color ?? "#94a3b8") + "14", color: row.color ?? "#94a3b8", border: `1px solid ${(row.color ?? "#94a3b8")}33` }}
+                                                                    title={row.subTask}>
+                                                                    {row.subTask}
+                                                                </span>
+                                                                : <span className="text-gray-300">—</span>
+                                                            }
+                                                        </td>
+                                                        <td className="px-2 md:px-3 py-2 text-center font-medium text-gray-700">{row.duration || "—"}</td>
+                                                        <td className="px-2 md:px-3 py-2 whitespace-nowrap">
+                                                            <span className={`px-1.5 py-0.5 rounded-full text-[10px] font-bold ${row.urgency === "เร่งด่วน" ? "bg-red-100 text-red-700" : "text-white"}`}
+                                                                style={row.urgency !== "เร่งด่วน" ? { background: MINT[500] } : {}}>
+                                                                {row.urgency === "เร่งด่วน" ? "เร่งด่วน" : "ปกติ"}
+                                                            </span>
+                                                        </td>
+                                                    </tr>
+                                                );
+                                            })}
+                                        </tbody>
+                                    </table>
+                                </div>
                             </div>
-                        </div>
-                    </div>
-                    <AvgDurationChart data={areaData} avgMin={avgMin} />
-                </div>
-            )}
+                        )}
 
-            {/* ── ระยะเวลาที่ใช้ (ชม.) แยกตามประเภทงาน ── */}
-            {hasData && <TaskDurationChart data={durationByTask} />}
+                    </>
+                }
+                charts={
+                    <>
+                        {/* ── Bar Chart ── */}
+                        {hasData && (
+                            <DailyBarChart data={barData} usedShorts={usedShorts} shortColor={shortColor} viewMode={viewMode} />
+                        )}
 
-            {hasData && (
-                <SubTaskSection
-                    filtered={filtered}
-                    mainTasksWithSub={mainTasksWithSub}
-                    selectedMain={selectedMainForSub}
-                    onSelectMain={setSelectedMainForSub}
-                />
-            )}
-
-            {/* ── Donut: ระดับความเร่งด่วน / ความทันเวลา / ประเภทการดำเนินงาน ── */}
-            {hasData && (
-                <StatusDonutSection
-                    totalJobs={totalJobs}
-                    urgentCount={urgentCount}
-                    onTimeCount={onTimeCount}
-                    devCount={devCount}
-                />
-            )}
-
-            {/* ── แนวโน้มร้อยละ: เร่งด่วน / ทันเวลา / งานพัฒนา ── */}
-            {hasData && (
-                <StatusTrendChart data={statusTrendData} viewMode={viewMode} />
-            )}
-
-            {/* ── ความทันเวลาต่อเจ้าหน้าที่ ── */}
-            {hasData && (
-                <StaffTimelinessChart
-                    staffs={staffTimelinessTrend.staffs}
-                    rows={staffTimelinessTrend.rows}
-                    viewMode={viewMode}
-                />
-            )}
-
-            {/* ── ความทันเวลาแยกกลุ่ม Software / Hardware ── */}
-            {hasData && (
-                <GroupTimelinessSection groups={timelinessByGroup} />
-            )}
-
-            {/* ── SLA: Service Desk / Report — แยกกันคนละ section ── */}
-            {hasData && <SlaReportSection reports={slaReports} />}
-
-            {/* ── ปริมาณงานต่อเจ้าหน้าที่ ── */}
-            {hasData && <StaffLoadSection staffLoad={staffLoad} />}
-
-            {/* ── Recent table ── */}
-            {hasData && (
-                <div className="bg-white border border-[#d6f0e0] rounded-2xl p-3 md:p-4">
-                    <div className="flex items-center justify-between mb-3">
-                        <h4 className="text-sm font-bold text-gray-700">รายการล่าสุด</h4>
-                        <span className="text-xs font-semibold px-2.5 py-1 rounded-full border"
-                            style={{ backgroundColor: "#f0faf4", borderColor: "#a8d5ba", color: "#1a5233" }}>
-                            {filtered.length.toLocaleString()} รายการ
-                        </span>
-                    </div>
-                    <div className="overflow-auto max-h-72 border border-[#d6f0e0] rounded-xl">
-                        <table className="min-w-full text-xs border-collapse">
-                            <thead>
-                                <tr>
-                                    {["วันที่", "เจ้าหน้าที่", "ประเภทงาน", "หมวดย่อย", "นาที", "เร่งด่วน"].map((h) => (
-                                        <th key={h}
-                                            className="sticky top-0 text-white px-2 md:px-3 py-2 text-left font-semibold whitespace-nowrap border-r"
-                                            style={{ backgroundColor: MINT[700], borderColor: "#1a5233" }}>
-                                            {h}
-                                        </th>
-                                    ))}
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {filtered.slice().reverse().slice(0, 100).map((row, i) => {
-                                    const isEven = i % 2 === 0;
-                                    const base = isEven ? "#ffffff" : "#f0faf4";
-                                    return (
-                                        <tr key={i} className="border-b border-[#e8f5ee] transition-colors"
-                                            style={{ backgroundColor: base }}
-                                            onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = "#e8f5ee")}
-                                            onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = base)}>
-                                            <td className="px-2 md:px-3 py-2 whitespace-nowrap text-gray-500">
-                                                {(() => {
-                                                    const [, m, d] = row.date.split("-").map(Number);
-                                                    return `${d} ${["", "ม.ค.", "ก.พ.", "มี.ค.", "เม.ย.", "พ.ค.", "มิ.ย.", "ก.ค.", "ส.ค.", "ก.ย.", "ต.ค.", "พ.ย.", "ธ.ค."][m] ?? ""}`;
-                                                })()}
-                                            </td>
-                                            <td className="px-2 md:px-3 py-2 whitespace-nowrap">
-                                                <div className="flex items-center gap-1.5">
-                                                    <div className="w-2 h-2 rounded-full shrink-0" style={{ background: STAFF_COLORS[row.staff] ?? MINT[500] }} />
-                                                    <span className="font-medium text-gray-800 truncate max-w-[80px] md:max-w-none">{row.staff}</span>
+                        {/* ── Pie + Area ── */}
+                        {hasData && (
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div className="bg-white border border-gray-200 rounded-2xl p-4">
+                                    <h4 className="text-sm font-bold text-[#717171] mb-3">สัดส่วนประเภทงาน</h4>
+                                    <div className="flex items-center gap-2 text-xs text-gray-500 mb-3">
+                                        <div className="w-2 h-2 rounded-full" style={{ background: MINT[500] }} />
+                                        <strong className="text-gray-700">{filtered.length.toLocaleString()} รายการ</strong>
+                                    </div>
+                                    <div className="flex flex-col items-center gap-3">
+                                        <ResponsiveContainer width="100%" height={200}>
+                                            <PieChart>
+                                                <Pie data={pieData} cx="50%" cy="50%"
+                                                    outerRadius={85} innerRadius={45}
+                                                    dataKey="value" paddingAngle={2}
+                                                    label={({ percent }) => (percent ?? 0) > 0.05 ? `${((percent ?? 0) * 100).toFixed(0)}%` : ""}
+                                                    labelLine={false}>
+                                                    {pieData.map((e, i) => (
+                                                        <Cell key={i} fill={e.color} stroke="#fff" strokeWidth={2} />
+                                                    ))}
+                                                </Pie>
+                                                <PieTooltip
+                                                    formatter={(v: number | undefined, _, p) => [`${v ?? 0} งาน`, p?.payload?.name]}
+                                                    contentStyle={{ fontSize: 11, borderRadius: 8, border: "1px solid #e5e7eb" }}
+                                                />
+                                            </PieChart>
+                                        </ResponsiveContainer>
+                                        <div className="w-full grid grid-cols-2 gap-x-3 gap-y-1.5">
+                                            {pieData.map((t) => (
+                                                <div key={t.name} className="flex items-center gap-1.5 min-w-0">
+                                                    <div className="w-2.5 h-2.5 rounded-sm shrink-0" style={{ background: t.color }} />
+                                                    <span className="text-[11px] text-gray-600 truncate flex-1">{t.short}</span>
+                                                    <span className="text-[11px] font-bold text-gray-800 tabular-nums shrink-0">{t.value}</span>
                                                 </div>
-                                            </td>
-                                            <td className="px-2 md:px-3 py-2 whitespace-nowrap">
-                                                <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold text-white"
-                                                    style={{ background: row.color ?? "#94a3b8" }}>
-                                                    {row.short || row.mainTask}
-                                                </span>
-                                            </td>
-                                            <td className="px-2 md:px-3 py-2 text-gray-600 max-w-[120px] md:max-w-[200px]">
-                                                {row.subTask
-                                                    ? <span className="inline-block px-1.5 py-0.5 rounded text-[10px] font-medium truncate max-w-full"
-                                                        style={{ background: (row.color ?? "#94a3b8") + "14", color: row.color ?? "#94a3b8", border: `1px solid ${(row.color ?? "#94a3b8")}33` }}
-                                                        title={row.subTask}>
-                                                        {row.subTask}
-                                                    </span>
-                                                    : <span className="text-gray-300">—</span>
-                                                }
-                                            </td>
-                                            <td className="px-2 md:px-3 py-2 text-center font-medium text-gray-700">{row.duration || "—"}</td>
-                                            <td className="px-2 md:px-3 py-2 whitespace-nowrap">
-                                                <span className={`px-1.5 py-0.5 rounded-full text-[10px] font-bold ${row.urgency === "เร่งด่วน" ? "bg-red-100 text-red-700" : "text-white"}`}
-                                                    style={row.urgency !== "เร่งด่วน" ? { background: MINT[500] } : {}}>
-                                                    {row.urgency === "เร่งด่วน" ? "เร่งด่วน" : "ปกติ"}
-                                                </span>
-                                            </td>
-                                        </tr>
-                                    );
-                                })}
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
-            )}
+                                            ))}
+                                        </div>
+                                    </div>
+                                </div>
+                                <AvgDurationChart data={areaData} avgMin={avgMin} />
+                            </div>
+                        )}
+
+                        {/* ── ระยะเวลาที่ใช้ (ชม.) แยกตามประเภทงาน ── */}
+                        {hasData && <TaskDurationChart data={durationByTask} />}
+
+                        {hasData && (
+                            <SubTaskSection
+                                filtered={filtered}
+                                mainTasksWithSub={mainTasksWithSub}
+                                selectedMain={selectedMainForSub}
+                                onSelectMain={setSelectedMainForSub}
+                            />
+                        )}
+
+                        {/* ── แนวโน้มร้อยละ: เร่งด่วน / ทันเวลา / งานพัฒนา ── */}
+                        {hasData && (
+                            <StatusTrendChart data={statusTrendData} viewMode={viewMode} />
+                        )}
+
+                        {/* ── ความทันเวลาต่อเจ้าหน้าที่ ── */}
+                        {hasData && (
+                            <StaffTimelinessChart
+                                staffs={staffTimelinessTrend.staffs}
+                                rows={staffTimelinessTrend.rows}
+                                viewMode={viewMode}
+                            />
+                        )}
+
+                    </>
+                }
+                sla={
+                    <>
+                        {/* ── ความทันเวลาแยกกลุ่ม Software / Hardware ── */}
+                        {hasData && (
+                            <GroupTimelinessSection groups={timelinessByGroup} />
+                        )}
+
+                        {/* ── SLA: Service Desk / Report — แยกกันคนละ section ── */}
+                        {hasData && <SlaReportSection reports={slaReports} />}
+
+                    </>
+                }
+                solutions={
+                    <>
+                        {/* ── บันทึกการแก้ไขปัญหาของทีมไอที ── */}
+                        {hasData && <SolutionLogSection logs={solutionLogs} />}
+
+                    </>
+                }
+            />
         </div>
     );
 }

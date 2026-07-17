@@ -27,6 +27,11 @@ export interface WorkRow {
   duration: number;
   department: string;
   timeliness: string;
+  symptom?: string;
+  cause?: string;
+  solution?: string;
+  incidentPoint?: string;
+  solver?: string;
   color?: string;
   short?: string;
   [key: string]: unknown;
@@ -111,10 +116,58 @@ export function useWorklogData() {
     };
   }, [filtered]);
 
+  // ── วิเคราะห์ Activity IT: ตารางไขว้ การพัฒนา × ความเร่งด่วน ──
+  // นิยามเดียวกับตารางสรุป: พัฒนา = devType === "งานพัฒนา" (ค่าว่าง/อื่นๆ นับเป็นไม่พัฒนา)
+  const activityCross = useMemo(() => {
+    const total = filtered.length;
+    let devUrgent = 0;
+    let devNotUrgent = 0;
+    let notDevUrgent = 0;
+    let notDevNotUrgent = 0;
+    filtered.forEach((r) => {
+      const dev = r.devType === "งานพัฒนา";
+      const urgent = r.urgency === "เร่งด่วน";
+      if (dev && urgent) devUrgent++;
+      else if (dev && !urgent) devNotUrgent++;
+      else if (!dev && urgent) notDevUrgent++;
+      else notDevNotUrgent++;
+    });
+    const pct = (n: number) => (total > 0 ? (n / total) * 100 : 0);
+    return {
+      total,
+      devUrgent,
+      devNotUrgent,
+      notDevUrgent,
+      notDevNotUrgent,
+      devUrgentPct: pct(devUrgent),
+      devNotUrgentPct: pct(devNotUrgent),
+      notDevUrgentPct: pct(notDevUrgent),
+      notDevNotUrgentPct: pct(notDevNotUrgent),
+    };
+  }, [filtered]);
+
   const usedShorts = useMemo(() => {
     const s = new Set<string>();
     filtered.forEach((r) => s.add(taskShort(r.mainTask) || "อื่นๆ"));
     return Array.from(s);
+  }, [filtered]);
+
+  // ── บันทึกการแก้ไขปัญหา: แถวที่มีการกรอก อาการ/สาเหตุ/การแก้ไข ──
+  // เรียงจากล่าสุดไปเก่าสุด ใช้แสดงเป็น knowledge base วิธีแก้ของทีมไอที
+  const solutionLogs = useMemo(() => {
+    return filtered
+      .filter((r) => ((r.solution ?? "") as string).trim() !== "")
+      .map((r) => ({
+        date: r.date,
+        staff: r.staff,
+        mainTask: r.mainTask,
+        symptom: ((r.symptom ?? "") as string).trim(),
+        cause: ((r.cause ?? "") as string).trim(),
+        solution: ((r.solution ?? "") as string).trim(),
+        incidentPoint: ((r.incidentPoint ?? "") as string).trim(),
+        solver: ((r.solver ?? "") as string).trim(),
+      }))
+      .sort((a, b) => b.date.localeCompare(a.date));
   }, [filtered]);
 
   const barData = useMemo(() => {
@@ -429,6 +482,8 @@ export function useWorklogData() {
     setSelectedMainForSub,
     filtered,
     kpis,
+    activityCross,
+    solutionLogs,
     usedShorts,
     barData,
     areaData,

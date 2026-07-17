@@ -103,19 +103,60 @@ function SummaryTable({
     );
 }
 
+export interface ActivityCross {
+    total: number;
+    devUrgent: number;
+    devNotUrgent: number;
+    notDevUrgent: number;
+    notDevNotUrgent: number;
+    devUrgentPct: number;
+    devNotUrgentPct: number;
+    notDevUrgentPct: number;
+    notDevNotUrgentPct: number;
+}
+
+// เซลล์ในตารางไขว้: จำนวน + ร้อยละของงานทั้งหมด
+function CrossCell({
+    count,
+    pctValue,
+    highlight,
+}: {
+    count: number;
+    pctValue: number;
+    highlight?: "good" | "bad";
+}) {
+    const color =
+        highlight === "bad"
+            ? "text-red-600"
+            : highlight === "good"
+                ? "text-[#1a5233]"
+                : "text-gray-800";
+    return (
+        <td className="px-2 md:px-3 py-2 text-right tabular-nums border-r border-[#e8f5ee] last:border-r-0">
+            <span className={`font-semibold ${color}`}>{count.toLocaleString()}</span>
+            <span className={`ml-1 text-[11px] ${color} opacity-80`}>
+                ({pctValue.toFixed(2)}%)
+            </span>
+        </td>
+    );
+}
+
 export function SummaryTablesSection({
     staffLoad,
     totalJobs,
     devCount,
     urgentCount,
     onTimeCount,
+    activityCross,
 }: {
     staffLoad: { name: string; count: number }[];
     totalJobs: number;
     devCount: number;
     urgentCount: number;
     onTimeCount: number;
+    activityCross: ActivityCross;
 }) {
+    const c = activityCross;
     return (
         <div className="bg-white border border-[#d6f0e0] rounded-2xl p-3 md:p-4 space-y-3">
             <div className="flex items-center justify-between">
@@ -169,6 +210,105 @@ export function SummaryTablesSection({
                 ]}
                 total={totalJobs}
             />
+
+            {/* ── วิเคราะห์ Activity IT: ตารางไขว้ การพัฒนา × ความเร่งด่วน ── */}
+            <div className="space-y-2">
+                <h4 className="text-sm font-bold text-gray-700">
+                    วิเคราะห์ Activity IT (การพัฒนา × ความเร่งด่วน)
+                </h4>
+                <div className="overflow-hidden rounded-xl border border-[#d6f0e0]">
+                    <table className="min-w-full text-xs border-collapse">
+                        <thead>
+                            <tr>
+                                <th
+                                    className="text-white px-2 md:px-3 py-2 text-left font-semibold border-r"
+                                    style={{ backgroundColor: HEAD_BG, borderColor: HEAD_BORDER }}
+                                >
+                                    ความเร่งด่วน \ การพัฒนา
+                                </th>
+                                <th
+                                    className="text-white px-2 md:px-3 py-2 text-right font-semibold border-r"
+                                    style={{ backgroundColor: HEAD_BG, borderColor: HEAD_BORDER }}
+                                >
+                                    งานพัฒนา
+                                </th>
+                                <th
+                                    className="text-white px-2 md:px-3 py-2 text-right font-semibold border-r"
+                                    style={{ backgroundColor: HEAD_BG, borderColor: HEAD_BORDER }}
+                                >
+                                    ไม่พัฒนา
+                                </th>
+                                <th
+                                    className="text-white px-2 md:px-3 py-2 text-right font-semibold"
+                                    style={{ backgroundColor: HEAD_BG }}
+                                >
+                                    รวม
+                                </th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr className="border-b border-[#e8f5ee]" style={{ backgroundColor: "#ffffff" }}>
+                                <td className="px-2 md:px-3 py-2 text-gray-700 font-medium border-r border-[#e8f5ee]">
+                                    เร่งด่วน
+                                </td>
+                                <CrossCell count={c.devUrgent} pctValue={c.devUrgentPct} />
+                                <CrossCell count={c.notDevUrgent} pctValue={c.notDevUrgentPct} highlight="bad" />
+                                <CrossCell
+                                    count={c.devUrgent + c.notDevUrgent}
+                                    pctValue={c.devUrgentPct + c.notDevUrgentPct}
+                                />
+                            </tr>
+                            <tr className="border-b border-[#e8f5ee]" style={{ backgroundColor: STRIPE }}>
+                                <td className="px-2 md:px-3 py-2 text-gray-700 font-medium border-r border-[#e8f5ee]">
+                                    ไม่เร่งด่วน
+                                </td>
+                                <CrossCell count={c.devNotUrgent} pctValue={c.devNotUrgentPct} highlight="good" />
+                                <CrossCell count={c.notDevNotUrgent} pctValue={c.notDevNotUrgentPct} />
+                                <CrossCell
+                                    count={c.devNotUrgent + c.notDevNotUrgent}
+                                    pctValue={c.devNotUrgentPct + c.notDevNotUrgentPct}
+                                />
+                            </tr>
+                            <tr style={{ backgroundColor: "#ffffff" }}>
+                                <td className="px-2 md:px-3 py-2 text-gray-700 font-bold border-r border-[#e8f5ee]">
+                                    รวม
+                                </td>
+                                <CrossCell
+                                    count={c.devUrgent + c.devNotUrgent}
+                                    pctValue={c.devUrgentPct + c.devNotUrgentPct}
+                                />
+                                <CrossCell
+                                    count={c.notDevUrgent + c.notDevNotUrgent}
+                                    pctValue={c.notDevUrgentPct + c.notDevNotUrgentPct}
+                                />
+                                <CrossCell count={c.total} pctValue={c.total > 0 ? 100 : 0} />
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                {/* ไฮไลต์สองบรรทัดสำหรับใช้ทำสไลด์ */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                    <div
+                        className="rounded-xl border px-3 py-2 text-xs"
+                        style={{ backgroundColor: "#f0faf4", borderColor: "#a8d5ba" }}
+                    >
+                        <span className="text-gray-600">งานไม่เร่งด่วน และเป็นงานพัฒนา: </span>
+                        <strong className="text-[#1a5233] tabular-nums">
+                            {c.devNotUrgent.toLocaleString()} รายการ ({c.devNotUrgentPct.toFixed(2)}%)
+                        </strong>
+                    </div>
+                    <div
+                        className="rounded-xl border px-3 py-2 text-xs"
+                        style={{ backgroundColor: "#fef2f2", borderColor: "#fecaca" }}
+                    >
+                        <span className="text-gray-600">งานเร่งด่วน แต่ไม่ใช่งานพัฒนา: </span>
+                        <strong className="text-red-600 tabular-nums">
+                            {c.notDevUrgent.toLocaleString()} รายการ ({c.notDevUrgentPct.toFixed(2)}%)
+                        </strong>
+                    </div>
+                </div>
+            </div>
         </div>
     );
 }

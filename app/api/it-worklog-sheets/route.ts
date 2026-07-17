@@ -23,6 +23,11 @@ export interface WorkRow {
   duration: number;
   department: string;
   timeliness: string;
+  symptom: string;
+  cause: string;
+  solution: string;
+  incidentPoint: string;
+  solver: string;
 }
 
 const SHEET_NAME = process.env.IT_WORKLOG_SHEET_NAME ?? "บันทึกประจำวัน";
@@ -41,6 +46,8 @@ async function getSheetClient() {
 
 function normalizeDate(raw: string): string {
   if (!raw) return "";
+  // ตัดส่วนเวลา (ประทับเวลา เช่น "14/7/2569 8:47:44" หรือ "2026-02-06 15:29:52") ให้เหลือแต่วันที่
+  raw = raw.trim().split(/[ ,T]/)[0];
   const iso = raw.match(/^(\d{4})-(\d{2})-(\d{2})$/);
   if (iso) {
     const y = parseInt(iso[1]);
@@ -89,6 +96,7 @@ function parseSheetRows(rows: string[][]): WorkRow[] {
   const iKphis = header.findIndex((h) => h === "คอลัมน์ 3");
   const iConsult = header.findIndex((h) => h === "คอลัมน์ 4");
   const iGtw = header.findIndex((h) => h === "คอลัมน์ 21");
+  const iTimestamp = idx("ประทับเวลา");
   const iDate = idx("วันที่ปฏิบัติงาน");
   const iStartTime = idx("เวลาเริ่ม");
   const iEndTime = idx("เวลาแล้วเสร็จ");
@@ -96,6 +104,14 @@ function parseSheetRows(rows: string[][]): WorkRow[] {
   const iTimeliness = idx("ความทันเวลา");
   const iDept = idx("ฝ่าย");
   const iDoc = header.findIndex((h) => h === "คำถาม");
+  // คอลัมน์บันทึกเหตุ/การแก้ไข (ส่วนแจ้งซ่อมในฟอร์ม)
+  const iSymptom = header.findIndex((h) => h === "อาการ");
+  const iCause = header.findIndex((h) => h === "สาเหตุ");
+  const iSolution = header.findIndex((h) => h === "การแก้ไข");
+  const iIncidentPoint = idx("จุดที่เกิดเหตุ");
+  // หมายเหตุ: หัวคอลัมน์ "ผู้แก้ไขปัญหา" ในชีตพิมพ์สระ/วรรณยุกต์สลับตำแหน่ง (ผ+้+ู)
+  // จึง match ด้วยส่วน "แก้ไขปัญหา" แทน เพื่อกัน byte ไม่ตรงทั้งที่ตาเห็นเหมือนกัน
+  const iSolver = idx("แก้ไขปัญหา");
 
   const get = (row: string[], i: number) =>
     i >= 0 ? (row[i] ?? "").trim() : "";
@@ -124,10 +140,12 @@ function parseSheetRows(rows: string[][]): WorkRow[] {
 
   for (let i = 1; i < rows.length; i++) {
     const row = rows[i] as string[];
-    if (!row || !row[iDate] || !row[iStaff]) continue;
+    if (!row || !row[iStaff]) continue;
 
-    const rawDate = get(row, iDate);
-    const date = normalizeDate(rawDate);
+    // ใช้วันที่ปฏิบัติงานเป็นหลัก ถ้าว่าง/parse ไม่ได้ ให้ fallback เป็นวันที่จากประทับเวลา
+    // (กันแถวหายกรณีผู้กรอกลืมใส่วันที่ — ทำให้ยอดรวมรายปีตรงกับชีตจริง)
+    const date =
+      normalizeDate(get(row, iDate)) || normalizeDate(get(row, iTimestamp));
     if (!date) continue;
 
     const mainTask = get(row, iMain);
@@ -151,6 +169,11 @@ function parseSheetRows(rows: string[][]): WorkRow[] {
       duration,
       department: get(row, iDept),
       timeliness: get(row, iTimeliness),
+      symptom: get(row, iSymptom),
+      cause: get(row, iCause),
+      solution: get(row, iSolution),
+      incidentPoint: get(row, iIncidentPoint),
+      solver: get(row, iSolver),
     });
   }
 
