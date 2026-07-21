@@ -24,6 +24,7 @@ const OPTIONAL_ENV = [
   "GOOGLE_PRIVATE_KEY", // Google Sheets
   "GOOGLE_SERVICE_ACCOUNT_EMAIL", // Google Sheets
   "GOOGLE_SHEET_ID", // Google Sheets
+  "SYNC_SECRET", // cron sync → Google Sheets (ไม่ตั้ง = ปิดช่องทาง cron, manual ผ่าน login ยังใช้ได้)
 ] as const;
 
 export function validateEnv(): void {
@@ -34,10 +35,20 @@ export function validateEnv(): void {
     );
   }
 
-  // JWT_SECRET อ่อนเกินไป = เสี่ยง brute-force token → เตือน
+  // JWT_SECRET อ่อน = ปลอม token เข้าได้ทุกบัญชี
+  // production: ไม่ยอมให้ start เลย / dev: เตือนอย่างเดียว
   if ((process.env.JWT_SECRET ?? "").length < 32) {
-    console.warn(
-      "[env] ⚠️  JWT_SECRET สั้นกว่า 32 ตัวอักษร — แนะนำให้ยาวและสุ่มกว่านี้",
+    const msg =
+      "[env] JWT_SECRET สั้นกว่า 32 ตัวอักษร — ต้องยาวและสุ่ม (สร้างด้วย: openssl rand -base64 48)";
+    if (process.env.NODE_ENV === "production") throw new Error(msg);
+    console.warn(`⚠️  ${msg} (dev: เตือนอย่างเดียว)`);
+  }
+
+  // ค่า NEXT_PUBLIC_* ถูก inline เข้า JS bundle ที่ browser โหลดได้ = ไม่ใช่ความลับ
+  // เคยมี NEXT_PUBLIC_SYNC_SECRET หลุดแบบนี้มาแล้ว → บล็อกไว้เลยกันพลาดซ้ำ
+  if (process.env.NEXT_PUBLIC_SYNC_SECRET) {
+    throw new Error(
+      "[env] ห้ามตั้ง NEXT_PUBLIC_SYNC_SECRET — secret ที่ขึ้นต้น NEXT_PUBLIC_ จะหลุดไปอยู่ในโค้ดฝั่ง browser ให้ใช้ SYNC_SECRET (server เท่านั้น) แทน แล้วลบตัวนี้ออกจาก .env",
     );
   }
 

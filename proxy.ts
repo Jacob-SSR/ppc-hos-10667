@@ -30,6 +30,17 @@ const GUEST_ALLOWED_PATHS = [
 // คนนอกไม่รู้ key นี้ — และ key ไม่เคยออกนอกเครื่องเพราะ warmer คุยกับตัวเอง
 const WARMER_KEY = process.env.WARMER_KEY ?? process.env.JWT_SECRET;
 
+/** เทียบ string แบบ constant-time (edge runtime ไม่มี crypto.timingSafeEqual) */
+function safeEqual(a: string, b: string): boolean {
+  const enc = new TextEncoder();
+  const ab = enc.encode(a);
+  const bb = enc.encode(b);
+  if (ab.length !== bb.length) return false;
+  let diff = 0;
+  for (let i = 0; i < ab.length; i++) diff |= ab[i] ^ bb[i];
+  return diff === 0;
+}
+
 function matchesAny(pathname: string, list: string[]): boolean {
   return list.some(
     (p) =>
@@ -63,20 +74,31 @@ export async function proxy(request: NextRequest) {
   // 1) public เสมอ
   if (matchesAny(pathname, PUBLIC_PATHS)) return NextResponse.next();
 
-  // 2) cache warmer (loopback ภายใน + key ตรง)
-  if (WARMER_KEY && request.headers.get("x-warmer-key") === WARMER_KEY) {
+  // 2) cache warmer (loopback ภายใน + key ตรง) — เทียบแบบ timing-safe
+  const warmerHeader = request.headers.get("x-warmer-key");
+  if (WARMER_KEY && warmerHeader && safeEqual(warmerHeader, WARMER_KEY)) {
+    return NextResponse.next();
+  }
+
+  // 3) cron sync ยิงด้วย x-sync-secret (ไม่มี cookie) → ปล่อยผ่านไปให้ route
+  //    ตรวจ secret เอง (timing-safe + ไม่มีค่า default — ดู app/api/sync/*/route.ts)
+  //    แค่ "มี header" ยังไม่ถือว่าผ่าน auth — route เป็นคนตัดสิน
+  if (
+    pathname.startsWith("/api/sync/") &&
+    request.headers.get("x-sync-secret")
+  ) {
     return NextResponse.next();
   }
 
   const token = request.cookies.get("token")?.value;
 
-  // 3) ไม่มี token → เข้าได้เฉพาะโซน guest
+  // 4) ไม่มี token → เข้าได้เฉพาะโซน guest
   if (!token) {
     if (matchesAny(pathname, GUEST_ALLOWED_PATHS)) return NextResponse.next();
     return deny(request, false);
   }
 
-  // 4) มี token → ตรวจ
+  // 5) มี token → ตรวจ
   try {
     await jwtVerify(token, secret);
     return NextResponse.next();
