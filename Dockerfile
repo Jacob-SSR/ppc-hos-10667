@@ -23,8 +23,7 @@ COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 # หมายเหตุสำคัญตอน build:
 #  1) ต้องมีไฟล์ .env.production ใน context — next build จะอ่านค่า env จากไฟล์นี้
-#     (เพื่อผ่านด่านเช็ค env ใน lib/db.ts — ห้ามใส่ secret ใดๆ เป็น NEXT_PUBLIC_*
-#      เพราะจะถูก inline เข้า bundle ฝั่ง browser; lib/env.ts จะ throw ถ้าเจอ)
+#     (โดยเฉพาะ NEXT_PUBLIC_SYNC_SECRET ที่ถูก inline เข้า bundle + ผ่านด่านเช็ค env ใน lib/db.ts)
 #  2) เครื่องที่ build ต้องต่อเน็ตได้ เพราะ next/font/google โหลดฟอนต์ Prompt ตอน build
 #  3) ข้าม type-check ใน container (ตั้ง ignoreBuildErrors ใน next.config.ts)
 #     เพราะขั้นนี้กินแรมหนักจน OOM — deploy script ต้องรัน `npx tsc --noEmit` ก่อน docker build เสมอ

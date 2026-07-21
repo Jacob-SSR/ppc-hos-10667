@@ -58,24 +58,10 @@ export async function rateLimit(
       .exec();
 
     return { ok: true, remaining: limit - count - 1, retryAfterSec: 0, limit };
-  } catch (err) {
+  } catch {
     // Redis ล่ม → fallback in-memory ของ instance นี้
-    // ⚠️ ช่วงนี้ limit อ่อนลง (แยกต่อ instance ไม่แชร์กัน) — ต้อง log ให้ ops เห็น
-    warnRedisFallback(err);
     return memoryRateLimit(key, limit, windowMs);
   }
-}
-
-// log เตือนตอน fallback — throttle นาทีละครั้งพอ กัน log ท่วมตอน Redis ล่มยาว
-let lastFallbackWarn = 0;
-function warnRedisFallback(err: unknown) {
-  const now = Date.now();
-  if (now - lastFallbackWarn < 60_000) return;
-  lastFallbackWarn = now;
-  console.warn(
-    "[rateLimit] ⚠️  Redis ใช้ไม่ได้ — ใช้ in-memory fallback (limit อ่อนลงชั่วคราว):",
-    err instanceof Error ? err.message : err,
-  );
 }
 
 // ── Fallback in-memory (โค้ดชุดเดิม) ────────────────────────────────────────

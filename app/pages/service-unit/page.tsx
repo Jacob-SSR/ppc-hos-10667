@@ -45,12 +45,11 @@ export default function ServiceUnitPage() {
     setSyncResult(null);
 
     try {
-      // auth ใช้ cookie login ตามปกติ (proxy.ts บังคับ login ก่อนถึง route อยู่แล้ว)
-      // ห้ามใส่ secret ใดๆ ในโค้ดฝั่ง client — NEXT_PUBLIC_* ถูก inline เข้า bundle ให้ browser อ่านได้
       const res = await fetch("/api/sync/service-unit-to-sheets", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
+          "x-sync-secret": process.env.NEXT_PUBLIC_SYNC_SECRET ?? "ppchos10909",
         },
         body: JSON.stringify({
           start: formatDate(syncStart),

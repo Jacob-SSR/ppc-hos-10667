@@ -1,36 +1,6 @@
-import crypto from "crypto";
-import jwt from "jsonwebtoken";
 import { NextRequest, NextResponse } from "next/server";
 import { getServiceUnitReport } from "@/lib/report.service";
 import { appendRowsWithDedup } from "@/lib/googleSheets";
-
-// ── Auth ─────────────────────────────────────────────────────────────────────
-// 1) Cron    → header x-sync-secret ต้องตรงกับ env SYNC_SECRET (ไม่มีค่า default —
-//              ไม่ตั้ง env = ปิดช่องทาง cron ไปเลย ไม่ใช่เปิดกว้าง)
-// 2) Manual  → ผู้ใช้ที่ login แล้วกดจากหน้าเว็บ ใช้ cookie token ตามปกติ
-//              (ห้ามฝัง secret ในโค้ดฝั่ง client เด็ดขาด)
-
-/** เทียบ secret แบบ timing-safe — hash ก่อนเทียบ กันทั้ง timing attack และความยาวไม่เท่ากัน */
-function syncSecretMatches(given: string | null): boolean {
-  const expected = process.env.SYNC_SECRET;
-  if (!expected || !given) return false;
-  const a = crypto.createHash("sha256").update(given).digest();
-  const b = crypto.createHash("sha256").update(expected).digest();
-  return crypto.timingSafeEqual(a, b);
-}
-
-function hasValidLogin(req: NextRequest): boolean {
-  const token = req.cookies.get("token")?.value;
-  if (!token) return false;
-  try {
-    jwt.verify(token, process.env.JWT_SECRET!);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 // ── คำนวณช่วงอาทิตย์ที่แล้ว (จันทร์–อาทิตย์) ────────────────────────────────
 function getLastWeekRange(): { start: string; end: string; label: string } {
@@ -69,8 +39,9 @@ function getLastWeekRange(): { start: string; end: string; label: string } {
 //   1. Cron Job  → ใช้ช่วงอาทิตย์ที่แล้วอัตโนมัติ
 //   2. Manual    → ส่ง body { start, end } มาเองได้
 export async function POST(req: NextRequest) {
-  const secretHeader = req.headers.get("x-sync-secret");
-  if (!syncSecretMatches(secretHeader) && !hasValidLogin(req)) {
+  // ตรวจ secret
+  const secret = req.headers.get("x-sync-secret");
+  if (secret !== process.env.SYNC_SECRET) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
@@ -81,12 +52,6 @@ export async function POST(req: NextRequest) {
     const body = await req.json().catch(() => null);
     // บรรทัดที่สร้าง label จาก body.start / body.end
     if (body?.start && body?.end) {
-      if (!DATE_RE.test(body.start) || !DATE_RE.test(body.end)) {
-        return NextResponse.json(
-          { error: "รูปแบบวันที่ต้องเป็น YYYY-MM-DD" },
-          { status: 400 },
-        );
-      }
       start = body.start;
       end = body.end;
       const toThai = (d: string) => {
