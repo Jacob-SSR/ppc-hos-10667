@@ -6,29 +6,23 @@ export const dynamic = "force-dynamic";
 
 const SSH_USER = process.env.MONITOR_SSH_USER || "root";
 const SSH_PASSWORD = process.env.MONITOR_SSH_PASSWORD || "";
-// เวลารอ SSH handshake (ms) — เครือข่ายช้า/ไฟร์วอลล์หน่วงอาจต้องเพิ่ม
-const SSH_TIMEOUT_MS = Number(process.env.MONITOR_SSH_TIMEOUT_MS) || 15000;
 
 type ServerConfig = {
   name: string;
   host: string;
-  port: number;
   type: "local" | "ssh";
   os: "linux" | "windows";
 };
 
-// รูปแบบ MONITOR_SERVERS: "ชื่อ|host[:port]|local หรือ ssh|linux หรือ windows" คั่นแต่ละเครื่องด้วย ,
 const SERVERS: ServerConfig[] = (process.env.MONITOR_SERVERS || "")
   .split(",")
   .map((entry) => entry.trim())
   .filter(Boolean)
   .map((entry) => {
-    const [name, hostPort, type, os] = entry.split("|").map((v) => v.trim());
-    const [host, port] = (hostPort || "").split(":");
+    const [name, host, type, os] = entry.split("|").map((v) => v.trim());
     return {
       name,
       host,
-      port: Number(port) || 22,
       type: type === "local" ? "local" : "ssh",
       os: os === "windows" ? "windows" : "linux",
     };
@@ -42,7 +36,6 @@ interface DiskInfo {
 
 export interface ServerStats {
   name: string;
-  host: string;
   online: boolean;
   error?: string;
   ram?: { total: number; used: number }; // bytes
@@ -120,24 +113,13 @@ async function getWindowsStats(ssh: NodeSSH) {
 }
 
 async function getSshStats(server: ServerConfig) {
-  // ตรวจ config ก่อน connect — ให้ข้อความชัดกว่า error ดิบของ ssh2
-  if (!server.host) {
-    throw new Error(
-      `ยังไม่ได้กำหนด host ของ "${server.name}" ใน MONITOR_SERVERS (รูปแบบ: ชื่อ|host|ssh|linux)`,
-    );
-  }
-  if (!SSH_PASSWORD) {
-    throw new Error("ยังไม่ได้ตั้งค่า MONITOR_SSH_PASSWORD");
-  }
-
   const ssh = new NodeSSH();
   try {
     await ssh.connect({
       host: server.host,
-      port: server.port,
       username: SSH_USER,
       password: SSH_PASSWORD,
-      readyTimeout: SSH_TIMEOUT_MS,
+      readyTimeout: 5000,
     });
     return server.os === "windows"
       ? await getWindowsStats(ssh)
@@ -145,23 +127,6 @@ async function getSshStats(server: ServerConfig) {
   } finally {
     ssh.dispose();
   }
-}
-
-// แปลง error ดิบของ ssh2 เป็นข้อความที่บอกวิธีแก้ได้
-function friendlyError(msg: string): string {
-  if (msg.includes("Timed out while waiting for handshake")) {
-    return `SSH handshake ไม่สำเร็จใน ${SSH_TIMEOUT_MS / 1000} วิ — เช็คว่า sshd เปิดอยู่, port ถูกต้อง และไฟร์วอลล์ไม่ได้บล็อก`;
-  }
-  if (msg.includes("ECONNREFUSED")) {
-    return `เครื่องปลายทางปฏิเสธการเชื่อมต่อ — sshd อาจไม่ได้เปิด หรือ port ไม่ถูกต้อง (${msg})`;
-  }
-  if (msg.includes("ETIMEDOUT") || msg.includes("EHOSTUNREACH")) {
-    return `เข้าถึงเครื่องปลายทางไม่ได้ — เช็ค IP/เครือข่าย (${msg})`;
-  }
-  if (msg.includes("All configured authentication methods failed")) {
-    return "SSH ปฏิเสธ user/password — เช็ค MONITOR_SSH_USER และ MONITOR_SSH_PASSWORD";
-  }
-  return msg;
 }
 
 export async function GET(req: Request) {
@@ -183,15 +148,13 @@ export async function GET(req: Request) {
 
   const data: ServerStats[] = SERVERS.map((s, i) => {
     const r = results[i];
-    const host = s.type === "local" ? "เครื่องนี้" : `${s.host}:${s.port}`;
     if (r.status === "fulfilled") {
-      return { name: s.name, host, online: true, ...r.value };
+      return { name: s.name, online: true, ...r.value };
     }
     return {
       name: s.name,
-      host,
       online: false,
-      error: friendlyError(r.reason?.message || String(r.reason)),
+      error: r.reason?.message || String(r.reason),
     };
   });
 

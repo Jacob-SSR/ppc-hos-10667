@@ -10,6 +10,7 @@ interface DiskInfo {
 
 interface ServerStats {
     name: string;
+    host: string;
     online: boolean;
     error?: string;
     ram?: { total: number; used: number };
@@ -75,6 +76,7 @@ function ServerCard({ server }: { server: ServerStats }) {
             <div className="mb-4 flex items-start justify-between">
                 <div>
                     <h2 className="text-lg font-semibold text-gray-800">{server.name}</h2>
+                    <p className="text-sm text-gray-500">{server.host}</p>
                 </div>
                 <span
                     className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium ${server.online
