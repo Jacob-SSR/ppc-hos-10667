@@ -34,6 +34,7 @@ import {
   Syringe,
   Activity,
   Gauge,
+  ClipboardList,
 } from "lucide-react";
 
 import { SidebarItem, SidebarGroup, SidebarSubGroup } from "./types";
@@ -325,6 +326,12 @@ export const REPORT_ITEMS: SidebarItem[] = [
     label: "UC ต่างจังหวัดที่มาทำฟัน",
     href: "/pages/uc-outside-dental",
     icon: Smile,
+    group: "report",
+  },
+  {
+    label: "Medical Coding (ผู้ป่วยใน)",
+    href: "/pages/medical-coding",
+    icon: ClipboardList,
     group: "report",
   },
 ];
