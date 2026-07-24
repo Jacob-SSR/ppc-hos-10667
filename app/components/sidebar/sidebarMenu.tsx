@@ -188,6 +188,12 @@ export const DASHBOARD_GROUPS: SidebarSubGroup[] = [
         icon: Banknote,
         group: "claim",
       },
+      {
+        label: "Medical Coding (ผู้ป่วยใน)",
+        href: "/pages/medical-coding",
+        icon: ClipboardList,
+        group: "claim",
+      },
     ],
   },
 
