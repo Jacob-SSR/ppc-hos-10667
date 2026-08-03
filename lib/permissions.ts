@@ -41,14 +41,8 @@ export const FEATURE_PATHS = {
     "/api/ai",
   ],
 
-  // สายงานการพยาบาล (ผลิตภาพ / เวลาบริการ)
-  NURSING: [
-    "/pages/productivity-lr",
-    "/api/productivity-lr",
-    "/pages/productivity-er",
-    "/api/productivity-er",
-    "/pages/productivity-ipd",
-    "/api/productivity-ipd",
+  // งานการพยาบาลผู้ป่วยนอก (OPD)
+  NURSING_OPD: [
     "/pages/productivity-opd",
     "/api/productivity-opd",
     "/pages/servicetime-dashboard",
@@ -56,12 +50,23 @@ export const FEATURE_PATHS = {
     "/pages/health-checkup",
   ],
 
-  // แม่และเด็ก
+  // งานการพยาบาลผู้ป่วยใน (IPD)
+  NURSING_IPD: ["/pages/productivity-ipd", "/api/productivity-ipd"],
+
+  // งานการพยาบาลผู้ป่วยอุบัติเหตุฉุกเฉินและนิติเวช (ER)
+  NURSING_ER: ["/pages/productivity-er", "/api/productivity-er"],
+
+  // งานการพยาบาลผู้คลอดและทารกแรกเกิด (LR)
+  NURSING_LR: ["/pages/productivity-lr", "/api/productivity-lr"],
+
+  // แม่และเด็ก / งานคลอด / ANC (รวมงานเคลม ANC ฝากครรภ์ด้วย — LR ต้องเห็น)
   MCH: [
     "/pages/anc-nursing-dashboard",
     "/api/anc-nursing",
     "/pages/anc-anemia-map",
     "/api/anc-anemia-map",
+    "/pages/anc-dashboard",
+    "/api/anc-sheets",
   ],
 
   // อุบัติเหตุ / ฉุกเฉิน / โรควิกฤต
@@ -78,12 +83,16 @@ export const FEATURE_PATHS = {
     "/pages/acs-map",
     "/api/acs-map",
     "/api/acs-sheets",
+    "/pages/high-risk-procedures",
+    "/api/high-risk-procedures",
+  ],
+
+  // Sepsis (ทั้ง ER และหน่วยควบคุมการติดเชื้อต้องเห็น)
+  SEPSIS: [
     "/pages/sepsis-dashboard",
     "/pages/sepsis-map",
     "/api/sepsis-map",
     "/api/sepsis-sheets",
-    "/pages/high-risk-procedures",
-    "/api/high-risk-procedures",
   ],
 
   // โรคติดเชื้อ (วัณโรค)
@@ -210,8 +219,38 @@ export const ROLE_FEATURES: Record<string, FeatureKey[] | "*"> = {
   DOCTOR: "*",
   IT: "*",
 
-  // พยาบาล — งานผลิตภาพ + งานคลินิกที่พยาบาลดูแล
-  NURSE: ["CORE", "NURSING", "MCH", "EMERGENCY", "INFECTIOUS", "MENTAL", "IMC"],
+  // บริหารกลุ่มการพยาบาล / หัวหน้าพยาบาล — เห็นงานพยาบาลทุกหน่วย
+  NURSE: [
+    "CORE",
+    "NURSING_OPD",
+    "NURSING_IPD",
+    "NURSING_ER",
+    "NURSING_LR",
+    "MCH",
+    "EMERGENCY",
+    "SEPSIS",
+    "INFECTIOUS",
+    "MENTAL",
+    "IMC",
+  ],
+
+  // งานการพยาบาลผู้ป่วยนอก
+  NURSE_OPD: ["CORE", "NURSING_OPD"],
+
+  // งานการพยาบาลผู้ป่วยใน
+  NURSE_IPD: ["CORE", "NURSING_IPD", "IMC"],
+
+  // งานการพยาบาลผู้ป่วยอุบัติเหตุฉุกเฉินและนิติเวช
+  NURSE_ER: ["CORE", "NURSING_ER", "EMERGENCY", "SEPSIS"],
+
+  // งานการพยาบาลผู้คลอดและทารกแรกเกิด — เห็นงานคลอด/ANC ทั้งหมด
+  NURSE_LR: ["CORE", "NURSING_LR", "MCH"],
+
+  // งานการพยาบาลหน่วยควบคุมการติดเชื้อและงานจ่ายกลาง
+  NURSE_IC: ["CORE", "INFECTIOUS", "SEPSIS"],
+
+  // งานสุขภาพจิตและยาเสพติด
+  PSYCH: ["CORE", "MENTAL"],
 
   // ทันตกรรม
   DENTIST: ["CORE", "DENTAL"],
