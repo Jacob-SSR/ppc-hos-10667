@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { jwtVerify } from "jose";
+import { canAccessPath } from "@/lib/permissions";
 
 const secret = new TextEncoder().encode(process.env.JWT_SECRET as string);
 
@@ -78,7 +79,22 @@ export async function proxy(request: NextRequest) {
 
   // 4) มี token → ตรวจ
   try {
-    await jwtVerify(token, secret);
+    const { payload } = await jwtVerify(token, secret);
+
+    // ── สิทธิ์ตามสายงาน (role อยู่ใน JWT ตั้งแต่ตอน login) ──
+    // แพทย์ / ผอ. / ADMIN / IT → ผ่านหมด, สายงานอื่นเข้าได้เฉพาะโซนตัวเอง
+    const role =
+      typeof payload.role === "string" ? payload.role.toUpperCase() : "USER";
+
+    if (!canAccessPath(role, pathname)) {
+      return pathname.startsWith("/api")
+        ? NextResponse.json(
+            { error: "คุณไม่มีสิทธิ์เข้าถึงข้อมูลส่วนนี้ (นอกสายงาน)" },
+            { status: 403 },
+          )
+        : NextResponse.redirect(new URL("/pages/dashboard", request.url));
+    }
+
     return NextResponse.next();
   } catch {
     // token เสีย/หมดอายุ: เคลียร์ cookie แล้วปฏิบัติเหมือน guest

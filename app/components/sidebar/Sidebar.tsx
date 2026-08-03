@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { usePathname } from "next/navigation";
 import Link from "next/link";
 
@@ -26,12 +26,10 @@ import {
   PRIMARY_CARE_ITEMS,
 } from "./sidebarMenu";
 
-import {
-  SidebarItem,
-  SidebarSubGroup,
-} from "./types";
+import { SidebarItem } from "./types";
 
 import { useSettings } from "@/app/contexts/SettingsContext";
+import { canAccessPath } from "@/lib/permissions";
 
 // =========================
 // Guest Dashboard
@@ -64,14 +62,13 @@ export default function Sidebar() {
   const isSettings =
     pathname === "/pages/settings";
 
-  const [isGuest, setIsGuest] =
-    useState<boolean | null>(null);
+  // role จาก API เป็นตัวพิมพ์ใหญ่เสมอ (GUEST/USER/IT/ADMIN/สายงานต่างๆ)
+  // null = ยังโหลดอยู่
+  const [role, setRole] =
+    useState<string | null>(null);
 
-  const [isIT, setIsIT] =
-    useState(false);
-
-  const [isPikad, setIsPikad] =
-    useState(false);
+  const isGuest = role === "GUEST";
+  const isIT = role === "IT";
 
   // =========================
   // Fetch User
@@ -85,22 +82,15 @@ export default function Sidebar() {
       .then((res) => res.json())
       .then((data) => {
         if (!cancelled) {
-          // role จาก API เป็นตัวพิมพ์ใหญ่เสมอ (GUEST/USER/IT/ADMIN) → normalize กันพลาด
-          const role =
-            data.user?.role?.toUpperCase();
-
-          setIsGuest(
-            role === "GUEST"
-          );
-
-          setIsIT(
-            role === "IT"
+          setRole(
+            data.user?.role?.toUpperCase() ??
+              "GUEST"
           );
         }
       })
       .catch(() => {
         if (!cancelled) {
-          setIsGuest(true);
+          setRole("GUEST");
         }
       });
 
@@ -108,6 +98,71 @@ export default function Sidebar() {
       cancelled = true;
     };
   }, []);
+
+  // =========================
+  // กรองเมนูตามสายงาน (role)
+  // แพทย์ / ผอ. / ADMIN / IT เห็นทุกเมนู — สายงานอื่นเห็นเฉพาะโซนตัวเอง
+  // =========================
+  const visibleDashboardGroups =
+    useMemo(
+      () =>
+        DASHBOARD_GROUPS.map(
+          (group) => ({
+            ...group,
+            items:
+              group.items.filter(
+                (item) =>
+                  canAccessPath(
+                    role,
+                    item.href
+                  )
+              ),
+          })
+        ).filter(
+          (group) =>
+            group.items.length > 0
+        ),
+      [role]
+    );
+
+  const visibleReportItems =
+    useMemo(
+      () =>
+        REPORT_ITEMS.filter(
+          (item) =>
+            canAccessPath(
+              role,
+              item.href
+            )
+        ),
+      [role]
+    );
+
+  const visiblePrimaryCareItems =
+    useMemo(
+      () =>
+        PRIMARY_CARE_ITEMS.filter(
+          (item) =>
+            canAccessPath(
+              role,
+              item.href
+            )
+        ),
+      [role]
+    );
+
+  const visiblePpaItems =
+    useMemo(
+      () =>
+        PPA_ITEMS.filter(
+          (item) =>
+            canAccessPath(
+              role,
+              item.href
+            )
+        ),
+      [role]
+    );
 
   // =========================
   // Collapse State
@@ -193,7 +248,7 @@ export default function Sidebar() {
   // =========================
   // Loading
   // =========================
-  if (isGuest === null) {
+  if (role === null) {
     return (
       <aside className="flex flex-col w-60 h-full bg-white border-r-2 shadow-[2px_0_12px_rgba(0,0,0,0.06)] overflow-hidden" style={{ borderColor: "#d6f0e0" }}>
         <nav className="flex-1 px-4 py-6">
@@ -224,7 +279,7 @@ export default function Sidebar() {
                     GUEST_DASHBOARD_ITEMS,
                 },
               ]
-              : DASHBOARD_GROUPS
+              : visibleDashboardGroups
           }
           isOpen={dashboardOpen}
           onToggle={() =>
@@ -245,84 +300,93 @@ export default function Sidebar() {
         {!isGuest && (
           <>
             {/* Report */}
-            <NavGroup
-              label="รายงาน"
-              icon={FileText}
-              groups={[
-                {
-                  title:
-                    "รายงาน",
-                  items:
-                    REPORT_ITEMS,
-                },
-              ]}
-              isOpen={reportOpen}
-              onToggle={() =>
-                toggle(
-                  reportOpen,
-                  setReportOverride
-                )
-              }
-              isActive={isInGroup(
-                pathname,
-                REPORT_ITEMS
-              )}
-            />
+            {visibleReportItems.length >
+              0 && (
+              <NavGroup
+                label="รายงาน"
+                icon={FileText}
+                groups={[
+                  {
+                    title:
+                      "รายงาน",
+                    items:
+                      visibleReportItems,
+                  },
+                ]}
+                isOpen={reportOpen}
+                onToggle={() =>
+                  toggle(
+                    reportOpen,
+                    setReportOverride
+                  )
+                }
+                isActive={isInGroup(
+                  pathname,
+                  visibleReportItems
+                )}
+              />
+            )}
 
             {/* Primary Care */}
-            <NavGroup
-              label="ปฐมภูมิ"
-              icon={
-                HeartHandshake
-              }
-              groups={[
-                {
-                  title:
-                    "ปฐมภูมิ",
-                  items:
-                    PRIMARY_CARE_ITEMS,
-                },
-              ]}
-              isOpen={
-                primaryCareOpen
-              }
-              onToggle={() =>
-                toggle(
-                  primaryCareOpen,
-                  setPrimaryCareOverride
-                )
-              }
-              isActive={isInGroup(
-                pathname,
-                PRIMARY_CARE_ITEMS
-              )}
-            />
+            {visiblePrimaryCareItems.length >
+              0 && (
+              <NavGroup
+                label="ปฐมภูมิ"
+                icon={
+                  HeartHandshake
+                }
+                groups={[
+                  {
+                    title:
+                      "ปฐมภูมิ",
+                    items:
+                      visiblePrimaryCareItems,
+                  },
+                ]}
+                isOpen={
+                  primaryCareOpen
+                }
+                onToggle={() =>
+                  toggle(
+                    primaryCareOpen,
+                    setPrimaryCareOverride
+                  )
+                }
+                isActive={isInGroup(
+                  pathname,
+                  visiblePrimaryCareItems
+                )}
+              />
+            )}
 
             {/* PPA */}
-            <NavGroup
-              label="PPA"
-              icon={
-                Stethoscope
-              }
-              groups={[
-                {
-                  title: "PPA",
-                  items:
-                    PPA_ITEMS,
-                },
-              ]}
-              isOpen={ppaOpen}
-              onToggle={() =>
-                toggle(
-                  ppaOpen,
-                  setPpaOverride
-                )
-              }
-              isActive={isInGroup(
-                pathname,
-                PPA_ITEMS
-              )}
-            />
+            {visiblePpaItems.length >
+              0 && (
+              <NavGroup
+                label="PPA"
+                icon={
+                  Stethoscope
+                }
+                groups={[
+                  {
+                    title: "PPA",
+                    items:
+                      visiblePpaItems,
+                  },
+                ]}
+                isOpen={ppaOpen}
+                onToggle={() =>
+                  toggle(
+                    ppaOpen,
+                    setPpaOverride
+                  )
+                }
+                isActive={isInGroup(
+                  pathname,
+                  visiblePpaItems
+                )}
+              />
+            )}
 
             {/* IT Worklog */}
             {isIT && (
