@@ -54,19 +54,64 @@ UPDATE ppchos.users SET role = 'DIRECTOR' WHERE `user` = 'xxxx';
 UPDATE ppchos.users SET role = 'FINANCE' WHERE `user` IN ('aaa', 'bbb', 'ccc');
 ```
 
-หรือตั้งกลุ่มใหญ่จากตำแหน่ง (`position`) ก่อน แล้วค่อยเก็บรายคน:
+### แพทย์ — ดูจากคำนำหน้าชื่อ (นพ. / น.พ. / พญ. / นายแพทย์)
 
 ```sql
--- แพทย์ (กันชื่อตำแหน่งชน ทันตแพทย์ / แพทย์แผนไทย)
+-- แพทย์: จับจากคำนำหน้าชื่อ หรือตำแหน่งนายแพทย์
+-- (ระวัง: ทพ./ทพญ. = ทันตแพทย์, พท. = แพทย์แผนไทย — ไม่ใช่ DOCTOR)
 UPDATE ppchos.users SET role = 'DOCTOR'
 WHERE role IS NULL
-  AND (position LIKE '%นายแพทย์%' OR position LIKE '%นายเเพทย์%'
-       OR position LIKE 'แพทย์%')
+  AND (name LIKE 'นพ.%' OR name LIKE 'น.พ.%'
+       OR name LIKE 'พญ.%' OR name LIKE 'นายแพทย์%'
+       OR position LIKE '%นายแพทย์%' OR position LIKE '%นายเเพทย์%'
+       OR position = 'แพทย์' OR position LIKE 'แพทย์ปฏิบัติการ%')
   AND position NOT LIKE '%ทันต%'
   AND position NOT LIKE '%แผนไทย%';
+```
 
+รายชื่อแพทย์ที่พบในระบบตอนนี้ (จากข้อมูล users ณ ส.ค. 2569) — ตั้งตรงๆ รายคน:
+
+```sql
+UPDATE ppchos.users SET role = 'DOCTOR' WHERE `user` IN (
+  '2329900022631', -- นพ.ปฐวี บุญไพศาลบันดาล
+  '63960',         -- นพ.ปฐมพงศ์ นัยวิกุล
+  '68861',         -- พญ.กัณฐิกา สุริยะรัมย์
+  '73365',         -- น.พ.ณัฐชนก เชาวกิจเจริญ
+  '74994',         -- ฐิติชญา อารีย์วัฒนานนท์ (ตำแหน่ง: แพทย์)
+  '75432',         -- กิตติภัทร์ คันธะมาลย์ (นายแพทย์ปฏิบัติการ)
+  '75435',         -- นายแพทย์ปมนตร์ธรรม สนิทจันทร์
+  '75437',         -- พญ.ศศิตนันทน์ ฤทธิ์ไธสง
+  '76139',         -- นพ.ธนัชชา มีตุวงศ์
+  '77128',         -- ทัตพงศ์ วิชาพร (นายแพทย์ปฏิบัติการ)
+  '78280',         -- นพ.ต้นสาย สรวลสันต์
+  '78511',         -- นพ.คุณานนต์ ปานวงษ์
+  'jarlim',        -- นพ.เจษฎาภรณ์ คงนันทะ
+  'Jomjamwiriya',  -- พญ.วิริยา เพ็ชร์ณรงค์
+  'Krichpaphop',   -- นพ.กฤชปภพ เรืองสุวรรณ
+  'krissth',       -- นพ.กฤษฎา สุวัณณุสส์
+  'lalita',        -- พญ.ลลิตา ชุตินิรันดร์
+  'Nitidch98',     -- นพ.นิธิศ เจริญศรี
+  'onmed',         -- พญ.อรภัทร วิริยอุดมศิริ (นายแพทย์ชำนาญการพิเศษ)
+  'pheeraphat',    -- นพ.พีรพัฒน์ ภู่พิบูลย์
+  'puchit'         -- นพ.ภูชิต สุวิชาเชิดชู
+);
+
+-- ⚠️ 'sasi1998' ชื่อ "พญ.ศศิวิมล ชาติประสพ" แต่ตำแหน่ง/ทะเบียน doctor เป็น
+-- ทพญ. (ทันตแพทย์ปฏิบัติการ) → จัดเป็น DENTIST ไม่ใช่ DOCTOR
+
+-- ผอ. — ระบุรายคน (เปลี่ยน username ให้ตรงกับ ผอ. จริง)
+-- UPDATE ppchos.users SET role = 'DIRECTOR' WHERE `user` = 'xxxx';
+```
+
+### สายงานอื่น — ตั้งกลุ่มใหญ่จากตำแหน่ง (`position`) แล้วค่อยเก็บรายคน
+
+```sql
+
+-- ทันตแพทย์: คำนำหน้า ทพ./ทพญ. หรือตำแหน่งทันตแพทย์ (รวมที่สะกด ทันตแพย์)
 UPDATE ppchos.users SET role = 'DENTIST'
-WHERE role IS NULL AND (position LIKE '%ทันตแพทย์%' OR position LIKE '%ทันตแพย์%');
+WHERE role IS NULL
+  AND (name LIKE 'ทพ.%' OR name LIKE 'ทพญ.%'
+       OR position LIKE '%ทันตแพทย์%' OR position LIKE '%ทันตแพย์%');
 
 UPDATE ppchos.users SET role = 'NURSE'
 WHERE role IS NULL AND position LIKE '%พยาบาล%';
