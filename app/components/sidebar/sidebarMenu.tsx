@@ -194,6 +194,12 @@ export const DASHBOARD_GROUPS: SidebarSubGroup[] = [
         icon: ClipboardList,
         group: "claim",
       },
+      {
+        label: "แผนการเงิน (Planfin)",
+        href: "/pages/planfin",
+        icon: Wallet,
+        group: "claim",
+      },
     ],
   },
 
