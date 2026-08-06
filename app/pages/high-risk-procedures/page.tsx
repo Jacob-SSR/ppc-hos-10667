@@ -9,7 +9,7 @@ import { th } from "date-fns/locale";
 import "react-datepicker/dist/react-datepicker.css";
 import {
     Activity, Wind, Droplet, Droplets, Syringe, Stethoscope,
-    Download, Clock, Users, BedDouble, DoorOpen, AlertTriangle, RefreshCw,
+    Download, Clock, Users, BedDouble, DoorOpen, RefreshCw,
 } from "lucide-react";
 import ThaiDateInput from "@/app/components/ThaiDateInput";
 import { SectionCard, LiveBadge } from "@/app/components/dashboard/live";
@@ -108,6 +108,8 @@ export default function HighRiskProceduresPage() {
     const [data, setData] = useState<HighRiskProceduresData | null>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
+    const [opdProcFilter, setOpdProcFilter] = useState<string>("all");
+    const [ipdProcFilter, setIpdProcFilter] = useState<string>("all");
 
     const fetchData = useCallback(async () => {
         const { start, end } =
@@ -125,6 +127,9 @@ export default function HighRiskProceduresPage() {
                 throw new Error(j.error ?? `HTTP ${res.status}`);
             }
             setData(await res.json());
+            // ช่วงเวลาเปลี่ยน → ล้าง filter หัตถการ กันค้างรหัสที่ไม่มีในช่วงใหม่
+            setOpdProcFilter("all");
+            setIpdProcFilter("all");
         } catch (err) {
             setError((err as Error).message);
             setData(null);
@@ -156,30 +161,48 @@ export default function HighRiskProceduresPage() {
         [s],
     );
 
-    // จัดกลุ่มตามชนิดหัตถการ (icd9) แล้วเรียงวันที่ใหม่→เก่าในแต่ละกลุ่ม
+    // ตัวเลือก filter หัตถการ (ตามรหัสที่มีในข้อมูลจริง)
+    const procFilterOptions = (rows: { icd9: string }[]) => {
+        const codes = [...new Set(rows.map((r) => r.icd9))].sort();
+        return [
+            { key: "all", label: "ทุกหัตถการ" },
+            ...codes.map((c) => {
+                const m = PROC_META[c] ?? fallbackMeta;
+                return { key: c, label: `${m.short} (${c})` };
+            }),
+        ];
+    };
+    const opdFilterOptions = useMemo(() => procFilterOptions(data?.opd ?? []), [data]);
+    const ipdFilterOptions = useMemo(() => procFilterOptions(data?.ipd ?? []), [data]);
+
+    // filter ตามหัตถการ แล้วเรียงวันที่ใหม่สุดอยู่บน
     const sortedOpd = useMemo(
         () =>
-            [...(data?.opd ?? [])].sort(
-                (a, b) =>
-                    a.icd9.localeCompare(b.icd9) ||
-                    b.service_date.localeCompare(a.service_date) ||
-                    b.service_time.localeCompare(a.service_time),
-            ),
-        [data],
+            (data?.opd ?? [])
+                .filter((r) => opdProcFilter === "all" || r.icd9 === opdProcFilter)
+                .sort(
+                    (a, b) =>
+                        b.service_date.localeCompare(a.service_date) ||
+                        b.service_time.localeCompare(a.service_time) ||
+                        a.icd9.localeCompare(b.icd9),
+                ),
+        [data, opdProcFilter],
     );
 
     const sortedIpd = useMemo(
         () =>
-            [...(data?.ipd ?? [])].sort(
-                (a, b) =>
-                    a.icd9.localeCompare(b.icd9) ||
-                    b.service_date.localeCompare(a.service_date),
-            ),
-        [data],
+            (data?.ipd ?? [])
+                .filter((r) => ipdProcFilter === "all" || r.icd9 === ipdProcFilter)
+                .sort(
+                    (a, b) =>
+                        b.service_date.localeCompare(a.service_date) ||
+                        a.icd9.localeCompare(b.icd9),
+                ),
+        [data, ipdProcFilter],
     );
 
     const exportOpd = () => {
-        if (!data?.opd.length) return;
+        if (!sortedOpd.length) return;
         const rows = sortedOpd.map((r: HrpOpdRow) => ({
             "วันที่รับบริการ": formatThaiDate(r.service_date),
             "เวลา": r.service_time,
@@ -194,7 +217,7 @@ export default function HighRiskProceduresPage() {
         exportToExcel(rows, { filePrefix: "หัตถการเสี่ยงสูง_OPD-ER", sheetName: "OPD-ER" });
     };
     const exportIpd = () => {
-        if (!data?.ipd.length) return;
+        if (!sortedIpd.length) return;
         const rows = sortedIpd.map((r: HrpIpdRow) => ({
             "วันจำหน่าย": formatThaiDate(r.service_date),
             AN: r.an,
@@ -325,12 +348,17 @@ export default function HighRiskProceduresPage() {
             {/* OPD/ER table */}
             {data && (
                 <SectionCard
-                    title={`ผู้ป่วยนอก (OPD + ER) — ${fmt(data.opd.length)} ครั้ง`}
+                    title={`ผู้ป่วยนอก (OPD + ER) — ${fmt(sortedOpd.length)}${opdProcFilter !== "all" ? `/${fmt(data.opd.length)}` : ""} ครั้ง`}
                     icon={DoorOpen}
                     titleColor={MINT[800]}
                 >
-                    <div className="flex justify-end mb-3">
-                        <button onClick={exportOpd} disabled={!data.opd.length}
+                    <div className="flex justify-end items-center gap-2 mb-3">
+                        <Dropdown<string>
+                            value={opdProcFilter}
+                            options={opdFilterOptions}
+                            onChange={setOpdProcFilter}
+                        />
+                        <button onClick={exportOpd} disabled={!sortedOpd.length}
                             className="flex items-center gap-1.5 text-white text-sm font-semibold px-4 py-2 rounded-lg shadow-sm disabled:opacity-40"
                             style={{ backgroundColor: MINT[300] }}>
                             <Download size={15} /> Export Excel
@@ -376,12 +404,17 @@ export default function HighRiskProceduresPage() {
             {/* IPD table */}
             {data && (
                 <SectionCard
-                    title={`ผู้ป่วยใน (IPD) — ${fmt(data.ipd.length)} ครั้ง`}
+                    title={`ผู้ป่วยใน (IPD) — ${fmt(sortedIpd.length)}${ipdProcFilter !== "all" ? `/${fmt(data.ipd.length)}` : ""} ครั้ง`}
                     icon={BedDouble}
                     titleColor={MINT[800]}
                 >
-                    <div className="flex justify-end mb-3">
-                        <button onClick={exportIpd} disabled={!data.ipd.length}
+                    <div className="flex justify-end items-center gap-2 mb-3">
+                        <Dropdown<string>
+                            value={ipdProcFilter}
+                            options={ipdFilterOptions}
+                            onChange={setIpdProcFilter}
+                        />
+                        <button onClick={exportIpd} disabled={!sortedIpd.length}
                             className="flex items-center gap-1.5 text-white text-sm font-semibold px-4 py-2 rounded-lg shadow-sm disabled:opacity-40"
                             style={{ backgroundColor: MINT[300] }}>
                             <Download size={15} /> Export Excel
