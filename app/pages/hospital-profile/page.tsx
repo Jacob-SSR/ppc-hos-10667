@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   Building2,
   RefreshCw,
@@ -9,6 +9,8 @@ import {
   Stethoscope,
   Download,
   MapPin,
+  Search,
+  Filter,
 } from "lucide-react";
 import { exportToExcel } from "@/lib/exportExcel";
 
@@ -92,6 +94,90 @@ export default function HospitalProfilePage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  // ── filters ──
+  const [hiddenYears, setHiddenYears] = useState<number[]>([]);
+  const [deptFilter, setDeptFilter] = useState("");
+  const [wardFilter, setWardFilter] = useState("");
+
+  // ซ่อนได้ทุกปียกเว้นปีสุดท้าย — ต้องเหลือให้ดูอย่างน้อย 1 ปี
+  const toggleYear = (be: number) =>
+    setHiddenYears((prev) => {
+      if (prev.includes(be)) return prev.filter((y) => y !== be);
+      const next = [...prev, be];
+      return data && next.length >= data.years.length ? prev : next;
+    });
+
+  const visibleYears = useMemo(
+    () => (data ? data.years.filter((y) => !hiddenYears.includes(y.be)) : []),
+    [data, hiddenYears],
+  );
+  const visibleSummary = useMemo(
+    () =>
+      data ? data.summary.filter((s) => !hiddenYears.includes(s.be)) : [],
+    [data, hiddenYears],
+  );
+
+  const filteredOpd = useMemo(() => {
+    if (!data) return [];
+    const q = deptFilter.trim().toLowerCase();
+    if (!q) return data.opdByDepartment;
+    return data.opdByDepartment.filter((d) =>
+      d.department.toLowerCase().includes(q),
+    );
+  }, [data, deptFilter]);
+
+  const filteredIpd = useMemo(() => {
+    if (!data) return [];
+    const q = wardFilter.trim().toLowerCase();
+    if (!q) return data.ipdByWard;
+    return data.ipdByWard.filter((w) =>
+      w.ward_name.toLowerCase().includes(q),
+    );
+  }, [data, wardFilter]);
+
+  // ยอดรวมของ "แถวที่แสดงอยู่" ต่อปี — ใช้ตอนมีการกรอง
+  const opdFilteredTotals = useMemo(() => {
+    const m: Record<number, { visits: number; patients: number }> = {};
+    for (const y of visibleYears) {
+      let visits = 0;
+      let patients = 0;
+      for (const d of filteredOpd) {
+        visits += d.byYear[y.be]?.visits ?? 0;
+        patients += d.byYear[y.be]?.patients ?? 0;
+      }
+      m[y.be] = { visits, patients };
+    }
+    return m;
+  }, [filteredOpd, visibleYears]);
+
+  const ipdFilteredTotals = useMemo(() => {
+    const m: Record<
+      number,
+      { admissions: number; discharges: number; avg_los: number }
+    > = {};
+    for (const y of visibleYears) {
+      let admissions = 0;
+      let discharges = 0;
+      let patientDays = 0;
+      for (const w of filteredIpd) {
+        const c = w.byYear[y.be];
+        if (!c) continue;
+        admissions += c.admissions;
+        discharges += c.discharges;
+        patientDays += c.patient_days;
+      }
+      m[y.be] = {
+        admissions,
+        discharges,
+        avg_los:
+          discharges > 0
+            ? Math.round((patientDays / discharges) * 10) / 10
+            : 0,
+      };
+    }
+    return m;
+  }, [filteredIpd, visibleYears]);
+
   const fetchData = async () => {
     setLoading(true);
     setError(null);
@@ -136,12 +222,15 @@ export default function HospitalProfilePage() {
     );
   }
 
-  const { info, years, summary, opdByDepartment, ipdByWard } = data;
+  const { info } = data;
+  const allYears = data.years;
+  const opdFilterActive = deptFilter.trim() !== "";
+  const wardFilterActive = wardFilter.trim() !== "";
 
   const exportOpd = () => {
-    const rows = opdByDepartment.map((d) => {
+    const rows = filteredOpd.map((d) => {
       const row: Record<string, unknown> = { แผนก: d.department };
-      for (const y of years) {
+      for (const y of visibleYears) {
         row[`ปีงบ ${yearLabel(y)} (ครั้ง)`] = d.byYear[y.be]?.visits ?? 0;
         row[`ปีงบ ${yearLabel(y)} (คน)`] = d.byYear[y.be]?.patients ?? 0;
       }
@@ -155,9 +244,9 @@ export default function HospitalProfilePage() {
   };
 
   const exportIpd = () => {
-    const rows = ipdByWard.map((w) => {
+    const rows = filteredIpd.map((w) => {
       const row: Record<string, unknown> = { หอผู้ป่วย: w.ward_name };
-      for (const y of years) {
+      for (const y of visibleYears) {
         const c = w.byYear[y.be];
         row[`ปีงบ ${yearLabel(y)} รับไว้`] = c?.admissions ?? 0;
         row[`ปีงบ ${yearLabel(y)} จำหน่าย`] = c?.discharges ?? 0;
@@ -203,8 +292,8 @@ export default function HospitalProfilePage() {
             ปีย้อนหลัง
           </h1>
           <p className="text-xs text-gray-400 mt-1">
-            ข้อมูลจาก HOSxP · ปีงบประมาณ {years[0].be}–
-            {years[years.length - 1].be} (1 ต.ค. – 30 ก.ย.) ·
+            ข้อมูลจาก HOSxP · ปีงบประมาณ {allYears[0].be}–
+            {allYears[allYears.length - 1].be} (1 ต.ค. – 30 ก.ย.) ·
             ปีงบปัจจุบันเป็นยอดสะสมถึงวันนี้
           </p>
         </div>
@@ -214,6 +303,41 @@ export default function HospitalProfilePage() {
         >
           <RefreshCw size={14} /> รีเฟรช
         </button>
+
+        {/* ── filter ปีงบประมาณ ── */}
+        <div className="w-full flex flex-wrap items-center gap-1.5 pt-1 border-t border-gray-100">
+          <span className="text-xs text-gray-500 flex items-center gap-1">
+            <Filter size={13} /> แสดงปีงบ:
+          </span>
+          {allYears.map((y) => {
+            const active = !hiddenYears.includes(y.be);
+            return (
+              <button
+                key={y.be}
+                onClick={() => toggleYear(y.be)}
+                className="text-xs px-2.5 py-1 rounded-full border transition-colors"
+                style={
+                  active
+                    ? {
+                        background: "#f0faf5",
+                        color: "#085041",
+                        borderColor: "#9FE1CB",
+                      }
+                    : {
+                        background: "#fff",
+                        color: "#9ca3af",
+                        borderColor: "#e5e7eb",
+                      }
+                }
+              >
+                {yearLabel(y)}
+              </button>
+            );
+          })}
+          <span className="text-[11px] text-gray-400">
+            (กดเพื่อซ่อน/แสดง — มีผลทั้งตารางและ Excel)
+          </span>
+        </div>
       </div>
 
       {/* ── ข้อมูลทั่วไป ── */}
@@ -293,7 +417,7 @@ export default function HospitalProfilePage() {
                 >
                   รายการ
                 </th>
-                {years.map((y) => (
+                {visibleYears.map((y) => (
                   <th
                     key={y.be}
                     className="px-3 py-2 text-center font-semibold border-b-2 whitespace-nowrap"
@@ -313,7 +437,7 @@ export default function HospitalProfilePage() {
                   <td className="px-3 py-2 whitespace-nowrap text-gray-700">
                     {m.label}
                   </td>
-                  {summary.map((s) => (
+                  {visibleSummary.map((s) => (
                     <td
                       key={s.be}
                       className="px-3 py-2 text-center tabular-nums font-medium text-gray-800"
@@ -341,12 +465,31 @@ export default function HospitalProfilePage() {
           >
             <Stethoscope size={16} /> ผู้ป่วยนอก (OPD) แยกรายแผนก
           </h2>
-          <button
-            onClick={exportOpd}
-            className="flex items-center gap-1.5 border border-gray-200 rounded-lg px-3 py-1.5 text-xs text-gray-600 hover:bg-gray-50"
-          >
-            <Download size={13} /> Export Excel
-          </button>
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="relative">
+              <Search
+                size={13}
+                className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400"
+              />
+              <input
+                value={deptFilter}
+                onChange={(e) => setDeptFilter(e.target.value)}
+                placeholder="กรองแผนก..."
+                className="pl-8 pr-3 py-1.5 text-xs border border-gray-200 rounded-lg w-44 focus:outline-none focus:border-[#0f6e56]"
+              />
+            </div>
+            {opdFilterActive && (
+              <span className="text-[11px] text-gray-400">
+                แสดง {filteredOpd.length}/{data.opdByDepartment.length} แผนก
+              </span>
+            )}
+            <button
+              onClick={exportOpd}
+              className="flex items-center gap-1.5 border border-gray-200 rounded-lg px-3 py-1.5 text-xs text-gray-600 hover:bg-gray-50"
+            >
+              <Download size={13} /> Export Excel
+            </button>
+          </div>
         </div>
         <div className="overflow-x-auto">
           <table className="min-w-full text-sm border-collapse">
@@ -359,7 +502,7 @@ export default function HospitalProfilePage() {
                 >
                   แผนก
                 </th>
-                {years.map((y) => (
+                {visibleYears.map((y) => (
                   <th
                     key={y.be}
                     colSpan={2}
@@ -371,7 +514,7 @@ export default function HospitalProfilePage() {
                 ))}
               </tr>
               <tr>
-                {years.flatMap((y) => [
+                {visibleYears.flatMap((y) => [
                   <th
                     key={`${y.be}-v`}
                     className="px-3 py-1.5 text-center text-xs font-medium border-b-2"
@@ -390,7 +533,7 @@ export default function HospitalProfilePage() {
               </tr>
             </thead>
             <tbody>
-              {opdByDepartment.map((d) => (
+              {filteredOpd.map((d) => (
                 <tr
                   key={d.depcode}
                   className="border-b border-gray-100 hover:bg-gray-50"
@@ -398,7 +541,7 @@ export default function HospitalProfilePage() {
                   <td className="px-3 py-2 whitespace-nowrap text-gray-700">
                     {d.department}
                   </td>
-                  {years.flatMap((y) => [
+                  {visibleYears.flatMap((y) => [
                     <td
                       key={`${y.be}-v`}
                       className="px-3 py-2 text-center tabular-nums"
@@ -414,25 +557,33 @@ export default function HospitalProfilePage() {
                   ])}
                 </tr>
               ))}
-              {/* รวม */}
+              {/* รวม — ตอนกรองอยู่ใช้ผลรวมเฉพาะแถวที่แสดง */}
               <tr className="border-t-2" style={{ borderColor: "#9FE1CB" }}>
                 <td className="px-3 py-2 font-bold" style={{ color: GREEN }}>
-                  รวมทั้งโรงพยาบาล
+                  {opdFilterActive ? "รวมแผนกที่แสดง" : "รวมทั้งโรงพยาบาล"}
                 </td>
-                {summary.flatMap((s) => [
+                {visibleSummary.flatMap((s) => [
                   <td
                     key={`${s.be}-v`}
                     className="px-3 py-2 text-center tabular-nums font-bold"
                     style={{ color: GREEN }}
                   >
-                    {num(s.opd_visits)}
+                    {num(
+                      opdFilterActive
+                        ? opdFilteredTotals[s.be]?.visits
+                        : s.opd_visits,
+                    )}
                   </td>,
                   <td
                     key={`${s.be}-p`}
                     className="px-3 py-2 text-center tabular-nums font-bold"
                     style={{ color: GREEN }}
                   >
-                    {num(s.opd_patients)}
+                    {num(
+                      opdFilterActive
+                        ? opdFilteredTotals[s.be]?.patients
+                        : s.opd_patients,
+                    )}
                   </td>,
                 ])}
               </tr>
@@ -441,8 +592,10 @@ export default function HospitalProfilePage() {
         </div>
         <p className="text-[11px] text-gray-400 mt-2">
           * นับจากการมารับบริการ (ovst) แยกตามแผนกหลักของ visit ·
-          &quot;คน&quot; ในแถวรวมนับไม่ซ้ำข้ามแผนก
+          &quot;คน&quot; ในแถวรวมทั้งโรงพยาบาลนับไม่ซ้ำข้ามแผนก
           จึงไม่เท่ากับผลรวมของแต่ละแผนก
+          {opdFilterActive &&
+            " · ตอนกรองอยู่ แถวรวมเป็นผลบวกของแผนกที่แสดง (คนอาจซ้ำข้ามแผนก)"}
         </p>
       </div>
 
@@ -455,12 +608,31 @@ export default function HospitalProfilePage() {
           >
             <BedDouble size={16} /> ผู้ป่วยใน (IPD) แยกรายหอผู้ป่วย
           </h2>
-          <button
-            onClick={exportIpd}
-            className="flex items-center gap-1.5 border border-gray-200 rounded-lg px-3 py-1.5 text-xs text-gray-600 hover:bg-gray-50"
-          >
-            <Download size={13} /> Export Excel
-          </button>
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="relative">
+              <Search
+                size={13}
+                className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400"
+              />
+              <input
+                value={wardFilter}
+                onChange={(e) => setWardFilter(e.target.value)}
+                placeholder="กรองหอผู้ป่วย..."
+                className="pl-8 pr-3 py-1.5 text-xs border border-gray-200 rounded-lg w-44 focus:outline-none focus:border-[#0f6e56]"
+              />
+            </div>
+            {wardFilterActive && (
+              <span className="text-[11px] text-gray-400">
+                แสดง {filteredIpd.length}/{data.ipdByWard.length} หอ
+              </span>
+            )}
+            <button
+              onClick={exportIpd}
+              className="flex items-center gap-1.5 border border-gray-200 rounded-lg px-3 py-1.5 text-xs text-gray-600 hover:bg-gray-50"
+            >
+              <Download size={13} /> Export Excel
+            </button>
+          </div>
         </div>
         <div className="overflow-x-auto">
           <table className="min-w-full text-sm border-collapse">
@@ -473,7 +645,7 @@ export default function HospitalProfilePage() {
                 >
                   หอผู้ป่วย
                 </th>
-                {years.map((y) => (
+                {visibleYears.map((y) => (
                   <th
                     key={y.be}
                     colSpan={3}
@@ -485,7 +657,7 @@ export default function HospitalProfilePage() {
                 ))}
               </tr>
               <tr>
-                {years.flatMap((y) =>
+                {visibleYears.flatMap((y) =>
                   ["รับไว้", "จำหน่าย", "LOS"].map((h) => (
                     <th
                       key={`${y.be}-${h}`}
@@ -499,7 +671,7 @@ export default function HospitalProfilePage() {
               </tr>
             </thead>
             <tbody>
-              {ipdByWard.map((w) => (
+              {filteredIpd.map((w) => (
                 <tr
                   key={w.ward}
                   className="border-b border-gray-100 hover:bg-gray-50"
@@ -507,7 +679,7 @@ export default function HospitalProfilePage() {
                   <td className="px-3 py-2 whitespace-nowrap text-gray-700">
                     {w.ward_name}
                   </td>
-                  {years.flatMap((y) => {
+                  {visibleYears.flatMap((y) => {
                     const c = w.byYear[y.be];
                     return [
                       <td
@@ -532,32 +704,42 @@ export default function HospitalProfilePage() {
                   })}
                 </tr>
               ))}
-              {/* รวม */}
+              {/* รวม — ตอนกรองอยู่ใช้ผลรวมเฉพาะแถวที่แสดง */}
               <tr className="border-t-2" style={{ borderColor: "#9FE1CB" }}>
                 <td className="px-3 py-2 font-bold" style={{ color: GREEN }}>
-                  รวมทั้งโรงพยาบาล
+                  {wardFilterActive ? "รวมหอที่แสดง" : "รวมทั้งโรงพยาบาล"}
                 </td>
-                {summary.flatMap((s) => [
+                {visibleSummary.flatMap((s) => [
                   <td
                     key={`${s.be}-a`}
                     className="px-3 py-2 text-center tabular-nums font-bold"
                     style={{ color: GREEN }}
                   >
-                    {num(s.ipd_admissions)}
+                    {num(
+                      wardFilterActive
+                        ? ipdFilteredTotals[s.be]?.admissions
+                        : s.ipd_admissions,
+                    )}
                   </td>,
                   <td
                     key={`${s.be}-d`}
                     className="px-3 py-2 text-center tabular-nums font-bold"
                     style={{ color: GREEN }}
                   >
-                    {num(s.ipd_discharges)}
+                    {num(
+                      wardFilterActive
+                        ? ipdFilteredTotals[s.be]?.discharges
+                        : s.ipd_discharges,
+                    )}
                   </td>,
                   <td
                     key={`${s.be}-l`}
                     className="px-3 py-2 text-center tabular-nums font-bold"
                     style={{ color: GREEN }}
                   >
-                    {s.ipd_avg_los}
+                    {wardFilterActive
+                      ? (ipdFilteredTotals[s.be]?.avg_los ?? "-")
+                      : s.ipd_avg_los}
                   </td>,
                 ])}
               </tr>
