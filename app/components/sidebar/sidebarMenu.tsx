@@ -388,6 +388,18 @@ export const PRIMARY_CARE_ITEMS: SidebarItem[] = [
     icon: HeartPulse,
     group: "primarycare",
   },
+  {
+    label: "รายงานโรค 506 (HOSxP)",
+    href: "/pages/d506-report",
+    icon: ClipboardList,
+    group: "primarycare",
+  },
+  {
+    label: "D506 Dashboard (ทะเบียนระบาดฯ)",
+    href: "/pages/d506-dashboard",
+    icon: Activity,
+    group: "primarycare",
+  },
 ];
 
 // =========================

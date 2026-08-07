@@ -24,6 +24,7 @@ const OPTIONAL_ENV = [
   "GOOGLE_PRIVATE_KEY", // Google Sheets
   "GOOGLE_SERVICE_ACCOUNT_EMAIL", // Google Sheets
   "GOOGLE_SHEET_ID", // Google Sheets
+  "D506_SPREADSHEET_ID", // ทะเบียน 506 (D506 Dashboard) — มี default ในโค้ดถ้าไม่ตั้ง
 ] as const;
 
 export function validateEnv(): void {

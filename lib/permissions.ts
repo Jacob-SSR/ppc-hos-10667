@@ -194,6 +194,10 @@ export const FEATURE_PATHS = {
     "/api/death-not-discharged",
     "/pages/dmht-new",
     "/api/dmht-new",
+    "/pages/d506-report",
+    "/api/d506-report",
+    "/pages/d506-dashboard",
+    "/api/d506-sheets",
   ],
 
   // PPA
