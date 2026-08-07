@@ -262,6 +262,39 @@ export default function HospitalProfilePage() {
     });
   };
 
+  // chip เลือกปีงบ — วางซ้ำในทุกการ์ดตาราง ให้เห็นชัดตรงจุดที่ใช้งาน
+  const yearChips = () => (
+    <div className="flex flex-wrap items-center gap-1.5">
+      <span className="text-xs text-gray-500 flex items-center gap-1">
+        <Filter size={14} /> ปีงบ:
+      </span>
+      {allYears.map((y) => {
+        const active = !hiddenYears.includes(y.be);
+        return (
+          <button
+            key={y.be}
+            onClick={() => toggleYear(y.be)}
+            title={active ? "กดเพื่อซ่อนปีนี้" : "กดเพื่อแสดงปีนี้"}
+            className="text-sm px-3 py-1 rounded-full border font-semibold transition-colors"
+            style={
+              active
+                ? { background: GREEN, color: "#fff", borderColor: GREEN }
+                : {
+                    background: "#fff",
+                    color: "#9ca3af",
+                    borderColor: "#d1d5db",
+                    textDecoration: "line-through",
+                  }
+            }
+          >
+            {active ? "✓ " : ""}
+            {yearLabel(y)}
+          </button>
+        );
+      })}
+    </div>
+  );
+
   const summaryMetrics: {
     label: string;
     get: (s: YearSummary) => string;
@@ -303,41 +336,6 @@ export default function HospitalProfilePage() {
         >
           <RefreshCw size={14} /> รีเฟรช
         </button>
-
-        {/* ── filter ปีงบประมาณ ── */}
-        <div className="w-full flex flex-wrap items-center gap-1.5 pt-1 border-t border-gray-100">
-          <span className="text-xs text-gray-500 flex items-center gap-1">
-            <Filter size={13} /> แสดงปีงบ:
-          </span>
-          {allYears.map((y) => {
-            const active = !hiddenYears.includes(y.be);
-            return (
-              <button
-                key={y.be}
-                onClick={() => toggleYear(y.be)}
-                className="text-xs px-2.5 py-1 rounded-full border transition-colors"
-                style={
-                  active
-                    ? {
-                        background: "#f0faf5",
-                        color: "#085041",
-                        borderColor: "#9FE1CB",
-                      }
-                    : {
-                        background: "#fff",
-                        color: "#9ca3af",
-                        borderColor: "#e5e7eb",
-                      }
-                }
-              >
-                {yearLabel(y)}
-              </button>
-            );
-          })}
-          <span className="text-[11px] text-gray-400">
-            (กดเพื่อซ่อน/แสดง — มีผลทั้งตารางและ Excel)
-          </span>
-        </div>
       </div>
 
       {/* ── ข้อมูลทั่วไป ── */}
@@ -401,12 +399,15 @@ export default function HospitalProfilePage() {
 
       {/* ── สรุปภาพรวมรายปี ── */}
       <div className="bg-white border border-gray-200 rounded-2xl shadow-sm p-5">
-        <h2
-          className="text-sm font-bold mb-4 flex items-center gap-2"
-          style={{ color: GREEN }}
-        >
-          <Users size={16} /> สรุปภาพรวมการให้บริการรายปีงบประมาณ
-        </h2>
+        <div className="flex flex-wrap items-center justify-between gap-2 mb-4">
+          <h2
+            className="text-sm font-bold flex items-center gap-2"
+            style={{ color: GREEN }}
+          >
+            <Users size={16} /> สรุปภาพรวมการให้บริการรายปีงบประมาณ
+          </h2>
+          {yearChips()}
+        </div>
         <div className="overflow-x-auto">
           <table className="min-w-full text-sm border-collapse">
             <thead>
@@ -491,6 +492,7 @@ export default function HospitalProfilePage() {
             </button>
           </div>
         </div>
+        <div className="mb-3">{yearChips()}</div>
         <div className="overflow-x-auto">
           <table className="min-w-full text-sm border-collapse">
             <thead>
@@ -634,6 +636,7 @@ export default function HospitalProfilePage() {
             </button>
           </div>
         </div>
+        <div className="mb-3">{yearChips()}</div>
         <div className="overflow-x-auto">
           <table className="min-w-full text-sm border-collapse">
             <thead>
