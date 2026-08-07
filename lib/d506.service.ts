@@ -104,7 +104,9 @@ const asDate = (v: string | Date | null): string => {
   }
   return String(v).slice(0, 10);
 };
-const s = (v: string | null): string => (v ?? "").trim();
+// coerce ทุกชนิด → string ก่อน trim (บางคอลัมน์ HOSxP เช่น ptstat เป็นตัวเลข/Buffer
+// ถ้าเรียก .trim() ตรง ๆ จะพัง "x.trim is not a function")
+const s = (v: unknown): string => (v == null ? "" : String(v).trim());
 
 // ─── Query หลัก ───────────────────────────────────────────────────────────────
 async function fetchReport(start: string, end: string): Promise<D506Report> {
@@ -160,7 +162,7 @@ async function fetchReport(start: string, end: string): Promise<D506Report> {
     prefix: s(r.pname),
     fname: s(r.fname),
     lname: s(r.lname),
-    sex: r.sex === "1" ? "ชาย" : "หญิง",
+    sex: s(r.sex) === "1" ? "ชาย" : "หญิง",
     dob: asDate(r.birthday),
     age: r.age != null ? Number(r.age) : null,
     house: s(r.house),
@@ -174,7 +176,7 @@ async function fetchReport(start: string, end: string): Promise<D506Report> {
     icd10: s(r.icd10),
     ptype: s(r.ptype),
     status: PTSTAT_LABEL[s(r.ptstat)] ?? s(r.ptstat),
-    death: r.is_dead === 1,
+    death: Number(r.is_dead) === 1,
   }));
 
   // summary รายโรค
