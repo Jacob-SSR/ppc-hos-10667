@@ -51,6 +51,12 @@ export const DASHBOARD_GROUPS: SidebarSubGroup[] = [
         group: "main",
       },
       {
+        label: "ข้อมูลทั่วไป & สถิติ OPD/IPD 3 ปี",
+        href: "/pages/hospital-profile",
+        icon: Building2,
+        group: "main",
+      },
+      {
         label: "สถานะผู้ป่วยตามแผนก",
         href: "/pages/dept-status",
         icon: Building2,

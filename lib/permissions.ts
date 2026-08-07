@@ -29,6 +29,8 @@ export const FEATURE_PATHS = {
   CORE: [
     "/pages/dashboard",
     "/api/dashboard",
+    "/pages/hospital-profile",
+    "/api/hospital-profile",
     "/api/ipd",
     "/pages/dept-status",
     "/api/dept-status",
