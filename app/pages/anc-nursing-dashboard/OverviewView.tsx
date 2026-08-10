@@ -428,15 +428,15 @@ export default function AncNursingDashboardOverview() {
                         <KpiCard icon={CalendarDays} label="ฝากครรภ์รายใหม่" value={fmt(s.newRegister)} sub="ในช่วงเวลา" accent="#065F46" bg="#D1FAE5" />
                         <KpiCard icon={Activity} label="รายเก่า (ครั้ง)" value={fmt(s.oldAncVisits)} accent="#1E40AF" bg="#DBEAFE" />
                         <KpiCard icon={HeartPulse} label="อายุเฉลี่ย" value={`${s.avgAge}`} sub="ปี (บัญชี 2)" accent="#854D0E" bg="#FEF9C3" />
-                        <KpiCard icon={Stethoscope} label="ครบ 8 ครั้งคุณภาพ" value={fmt(s.quality8)} accent="#134E4A" bg="#CCFBF1" />
+                        <KpiCard icon={Stethoscope} label="ครบ 8 ครั้งคุณภาพ" value={fmt(s.quality8)} sub="รับบริการในช่วง" accent="#134E4A" bg="#CCFBF1" />
                         <KpiCard icon={BedDouble} label="ฝากครรภ์แล้ว Admit" value={fmt(s.admittedAfterAnc)} accent="#5B21B6" bg="#EDE9FE" />
                         <KpiCard icon={PhoneOutgoing} label="ส่งต่อ (ระบุ Diag)" value={fmt(s.referDiag)} accent="#9A3412" bg="#FFF7ED" />
                     </div>
 
                     <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
                         <KpiCard icon={Banknote} label="รายได้งานฝากครรภ์" value={fmt(dm?.revenue.total ?? 0)} sub="บาท (ในช่วง)" accent="#065F46" bg="#D1FAE5" />
-                        <KpiCard icon={ScanLine} label="ฝากครั้งแรก GA < 12 สัปดาห์" value={fmt(s.firstAncUnder12wk)} accent="#0369A1" bg="#E0F2FE" />
-                        <KpiCard icon={Users} label="หญิงตั้งครรภ์ในบัญชี 2" value={fmt(s.ancActiveTotal)} sub="ยังไม่คลอด" accent="#1a5233" bg="#f0faf4" />
+                        <KpiCard icon={ScanLine} label="ฝากครั้งแรก GA < 12 สัปดาห์" value={fmt(s.firstAncUnder12wk)} sub="จากรายใหม่ในช่วง" accent="#0369A1" bg="#E0F2FE" />
+                        <KpiCard icon={Users} label="หญิงตั้งครรภ์ในบัญชี 2" value={fmt(s.ancActiveTotal)} sub="ยังไม่คลอด · รับบริการในช่วง" accent="#1a5233" bg="#f0faf4" />
                         <KpiCard icon={AlertTriangle} label="ภาวะเสี่ยง (HT+GDM+ซีด+อื่นๆ)" value={fmt(s.htn + s.gdma1 + s.gdma2 + s.riskOther + (aa?.total ?? 0) + (hb?.total ?? 0))} accent="#A32D2D" bg="#FCEBEB" />
                         <KpiCard icon={Droplets} label="ซีด HCT < 33%" value={fmt(aa?.total ?? 0)} sub={`จากตรวจ ${fmt(aa?.totalTested ?? 0)} ราย`} accent="#A32D2D" bg="#FCEBEB" />
                         <KpiCard icon={Droplets} label="ซีด Hb < 11" value={fmt(hb?.total ?? 0)} sub={`จากตรวจ ${fmt(hb?.totalTested ?? 0)} ราย`} accent="#9A3412" bg="#FFF7ED" />

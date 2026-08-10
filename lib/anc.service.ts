@@ -122,25 +122,37 @@ export async function getAncSummary(
   );
 
   // ── 1.3 person_anc (บัญชี 2 ที่ยังไม่คลอด) ──
+  //        นับเฉพาะรายที่ "ลงทะเบียนหรือมารับบริการ" ในช่วงเวลาที่เลือก
+  //        เพื่อให้ตัวเลขเปลี่ยนตามตัวกรองวันที่ (ไม่ใช่ยอดสะสมทั้งบัญชี)
   const [[anc]] = await db.query<RowDataPacket[]>(
     `
     SELECT
       COUNT(*)                                                          AS ancActiveTotal,
       ROUND(AVG(p.age_y), 1)                                            AS avgAge,
-      SUM(CASE WHEN a.service_count >= ? THEN 1 ELSE 0 END)             AS quality8,
-      SUM(CASE WHEN TIMESTAMPDIFF(WEEK, a.lmp, a.anc_register_date) < 12
-               AND a.lmp IS NOT NULL THEN 1 ELSE 0 END)                 AS firstAncUnder12wk
+      SUM(CASE WHEN a.service_count >= ? THEN 1 ELSE 0 END)             AS quality8
     FROM person_anc a
     INNER JOIN person p ON p.person_id = a.person_id
     WHERE (a.discharge <> 'Y' OR a.discharge IS NULL)
+      AND (
+        a.anc_register_date BETWEEN ? AND ?
+        OR EXISTS (
+          SELECT 1 FROM person_anc_service s
+          WHERE s.person_anc_id = a.person_anc_id
+            AND s.anc_service_date BETWEEN ? AND ?
+        )
+      )
     `,
-    [QUALITY_VISIT_MIN],
+    [QUALITY_VISIT_MIN, start, end, start, end],
   );
 
-  // ── 1.4 รายใหม่ ──
+  // ── 1.4 รายใหม่ + ฝากครั้งแรก GA < 12 สัปดาห์ (จากรายใหม่ในช่วง) ──
   const [[reg]] = await db.query<RowDataPacket[]>(
     `
-    SELECT COUNT(*) AS newRegister
+    SELECT
+      COUNT(*) AS newRegister,
+      SUM(CASE WHEN a.lmp IS NOT NULL
+               AND TIMESTAMPDIFF(WEEK, a.lmp, a.anc_register_date) < 12
+               THEN 1 ELSE 0 END) AS firstAncUnder12wk
     FROM person_anc a
     WHERE a.anc_register_date BETWEEN ? AND ?
     `,
@@ -217,7 +229,7 @@ export async function getAncSummary(
     admittedAfterAnc: n(adm.admittedAfterAnc),
     avgAge: n(anc.avgAge),
     newRegister: n(reg.newRegister),
-    firstAncUnder12wk: n(anc.firstAncUnder12wk),
+    firstAncUnder12wk: n(reg.firstAncUnder12wk),
     oldAncVisits: n(oldv.oldAncVisits),
     quality8: n(anc.quality8),
     age15to19: n(dx.teen15to19),
