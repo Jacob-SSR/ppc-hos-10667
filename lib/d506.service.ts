@@ -12,10 +12,7 @@ export interface D506PatientRow {
   reportDate: string; // วันที่รับรายงาน
   vstdate: string;
   onsetDate: string; // วันที่เริ่มป่วย
-<<<<<<< HEAD
-=======
   dxDate: string; // วันที่วินิจฉัย (surveil_member.diagnosis_date)
->>>>>>> afce280 (feat(d506): เพิ่มรายงานโรค 506 (HOSxP) + D506 Dashboard (Google Sheet))
   hn: string;
   cid: string;
   prefix: string;
@@ -61,16 +58,6 @@ export interface D506Report {
   patients: D506PatientRow[];
 }
 
-<<<<<<< HEAD
-// ─── HOSxP status code (ptstat) → ข้อความ ─────────────────────────────────────
-// surveil_member.ptstat: 1=หาย, 3=กำลังรักษา/ยังไม่หาย, 4=ไม่ทราบผล, 5=ตาย/ส่งต่อ
-const PTSTAT_LABEL: Record<string, string> = {
-  "1": "หาย",
-  "2": "ยังมีอาการ",
-  "3": "กำลังรักษา",
-  "4": "ไม่ทราบผล",
-  "5": "เสียชีวิต/ส่งต่อ",
-=======
 // ─── สถานะผู้ป่วย (surveil_member.ptstat) ──────────────────────────────────────
 // ปกติดึงจากตาราง report506status ใน HOSxP (join ใน query) — ตัวนี้เป็น fallback
 // เผื่อ join ไม่ติด/ตารางไม่มี. ตรงตาม report506status: 1=หาย 2=ตาย 3=ยังรักษา 4=ไม่ทราบ 5=มีชีวิต
@@ -80,7 +67,6 @@ const PTSTAT_LABEL: Record<string, string> = {
   "3": "ยังรักษา",
   "4": "ไม่ทราบ",
   "5": "มีชีวิต",
->>>>>>> afce280 (feat(d506): เพิ่มรายงานโรค 506 (HOSxP) + D506 Dashboard (Google Sheet))
 };
 
 // ─── Raw row จาก SQL ──────────────────────────────────────────────────────────
@@ -88,10 +74,7 @@ interface RawRow {
   report_date: string | Date | null;
   vstdate: string | Date | null;
   begin_date: string | Date | null;
-<<<<<<< HEAD
-=======
   diagnosis_date: string | Date | null;
->>>>>>> afce280 (feat(d506): เพิ่มรายงานโรค 506 (HOSxP) + D506 Dashboard (Google Sheet))
   hn: string | null;
   cid: string | null;
   pname: string | null;
@@ -110,10 +93,7 @@ interface RawRow {
   icd10: string | null;
   ptype: string | null;
   ptstat: string | null;
-<<<<<<< HEAD
-=======
   status_name: string | null; // จากตาราง report506status
->>>>>>> afce280 (feat(d506): เพิ่มรายงานโรค 506 (HOSxP) + D506 Dashboard (Google Sheet))
   is_dead: number | null;
 }
 
@@ -138,30 +118,19 @@ async function fetchReport(start: string, end: string): Promise<D506Report> {
   const [rawRows] = await db.query(
     `
     SELECT
-<<<<<<< HEAD
-      s.report_date, s.vstdate, s.begin_date,
-=======
       s.report_date, s.vstdate, s.begin_date, s.diagnosis_date,
->>>>>>> afce280 (feat(d506): เพิ่มรายงานโรค 506 (HOSxP) + D506 Dashboard (Google Sheet))
       s.hn, p.cid, p.pname, p.fname, p.lname, p.sex, p.birthday,
       TIMESTAMPDIFF(YEAR, p.birthday, s.vstdate) AS age,
       s.addr AS house, s.moo,
       t3.name AS tambon, t2.name AS amphoe, t1.name AS province,
       n.name AS disease506,
       s.code506, s.pdx AS icd10, s.department AS ptype, s.ptstat,
-<<<<<<< HEAD
-      IF(s.death_date IS NOT NULL, 1, 0) AS is_dead
-    FROM surveil_member s
-    LEFT JOIN patient p       ON p.hn = s.hn
-    LEFT JOIN name506  n      ON n.code506 = s.code506
-=======
       rs.name AS status_name,
       IF(s.death_date IS NOT NULL, 1, 0) AS is_dead
     FROM surveil_member s
     LEFT JOIN patient p            ON p.hn = s.hn
     LEFT JOIN name506  n           ON n.code506 = s.code506
     LEFT JOIN report506status rs   ON rs.code = s.ptstat
->>>>>>> afce280 (feat(d506): เพิ่มรายงานโรค 506 (HOSxP) + D506 Dashboard (Google Sheet))
     LEFT JOIN thaiaddress t1  ON t1.chwpart = s.chwpart AND t1.amppart = '00'     AND t1.tmbpart = '00'
     LEFT JOIN thaiaddress t2  ON t2.chwpart = s.chwpart AND t2.amppart = s.amppart AND t2.tmbpart = '00'
     LEFT JOIN thaiaddress t3  ON t3.chwpart = s.chwpart AND t3.amppart = s.amppart AND t3.tmbpart = s.tmbpart
@@ -194,10 +163,7 @@ async function fetchReport(start: string, end: string): Promise<D506Report> {
     reportDate: asDate(r.report_date),
     vstdate: asDate(r.vstdate),
     onsetDate: asDate(r.begin_date),
-<<<<<<< HEAD
-=======
     dxDate: asDate(r.diagnosis_date),
->>>>>>> afce280 (feat(d506): เพิ่มรายงานโรค 506 (HOSxP) + D506 Dashboard (Google Sheet))
     hn: s(r.hn),
     cid: s(r.cid),
     prefix: s(r.pname),
@@ -216,15 +182,10 @@ async function fetchReport(start: string, end: string): Promise<D506Report> {
     code506: s(r.code506),
     icd10: s(r.icd10),
     ptype: s(r.ptype),
-<<<<<<< HEAD
-    status: PTSTAT_LABEL[s(r.ptstat)] ?? s(r.ptstat),
-    death: Number(r.is_dead) === 1,
-=======
     // สถานะ: ใช้ชื่อจาก report506status ก่อน ถ้าไม่มีค่อย fallback map ในโค้ด
     status: s(r.status_name) || PTSTAT_LABEL[s(r.ptstat)] || s(r.ptstat),
     // เสียชีวิต = มีวันตาย หรือ ptstat=2 (ตาย) — บางเคสลงสถานะตายแต่ไม่ได้กรอกวันตาย
     death: Number(r.is_dead) === 1 || s(r.ptstat) === "2",
->>>>>>> afce280 (feat(d506): เพิ่มรายงานโรค 506 (HOSxP) + D506 Dashboard (Google Sheet))
   }));
 
   // summary รายโรค

@@ -3,22 +3,14 @@
 // พอร์ตจากต้นฉบับ d506_demo.html มาเป็น React + recharts และดึงข้อมูลจริงผ่าน /api/d506-report
 "use client";
 
-<<<<<<< HEAD
-import { useEffect, useMemo, useState } from "react";
-=======
 import { useCallback, useEffect, useMemo, useState } from "react";
->>>>>>> afce280 (feat(d506): เพิ่มรายงานโรค 506 (HOSxP) + D506 Dashboard (Google Sheet))
 import {
   BarChart, Bar, Cell, XAxis, YAxis, Tooltip, CartesianGrid,
   ResponsiveContainer, LineChart, Line,
 } from "recharts";
 import {
   Users, Mars, Venus, Skull, Activity, RefreshCw, FileDown, Search,
-<<<<<<< HEAD
-  ClipboardList, TrendingUp, Trophy,
-=======
   ClipboardList, TrendingUp, Trophy, Layers,
->>>>>>> afce280 (feat(d506): เพิ่มรายงานโรค 506 (HOSxP) + D506 Dashboard (Google Sheet))
 } from "lucide-react";
 import { exportToExcel } from "@/lib/exportExcel";
 import { fmtDate, getBangkokToday, THAI_MONTHS_SHORT } from "@/lib/thaiDate";
@@ -34,8 +26,6 @@ const MINT = "#1a5233";
 const MINT_ACCENT = "#3aa36a";
 const MINT_BORDER = "#cfe7d8";
 
-<<<<<<< HEAD
-=======
 // ── ฟิลด์ที่ใช้เป็น "คีย์ตัดซ้ำ" (ติ๊กเลือกเองได้) ────────────────────────────
 const KEY_FIELDS: { id: string; label: string; get: (p: D506PatientRow) => string }[] = [
   { id: "name", label: "ชื่อ-สกุล", get: (p) => `${p.prefix}${p.fname} ${p.lname}`.trim() },
@@ -48,7 +38,6 @@ const KEY_FIELDS: { id: string; label: string; get: (p: D506PatientRow) => strin
 ];
 const DEFAULT_KEYS = ["name", "dxDate", "disease", "status", "ptype"];
 
->>>>>>> afce280 (feat(d506): เพิ่มรายงานโรค 506 (HOSxP) + D506 Dashboard (Google Sheet))
 function firstOfMonth(): string {
   const t = getBangkokToday();
   return fmtDate(new Date(t.getFullYear(), t.getMonth(), 1));
@@ -78,14 +67,6 @@ export default function D506ReportPage() {
 
   const [fDisease, setFDisease] = useState("");
   const [fSearch, setFSearch] = useState("");
-<<<<<<< HEAD
-
-  async function load() {
-    setLoading(true);
-    setError(null);
-    try {
-      const res = await fetch(`/api/d506-report?start=${start}&end=${end}`, { credentials: "include" });
-=======
   const [dedup, setDedup] = useState(false); // ตัดซ้ำในตารางหลัก
   const [ptTab, setPtTab] = useState<"list" | "dups">("list"); // แท็บ: รายชื่อ / รายการซ้ำ
   const [keyIds, setKeyIds] = useState<string[]>(DEFAULT_KEYS); // คีย์ตัดซ้ำที่ติ๊กเลือก
@@ -96,7 +77,6 @@ export default function D506ReportPage() {
     setError(null);
     try {
       const res = await fetch(`/api/d506-report?start=${qs}&end=${qe}`, { credentials: "include" });
->>>>>>> afce280 (feat(d506): เพิ่มรายงานโรค 506 (HOSxP) + D506 Dashboard (Google Sheet))
       if (!res.ok) {
         const j = await res.json().catch(() => ({}));
         throw new Error(j.error ?? `HTTP ${res.status}`);
@@ -110,13 +90,10 @@ export default function D506ReportPage() {
   }
   useEffect(() => { load(); /* โหลดครั้งแรก */ }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-<<<<<<< HEAD
-=======
   // เลือกวันบนแถบบน → ดึงข้อมูลใหม่ทันที
   function onStartChange(v: string) { setStart(v); load(v, end); }
   function onEndChange(v: string) { setEnd(v); load(start, v); }
 
->>>>>>> afce280 (feat(d506): เพิ่มรายงานโรค 506 (HOSxP) + D506 Dashboard (Google Sheet))
   const summary = useMemo<D506DiseaseSummary[]>(
     () => (data?.summary ?? []).filter((d) => d.total > 0), [data]);
   const patients = useMemo<D506PatientRow[]>(() => data?.patients ?? [], [data]);
@@ -135,12 +112,8 @@ export default function D506ReportPage() {
     () => [...new Set(patients.map((p) => p.disease).filter(Boolean))]
       .sort((a, b) => a.localeCompare(b, "th")), [patients]);
 
-<<<<<<< HEAD
-  const filteredPatients = useMemo(() => {
-=======
   // กรอง: โรค + ค้นหา + ช่วงวันที่รับรายงาน (ยังไม่ตัดซ้ำ)
   const baseFiltered = useMemo(() => {
->>>>>>> afce280 (feat(d506): เพิ่มรายงานโรค 506 (HOSxP) + D506 Dashboard (Google Sheet))
     const q = fSearch.trim().toLowerCase();
     return patients.filter((p) => {
       if (fDisease && p.disease !== fDisease) return false;
@@ -152,9 +125,6 @@ export default function D506ReportPage() {
     });
   }, [patients, fDisease, fSearch]);
 
-<<<<<<< HEAD
-  const { page, setPage, totalPages, paged } = usePagination(filteredPatients, 20);
-=======
   // สร้างคีย์ตัดซ้ำจากฟิลด์ที่ติ๊กเลือก
   const makeKey = useCallback(
     (p: D506PatientRow) =>
@@ -211,7 +181,6 @@ export default function D506ReportPage() {
 
   const { page, setPage, totalPages, paged } = usePagination(filteredPatients, 20);
   const dp = usePagination(dupRecords, 20);
->>>>>>> afce280 (feat(d506): เพิ่มรายงานโรค 506 (HOSxP) + D506 Dashboard (Google Sheet))
 
   const foot = useMemo(() => {
     let m = 0, f = 0, t = 0, d = 0;
@@ -235,19 +204,11 @@ export default function D506ReportPage() {
       "คำนำหน้า": p.prefix, "ชื่อ": p.fname, "สกุล": p.lname, "เพศ": p.sex, "วันเกิด": p.dob,
       "อายุ": p.age ?? "", "บ้านเลขที่": p.house, "หมู่": p.moo, "ตำบล": p.tambon,
       "อำเภอ": p.amphoe, "จังหวัด": p.province, "วันที่เริ่มป่วย": p.onsetDate,
-<<<<<<< HEAD
-      "โรคที่วินิจฉัย": p.disease, "รหัส 506": p.code506, "ICD-10": p.icd10,
-=======
       "วันวินิจฉัย": p.dxDate, "โรคที่วินิจฉัย": p.disease, "รหัส 506": p.code506, "ICD-10": p.icd10,
->>>>>>> afce280 (feat(d506): เพิ่มรายงานโรค 506 (HOSxP) + D506 Dashboard (Google Sheet))
       "ประเภท": p.ptype, "สถานะ": p.status, "เสียชีวิต": p.death ? "ใช่" : "ไม่",
     }));
     exportToExcel(out, { filePrefix: "d506_รายชื่อผู้ป่วย", sheetName: "รายชื่อผู้ป่วย 506", dateKeys: [] });
   }
-<<<<<<< HEAD
-
-  const inputCls = "px-2.5 py-1.5 rounded-lg border border-gray-200 bg-white text-sm text-gray-700 focus:outline-none focus:border-blue-400";
-=======
   function exportDups() {
     const out = dupRecords.map((x, i) => ({
       "ลำดับ": i + 1, "กลุ่มที่": (dupGroupIndex.get(x.k) ?? 0) + 1, "จำนวนซ้ำ": x.count,
@@ -261,7 +222,6 @@ export default function D506ReportPage() {
   const inputCls = "px-2.5 py-1.5 rounded-lg border border-gray-200 bg-white text-sm text-gray-700 focus:outline-none focus:border-[#3aa36a] focus:ring-2 focus:ring-[#a8d5ba]";
   // control ในกล่องรายชื่อ — พื้นขาว ตัวอักษรเข้ม อ่านชัด
   const ctrlCls = "px-2.5 py-1.5 rounded-lg border border-[#cfe7d8] bg-white text-sm text-gray-700 focus:outline-none focus:border-[#3aa36a] focus:ring-2 focus:ring-[#a8d5ba]";
->>>>>>> afce280 (feat(d506): เพิ่มรายงานโรค 506 (HOSxP) + D506 Dashboard (Google Sheet))
 
   return (
     <div className="p-4 md:p-6 max-w-[1500px] mx-auto">
@@ -283,21 +243,12 @@ export default function D506ReportPage() {
       {/* Toolbar */}
       <div className="bg-white rounded-2xl shadow-sm p-3 mb-4 flex flex-wrap gap-2 items-end">
         <label className="flex flex-col gap-1 text-[11px] font-semibold uppercase text-gray-400">ตั้งแต่
-<<<<<<< HEAD
-          <input type="date" value={start} onChange={(e) => setStart(e.target.value)} className={inputCls} />
-        </label>
-        <label className="flex flex-col gap-1 text-[11px] font-semibold uppercase text-gray-400">ถึง
-          <input type="date" value={end} onChange={(e) => setEnd(e.target.value)} className={inputCls} />
-        </label>
-        <button onClick={load} disabled={loading}
-=======
           <input type="date" value={start} onChange={(e) => onStartChange(e.target.value)} className={inputCls} />
         </label>
         <label className="flex flex-col gap-1 text-[11px] font-semibold uppercase text-gray-400">ถึง
           <input type="date" value={end} onChange={(e) => onEndChange(e.target.value)} className={inputCls} />
         </label>
         <button onClick={() => load()} disabled={loading}
->>>>>>> afce280 (feat(d506): เพิ่มรายงานโรค 506 (HOSxP) + D506 Dashboard (Google Sheet))
           className="flex items-center gap-1.5 px-4 py-1.5 rounded-lg text-white text-sm font-semibold hover:brightness-110 disabled:opacity-50"
           style={{ backgroundColor: MINT }}>
           <RefreshCw size={14} className={loading ? "animate-spin" : ""} /> ดึงข้อมูล
@@ -425,29 +376,6 @@ export default function D506ReportPage() {
 
           {/* Patient list */}
           <div id="pt-list" className="bg-white rounded-2xl shadow-sm overflow-hidden">
-<<<<<<< HEAD
-            <div className="px-4 py-3 text-white flex items-center justify-between flex-wrap gap-2" style={{ backgroundColor: MINT }}>
-              <span className="flex items-center gap-2 text-sm font-bold"><Users size={16} /> รายชื่อผู้ป่วยโรค 506 ({fmt(filteredPatients.length)} ราย)</span>
-              <div className="flex items-center gap-2 flex-wrap">
-                <select value={fDisease} onChange={(e) => setFDisease(e.target.value)}
-                  className="px-2 py-1 rounded border border-white/40 bg-white/15 text-white text-xs">
-                  <option value="" className="text-gray-800">— ทุกโรค —</option>
-                  {diseaseOpts.map((d) => <option key={d} value={d} className="text-gray-800">{d}</option>)}
-                </select>
-                <div className="relative">
-                  <Search size={13} className="absolute left-2 top-1/2 -translate-y-1/2 text-white/70" />
-                  <input value={fSearch} onChange={(e) => setFSearch(e.target.value)}
-                    placeholder="ค้นหา ชื่อ / HN / บัตรปชช."
-                    className="pl-7 pr-2 py-1 rounded border border-white/40 bg-white/15 text-white text-xs placeholder-white/70 w-52" />
-                </div>
-                <button onClick={exportPatients}
-                  className="flex items-center gap-1 px-2.5 py-1 rounded border border-white/40 bg-white/20 text-white text-xs font-semibold hover:bg-white/30">
-                  <FileDown size={12} /> Excel
-                </button>
-              </div>
-            </div>
-            <div className="overflow-x-auto max-h-[560px] overflow-y-auto">
-=======
             {/* แถบหัวข้อ (มิ้นต์) */}
             <div className="px-4 py-3 text-white flex items-center gap-2" style={{ backgroundColor: MINT }}>
               <Users size={16} />
@@ -567,27 +495,18 @@ export default function D506ReportPage() {
 
             {/* ── แท็บรายชื่อทั้งหมด ── */}
             <div className={`overflow-x-auto max-h-[560px] overflow-y-auto ${ptTab === "list" ? "" : "hidden"}`}>
->>>>>>> afce280 (feat(d506): เพิ่มรายงานโรค 506 (HOSxP) + D506 Dashboard (Google Sheet))
               <table className="text-xs whitespace-nowrap" style={{ minWidth: "100%" }}>
                 <thead className="sticky top-0 z-10">
                   <tr className="text-white" style={{ backgroundColor: "#143f28" }}>
                     {["#", "วันที่รับรายงาน", "HN", "เลขบัตรปชช.", "คำนำหน้า", "ชื่อ", "สกุล", "เพศ",
                       "วันเกิด", "อายุ", "บ้านเลขที่", "หมู่", "ตำบล", "อำเภอ", "จังหวัด", "วันเริ่มป่วย",
-<<<<<<< HEAD
-                      "โรคที่วินิจฉัย", "รหัส 506", "ICD-10", "ประเภท", "สถานะ", "เสียชีวิต"]
-=======
                       "วันวินิจฉัย", "โรคที่วินิจฉัย", "รหัส 506", "ICD-10", "ประเภท", "สถานะ", "เสียชีวิต"]
->>>>>>> afce280 (feat(d506): เพิ่มรายงานโรค 506 (HOSxP) + D506 Dashboard (Google Sheet))
                       .map((h) => <th key={h} className="px-2.5 py-2 font-semibold">{h}</th>)}
                   </tr>
                 </thead>
                 <tbody>
                   {paged.length === 0 ? (
-<<<<<<< HEAD
-                    <tr><td colSpan={22} className="text-center py-10 text-gray-400">ไม่พบข้อมูล</td></tr>
-=======
                     <tr><td colSpan={23} className="text-center py-10 text-gray-400">ไม่พบข้อมูล</td></tr>
->>>>>>> afce280 (feat(d506): เพิ่มรายงานโรค 506 (HOSxP) + D506 Dashboard (Google Sheet))
                   ) : paged.map((p, i) => (
                     <tr key={`${p.hn}-${i}`} className="border-b border-gray-50 hover:bg-[#f0faf4]">
                       <td className="px-2.5 py-1.5 text-center text-gray-400">{(page - 1) * 20 + i + 1}</td>
@@ -606,10 +525,7 @@ export default function D506ReportPage() {
                       <td className="px-2.5 py-1.5">{p.amphoe || "—"}</td>
                       <td className="px-2.5 py-1.5">{p.province || "—"}</td>
                       <td className="px-2.5 py-1.5 text-center">{p.onsetDate}</td>
-<<<<<<< HEAD
-=======
                       <td className="px-2.5 py-1.5 text-center">{p.dxDate}</td>
->>>>>>> afce280 (feat(d506): เพิ่มรายงานโรค 506 (HOSxP) + D506 Dashboard (Google Sheet))
                       <td className="px-2.5 py-1.5 font-medium">{p.disease}</td>
                       <td className="px-2.5 py-1.5 text-center">{p.code506}</td>
                       <td className="px-2.5 py-1.5 text-center">{p.icd10}</td>
@@ -625,11 +541,7 @@ export default function D506ReportPage() {
                 </tbody>
               </table>
             </div>
-<<<<<<< HEAD
-            {totalPages > 1 && (
-=======
             {ptTab === "list" && totalPages > 1 && (
->>>>>>> afce280 (feat(d506): เพิ่มรายงานโรค 506 (HOSxP) + D506 Dashboard (Google Sheet))
               <div className="flex items-center justify-center gap-1.5 py-3">
                 <button disabled={page === 1} onClick={() => setPage(page - 1)}
                   className="w-8 h-8 rounded-lg border border-gray-200 disabled:opacity-40">‹</button>
