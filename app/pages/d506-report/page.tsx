@@ -38,6 +38,70 @@ const KEY_FIELDS: { id: string; label: string; get: (p: D506PatientRow) => strin
 ];
 const DEFAULT_KEYS = ["name", "dxDate", "disease", "status", "ptype"];
 
+// ── คอลัมน์ตารางรายชื่อผู้ป่วย ────────────────────────────────────────────────
+// เรียงตามฟอร์ม "ทะเบียนคุมผู้ป่วยโรคที่ต้องรายงานฯ (D506)" เป๊ะ ๆ เพื่อให้ไฟล์ Excel
+// ที่ export ออกไป เอาไปวางในทะเบียน/ส่ง D506 ได้เลย
+// webOnly = แสดงบนหน้าเว็บ แต่ไม่ต้องติดไปกับไฟล์ export
+// value: () => ""  = คอลัมน์ว่างไว้ให้เจ้าหน้าที่กรอกเองในชีต (กลุ่ม lab / จำหน่าย /
+//                    ผลการรักษา / วันที่ส่ง D506 API / หมายเหตุ) — ไม่ได้ดึงจาก HOSxP
+type PtColumn = {
+  header: string;
+  webOnly?: boolean;
+  align?: "left" | "center";
+  value: (p: D506PatientRow, no: number) => string | number;
+  render?: (p: D506PatientRow, no: number) => React.ReactNode;
+};
+
+/** ช่องว่างไว้ให้เจ้าหน้าที่กรอกเองหลัง export */
+const blank = () => "";
+
+const PT_COLUMNS: PtColumn[] = [
+  { header: "ลำดับที่", align: "center", value: (_p, no) => no },
+  { header: "วันที่รับรายงาน", align: "center", value: (p) => p.reportDate },
+  { header: "HN", align: "center", value: (p) => p.hn,
+    render: (p) => <span className="font-mono font-semibold">{p.hn}</span> },
+  { header: "เลขบัตรประชาชน", align: "center", value: (p) => p.cid,
+    render: (p) => <span className="font-mono">{p.cid}</span> },
+  { header: "คำนำหน้า", align: "center", value: (p) => p.prefix },
+  { header: "ชื่อ", align: "left", value: (p) => p.fname },
+  { header: "สกุล", align: "left", value: (p) => p.lname },
+  { header: "เพศ", align: "center", value: (p) => p.sex },
+  { header: "วัน/เดือน/ปีเกิด", align: "center", value: (p) => p.dob },
+  { header: "อายุ (ปี)", align: "center", value: (p) => p.age ?? "" },
+  { header: "บ้านเลขที่", align: "center", value: (p) => p.house },
+  { header: "หมู่", align: "center", value: (p) => p.moo },
+  { header: "ตำบล", align: "left", value: (p) => p.tambon },
+  { header: "อำเภอ", align: "left", value: (p) => p.amphoe },
+  { header: "จังหวัด", align: "left", value: (p) => p.province },
+  { header: "วันที่เริ่มป่วย", align: "center", value: (p) => p.onsetDate },
+  { header: "วันวินิจฉัย", align: "center", value: (p) => p.dxDate },
+  { header: "โรคที่วินิจฉัย", align: "left", value: (p) => p.disease,
+    render: (p) => <span className="font-medium">{p.disease}</span> },
+  { header: "รหัสโรค 506", align: "center", value: (p) => p.code506 },
+  { header: "รหัส ICD-10", align: "center", value: (p) => p.icd10 },
+  { header: "ประเภทผู้ป่วย", align: "center", value: (p) => p.ptype },
+  { header: "ชนิดlab", align: "center", value: blank },
+  { header: "ผล Lab (ยืนยัน/สงสัย/ไม่ยืนยัน)", align: "center", value: blank },
+  { header: "วันที่ส่งตัวอย่าง", align: "center", value: blank },
+  { header: "วันที่ได้ผล Lab", align: "center", value: blank },
+  { header: "ชนิดเชื้อ/ผลเพาะเลี้ยง", align: "left", value: blank },
+  // สถานะผู้ป่วย — ดูบนเว็บอย่างเดียว ไม่ต้องออกไปกับไฟล์ D506
+  { header: "สถานะผู้ป่วย", align: "center", webOnly: true, value: (p) => p.status },
+  { header: "วันที่จำหน่าย", align: "center", value: blank },
+  { header: "ผลการรักษา", align: "left", value: blank },
+  { header: "วันที่ส่ง D506 API", align: "center", value: blank },
+  { header: "หมายเหตุ", align: "left", value: blank },
+  {
+    header: "เสียชีวิต", align: "center",
+    value: (p) => (p.death ? "ใช่" : ""),
+    render: (p) => (p.death
+      ? <span className="inline-block px-2 py-0.5 rounded-full text-[11px] font-bold bg-red-100 text-red-700">เสียชีวิต</span>
+      : <span className="text-gray-300">–</span>),
+  },
+];
+
+const EXPORT_COLUMNS = PT_COLUMNS.filter((c) => !c.webOnly);
+
 function firstOfMonth(): string {
   const t = getBangkokToday();
   return fmtDate(new Date(t.getFullYear(), t.getMonth(), 1));
@@ -198,16 +262,14 @@ export default function D506ReportPage() {
     }));
     exportToExcel(out, { filePrefix: "d506_สรุปรายโรค", sheetName: "สรุป 506", dateKeys: [] });
   }
+  // export ตามฟอร์ม D506 (ยกเว้นคอลัมน์ webOnly เช่น "สถานะผู้ป่วย")
   function exportPatients() {
-    const out = filteredPatients.map((p, i) => ({
-      "ลำดับ": i + 1, "วันที่รับรายงาน": p.reportDate, HN: p.hn, "เลขบัตรปชช.": p.cid,
-      "คำนำหน้า": p.prefix, "ชื่อ": p.fname, "สกุล": p.lname, "เพศ": p.sex, "วันเกิด": p.dob,
-      "อายุ": p.age ?? "", "บ้านเลขที่": p.house, "หมู่": p.moo, "ตำบล": p.tambon,
-      "อำเภอ": p.amphoe, "จังหวัด": p.province, "วันที่เริ่มป่วย": p.onsetDate,
-      "วันวินิจฉัย": p.dxDate, "โรคที่วินิจฉัย": p.disease, "รหัส 506": p.code506, "ICD-10": p.icd10,
-      "ประเภท": p.ptype, "สถานะ": p.status, "เสียชีวิต": p.death ? "ใช่" : "ไม่",
-    }));
-    exportToExcel(out, { filePrefix: "d506_รายชื่อผู้ป่วย", sheetName: "รายชื่อผู้ป่วย 506", dateKeys: [] });
+    const out = filteredPatients.map((p, i) => {
+      const row: Record<string, string | number> = {};
+      EXPORT_COLUMNS.forEach((c) => { row[c.header] = c.value(p, i + 1); });
+      return row;
+    });
+    exportToExcel(out, { filePrefix: "d506_ทะเบียนคุมผู้ป่วย", sheetName: "ทะเบียนคุมผู้ป่วย D506", dateKeys: [] });
   }
   function exportDups() {
     const out = dupRecords.map((x, i) => ({
@@ -498,46 +560,30 @@ export default function D506ReportPage() {
               <table className="text-xs whitespace-nowrap" style={{ minWidth: "100%" }}>
                 <thead className="sticky top-0 z-10">
                   <tr className="text-white" style={{ backgroundColor: "#143f28" }}>
-                    {["#", "วันที่รับรายงาน", "HN", "เลขบัตรปชช.", "คำนำหน้า", "ชื่อ", "สกุล", "เพศ",
-                      "วันเกิด", "อายุ", "บ้านเลขที่", "หมู่", "ตำบล", "อำเภอ", "จังหวัด", "วันเริ่มป่วย",
-                      "วันวินิจฉัย", "โรคที่วินิจฉัย", "รหัส 506", "ICD-10", "ประเภท", "สถานะ", "เสียชีวิต"]
-                      .map((h) => <th key={h} className="px-2.5 py-2 font-semibold">{h}</th>)}
+                    {PT_COLUMNS.map((c) => (
+                      <th key={c.header} className="px-2.5 py-2 font-semibold">{c.header}</th>
+                    ))}
                   </tr>
                 </thead>
                 <tbody>
                   {paged.length === 0 ? (
-                    <tr><td colSpan={23} className="text-center py-10 text-gray-400">ไม่พบข้อมูล</td></tr>
-                  ) : paged.map((p, i) => (
-                    <tr key={`${p.hn}-${i}`} className="border-b border-gray-50 hover:bg-[#f0faf4]">
-                      <td className="px-2.5 py-1.5 text-center text-gray-400">{(page - 1) * 20 + i + 1}</td>
-                      <td className="px-2.5 py-1.5 text-center">{p.reportDate}</td>
-                      <td className="px-2.5 py-1.5 text-center font-mono font-semibold">{p.hn}</td>
-                      <td className="px-2.5 py-1.5 text-center font-mono">{p.cid}</td>
-                      <td className="px-2.5 py-1.5 text-center">{p.prefix}</td>
-                      <td className="px-2.5 py-1.5">{p.fname}</td>
-                      <td className="px-2.5 py-1.5">{p.lname}</td>
-                      <td className="px-2.5 py-1.5 text-center">{p.sex}</td>
-                      <td className="px-2.5 py-1.5 text-center">{p.dob}</td>
-                      <td className="px-2.5 py-1.5 text-center">{p.age ?? "—"}</td>
-                      <td className="px-2.5 py-1.5 text-center">{p.house}</td>
-                      <td className="px-2.5 py-1.5 text-center">{p.moo}</td>
-                      <td className="px-2.5 py-1.5">{p.tambon || "—"}</td>
-                      <td className="px-2.5 py-1.5">{p.amphoe || "—"}</td>
-                      <td className="px-2.5 py-1.5">{p.province || "—"}</td>
-                      <td className="px-2.5 py-1.5 text-center">{p.onsetDate}</td>
-                      <td className="px-2.5 py-1.5 text-center">{p.dxDate}</td>
-                      <td className="px-2.5 py-1.5 font-medium">{p.disease}</td>
-                      <td className="px-2.5 py-1.5 text-center">{p.code506}</td>
-                      <td className="px-2.5 py-1.5 text-center">{p.icd10}</td>
-                      <td className="px-2.5 py-1.5 text-center">{p.ptype}</td>
-                      <td className="px-2.5 py-1.5 text-center">{p.status}</td>
-                      <td className="px-2.5 py-1.5 text-center">
-                        {p.death
-                          ? <span className="inline-block px-2 py-0.5 rounded-full text-[11px] font-bold bg-red-100 text-red-700">เสียชีวิต</span>
-                          : <span className="text-gray-300">–</span>}
-                      </td>
-                    </tr>
-                  ))}
+                    <tr><td colSpan={PT_COLUMNS.length} className="text-center py-10 text-gray-400">ไม่พบข้อมูล</td></tr>
+                  ) : paged.map((p, i) => {
+                    const no = (page - 1) * 20 + i + 1;
+                    return (
+                      <tr key={`${p.hn}-${i}`} className="border-b border-gray-50 hover:bg-[#f0faf4]">
+                        {PT_COLUMNS.map((c) => {
+                          const v = c.value(p, no);
+                          return (
+                            <td key={c.header}
+                              className={`px-2.5 py-1.5 ${c.align === "left" ? "" : "text-center"} ${c.header === "ลำดับที่" ? "text-gray-400" : ""}`}>
+                              {c.render ? c.render(p, no) : (v === "" || v == null ? <span className="text-gray-300">—</span> : v)}
+                            </td>
+                          );
+                        })}
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
