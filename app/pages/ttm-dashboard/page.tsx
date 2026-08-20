@@ -17,6 +17,7 @@ import {
 import { Shimmer } from "@/app/components/ui/Shimmer";
 import { EmptyState } from "@/app/components/ui/EmptyState";
 import { formatThaiDate } from "@/lib/dateUtils";
+import { THAI_MONTHS_SHORT, toThaiDateLong } from "@/lib/thaiDate";
 import AiSummaryCard from "@/app/components/ai/AiSummaryCard";
 
 // ─── Types (ตรงกับ lib/ttm.service.ts) ────────────────────────────────────────
@@ -92,6 +93,13 @@ const shiftLabel: Record<ShiftKey, string> = { am: "เช้า", pm: "เย�
 const fmt = (n: number) => Number(n || 0).toLocaleString("th-TH", { maximumFractionDigits: 0 });
 const fmtB = (n: number) =>
     Number(n || 0).toLocaleString("th-TH", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+// "YYYY-MM-DD" → "24 ก.ค." (ป้ายแกน X ภาษาไทย)
+const thaiTick = (iso: string) => {
+    const [, m, d] = String(iso).slice(0, 10).split("-").map(Number);
+    if (!m || !d || m < 1 || m > 12) return String(iso);
+    return `${d} ${THAI_MONTHS_SHORT[m - 1]}`;
+};
 
 function getShift(vsttime: string): ShiftKey {
     const [h, m] = (vsttime || "00:00").split(":").map(Number);
@@ -1025,10 +1033,11 @@ export default function TtmDashboardPage() {
                             <ResponsiveContainer width="100%" height={280}>
                                 <LineChart data={hb.trend} margin={{ top: 4, right: 12, left: 0, bottom: 0 }}>
                                     <CartesianGrid vertical={false} stroke="#e5e7eb" />
-                                    <XAxis dataKey="date" tick={{ fontSize: 10, fill: "#6b7280" }} axisLine={false} tickLine={false} minTickGap={18} />
+                                    <XAxis dataKey="date" tickFormatter={thaiTick}
+                                        tick={{ fontSize: 10, fill: "#6b7280" }} axisLine={false} tickLine={false} minTickGap={18} />
                                     <YAxis allowDecimals={false} tick={{ fontSize: 11, fill: "#6b7280" }} axisLine={false} tickLine={false} />
                                     <RTooltip formatter={(v) => [fmt(Number(v ?? 0)), "รายการ"]}
-                                        labelFormatter={(l) => formatThaiDate(String(l)) || String(l)}
+                                        labelFormatter={(l) => toThaiDateLong(String(l))}
                                         contentStyle={{ fontSize: 12, borderRadius: 8, border: "1px solid #e5e7eb" }} />
                                     <Line type="monotone" dataKey="count" stroke={MINT[600]} strokeWidth={2} dot={false} />
                                 </LineChart>

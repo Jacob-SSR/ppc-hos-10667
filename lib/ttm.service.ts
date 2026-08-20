@@ -341,7 +341,7 @@ export async function getTtmDashboard(
       SELECT
         v.vn,
         v.hn,
-        v.vstdate,
+        DATE_FORMAT(v.vstdate, '%Y-%m-%d')         AS vstdate,
         o.vsttime,
         ${TTM_STAFF_SUBQ}                          AS doctor_code,
         CONCAT(pt.pname, pt.fname, ' ', pt.lname)  AS patient_name,
@@ -560,7 +560,7 @@ export async function getTtmDashboard(
     const [herbalRows] = await db.query<HerbalDbRow[]>(
       `
     SELECT
-      op.vstdate,
+      DATE_FORMAT(op.vstdate, '%Y-%m-%d')                  AS vstdate,
       COALESCE(o.vsttime, '')                              AS vsttime,
       op.vn,
       op.hn,
