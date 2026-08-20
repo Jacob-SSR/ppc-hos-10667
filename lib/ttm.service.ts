@@ -36,8 +36,11 @@ const TTM_ICD9_TABLE = ICD9_TABLE_WHITELIST.includes(
   : "icd9_sss";
 
 // ── เกณฑ์ "เป็นยาสมุนไพร" บน drugitems (alias di) ──────────────────────────────
-// ตั้งค่าได้ผ่าน env ให้ตรงกับ master ของ รพ. (คั่นด้วย , )
-//   TTM_HERBAL_DRUGTYPES      : drugitems.drugtype ที่เป็นยาสมุนไพร (default "10")
+// โครงสร้าง drugitems ต่างกันในแต่ละเวอร์ชัน HOSxP (บางที่ไม่มีคอลัมน์ drugtype เลย)
+// → ตรวจคอลัมน์จริงจาก information_schema ก่อน แล้วค่อยประกอบเงื่อนไขเฉพาะคอลัมน์ที่มีอยู่
+// ตั้งค่าเพิ่มได้ผ่าน env (คั่นด้วย , )
+//   TTM_HERBAL_TYPE_COLUMN    : ระบุชื่อคอลัมน์ประเภทยาเอง (ถ้าไม่ระบุจะไล่หาให้อัตโนมัติ)
+//   TTM_HERBAL_DRUGTYPES      : ค่าประเภทยาที่ถือเป็นยาสมุนไพร (default "10")
 //   TTM_HERBAL_ICODES         : icode เฉพาะรายการ (ถ้าอยากบังคับเพิ่ม)
 //   TTM_HERBAL_NAME_KEYWORDS  : คำในชื่อยา (LIKE %คำ%) — default ใช้ชื่อยาสมุนไพรที่พบบ่อย
 const envList = (v: string | undefined): string[] =>
@@ -74,22 +77,80 @@ const HERBAL_KEYWORDS = envList(
     ].join(","),
 );
 
-// สร้าง predicate + params (ใช้ ? ทั้งหมด กัน SQL injection)
-function herbalPredicate(): { sql: string; params: string[] } {
+// คอลัมน์ที่ "อาจ" ใช้บอกว่าเป็นยาสมุนไพร — ใช้เฉพาะที่มีอยู่จริงใน drugitems เท่านั้น
+// (ชื่อคอลัมน์มาจาก whitelist นี้ตัดกับ information_schema → ปลอดภัยที่จะต่อลง SQL)
+const HERBAL_FLAG_COLUMN_CANDIDATES = [
+  "is_herb",
+  "is_herbal",
+  "herbal",
+  "herb",
+  "herb_drug",
+  "herbal_drug",
+  "thai_herb",
+];
+const HERBAL_TYPE_COLUMN_CANDIDATES = [
+  "drugtype",
+  "drug_type",
+  "drugitem_type",
+  "drug_group",
+  "drugcategory",
+];
+
+// cache รายชื่อคอลัมน์ของ drugitems (ต่อ process)
+let drugitemsColsCache: Set<string> | null = null;
+async function drugitemsColumns(): Promise<Set<string>> {
+  if (drugitemsColsCache) return drugitemsColsCache;
+  try {
+    const [rows] = await db.query<RowDataPacket[]>(
+      `SELECT LOWER(COLUMN_NAME) AS col
+         FROM information_schema.COLUMNS
+        WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'drugitems'`,
+    );
+    drugitemsColsCache = new Set(rows.map((r) => String(r.col)));
+  } catch {
+    drugitemsColsCache = new Set<string>();
+  }
+  return drugitemsColsCache;
+}
+
+// สร้าง predicate + params (ค่าทั้งหมด bind ด้วย ? กัน SQL injection)
+async function herbalPredicate(): Promise<{ sql: string; params: string[] }> {
+  const cols = await drugitemsColumns();
   const parts: string[] = [];
   const params: string[] = [];
-  if (HERBAL_DRUGTYPES.length) {
-    parts.push(`di.drugtype IN (${HERBAL_DRUGTYPES.map(() => "?").join(",")})`);
+
+  // 1) คอลัมน์ flag Y/N (ถ้ามี)
+  for (const c of HERBAL_FLAG_COLUMN_CANDIDATES) {
+    if (cols.has(c)) parts.push(`(di.${c} = 'Y' OR di.${c} = 1)`);
+  }
+
+  // 2) คอลัมน์ประเภทยา — ใช้ที่ env ระบุก่อน ถ้าไม่ระบุค่อยไล่หาจาก candidate
+  const envTypeCol = (process.env.TTM_HERBAL_TYPE_COLUMN ?? "")
+    .trim()
+    .toLowerCase();
+  const typeCol =
+    envTypeCol && cols.has(envTypeCol)
+      ? envTypeCol
+      : HERBAL_TYPE_COLUMN_CANDIDATES.find((c) => cols.has(c));
+  if (typeCol && HERBAL_DRUGTYPES.length) {
+    parts.push(
+      `di.${typeCol} IN (${HERBAL_DRUGTYPES.map(() => "?").join(",")})`,
+    );
     params.push(...HERBAL_DRUGTYPES);
   }
+
+  // 3) icode ที่บังคับไว้เอง
   if (HERBAL_ICODES.length) {
     parts.push(`di.icode IN (${HERBAL_ICODES.map(() => "?").join(",")})`);
     params.push(...HERBAL_ICODES);
   }
+
+  // 4) ชื่อยา (คอลัมน์ name มีทุกเวอร์ชัน) — เกณฑ์สำรองที่ใช้ได้เสมอ
   if (HERBAL_KEYWORDS.length) {
     parts.push(`(${HERBAL_KEYWORDS.map(() => "di.name LIKE ?").join(" OR ")})`);
     params.push(...HERBAL_KEYWORDS.map((k) => `%${k}%`));
   }
+
   // ไม่ได้ตั้งค่าอะไรเลย → ไม่ match อะไร (กันดึงยาทั้งโรงพยาบาล)
   return { sql: parts.length ? `(${parts.join(" OR ")})` : "1=0", params };
 }
@@ -493,9 +554,11 @@ export async function getTtmDashboard(
 
   // 3) การใช้ยาสมุนไพรรายแพทย์/ผู้สั่งจ่าย — ทั้งโรงพยาบาลในช่วงที่เลือก
   //    (ไม่จำกัดเฉพาะแผนกแผนไทย เพราะรายงานนี้ดูว่า "ใครสั่งใช้ยาสมุนไพรบ้าง")
-  const herb = herbalPredicate();
-  const [herbalRows] = await db.query<HerbalDbRow[]>(
-    `
+  let herbal: TtmHerbalRow[] = [];
+  try {
+    const herb = await herbalPredicate();
+    const [herbalRows] = await db.query<HerbalDbRow[]>(
+      `
     SELECT
       op.vstdate,
       COALESCE(o.vsttime, '')                              AS vsttime,
@@ -519,23 +582,27 @@ export async function getTtmDashboard(
       AND ${herb.sql}
     ORDER BY op.vstdate, o.vsttime
     `,
-    [start, end, ...herb.params],
-  );
+      [start, end, ...herb.params],
+    );
 
-  const herbal: TtmHerbalRow[] = herbalRows.map((r) => ({
-    vstdate: String(r.vstdate ?? ""),
-    vsttime: (r.vsttime || "").slice(0, 5),
-    vn: r.vn,
-    hn: r.hn,
-    patient_name: (r.patient_name || "").trim(),
-    prescriber_id: (r.prescriber_id || "").trim(),
-    prescriber_name: (r.prescriber_name || "ไม่ระบุผู้สั่ง").trim(),
-    department: (r.department || "").trim(),
-    drug_code: r.drug_code,
-    drug_name: (r.drug_name || r.drug_code || "").trim(),
-    qty: Number(r.qty) || 0,
-    revenue: Number(r.revenue) || 0,
-  }));
+    herbal = herbalRows.map((r) => ({
+      vstdate: String(r.vstdate ?? ""),
+      vsttime: (r.vsttime || "").slice(0, 5),
+      vn: r.vn,
+      hn: r.hn,
+      patient_name: (r.patient_name || "").trim(),
+      prescriber_id: (r.prescriber_id || "").trim(),
+      prescriber_name: (r.prescriber_name || "ไม่ระบุผู้สั่ง").trim(),
+      department: (r.department || "").trim(),
+      drug_code: r.drug_code,
+      drug_name: (r.drug_name || r.drug_code || "").trim(),
+      qty: Number(r.qty) || 0,
+      revenue: Number(r.revenue) || 0,
+    }));
+  } catch (e) {
+    // โครงสร้าง drugitems ต่างกันตามเวอร์ชัน HOSxP — ถ้า query นี้พัง อย่าให้ทั้ง dashboard ล้ม
+    console.error("TTM herbal query failed:", e);
+  }
 
   return {
     updatedAt: new Date().toISOString(),
