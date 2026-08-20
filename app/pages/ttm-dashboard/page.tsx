@@ -3,11 +3,11 @@
 import { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import {
     BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RTooltip,
-    PieChart, Pie, Cell, ResponsiveContainer,
+    PieChart, Pie, Cell, ResponsiveContainer, LineChart, Line,
 } from "recharts";
 import {
     Users, Activity, Banknote, Coins, ListChecks, BarChart3, Wallet,
-    Table2, Tags, Search, Leaf, Clock,
+    Table2, Tags, Search, Leaf, Clock, Stethoscope, Pill, TrendingUp, Download,
     ChevronUp, ChevronDown, ChevronsUpDown,
 } from "lucide-react";
 import {
@@ -32,6 +32,12 @@ interface RightRow {
     visit_count: number; revenue: number;
 }
 interface IcdRow { icd10_code: string; icd10_name: string; use_count: number; }
+interface Icd9Row { icd9_code: string; icd9_name: string; use_count: number; }
+interface HerbalRow {
+    vstdate: string; vsttime: string; vn: string; hn: string; patient_name: string;
+    prescriber_id: string; prescriber_name: string; department: string;
+    drug_code: string; drug_name: string; qty: number; revenue: number;
+}
 interface QueueRow {
     queue_no: string; hn: string; patient_name: string;
     doctor_name: string; right_name: string; vsttime: string; status: string;
@@ -39,17 +45,20 @@ interface QueueRow {
 interface PatientRow {
     vstdate: string; vsttime: string; vn: string; hn: string; patient_name: string;
     doctor_id: string; doctor_name: string; right_code: string; right_name: string;
-    icd10: string; icd10_name: string; revenue: number;
+    icd10: string; icd10_name: string; icd9: string; icd9_name: string; revenue: number;
 }
 interface DashData {
     summary: { doctors: DoctorSummary[] };
     rights: { rows: RightRow[] };
     icd10: { rows: IcdRow[] };
+    icd9: { rows: Icd9Row[] };
     queue: { queue: QueueRow[] };
     patients: { rows: PatientRow[] };
+    herbal: { rows: HerbalRow[] };
 }
 
 type Preset = "today" | "7days" | "30days" | "thismonth" | "custom";
+type Tab = "overview" | "herbal";
 type Mode = "revenue" | "visits" | "patients";
 type PivotMode = "revenue" | "visits" | "patients";
 type ShiftKey = "am" | "pm" | "ot";
@@ -149,6 +158,7 @@ export default function TtmDashboardPage() {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
 
+    const [tab, setTab] = useState<Tab>("overview");
     const [preset, setPreset] = useState<Preset>("today");
     const [customStart, setCustomStart] = useState("");
     const [customEnd, setCustomEnd] = useState("");
@@ -164,6 +174,12 @@ export default function TtmDashboardPage() {
     const [ptShift, setPtShift] = useState("");
     const [ptSortKey, setPtSortKey] = useState<string>("vstdate");
     const [ptSortAsc, setPtSortAsc] = useState(true);
+
+    // herbal tab controls
+    const [hbSearch, setHbSearch] = useState("");
+    const [hbDept, setHbDept] = useState("");
+    const [hbSortKey, setHbSortKey] = useState<"items" | "patients" | "qty" | "name">("items");
+    const [hbSortAsc, setHbSortAsc] = useState(false);
 
     // doctor → tag class (stable ตามลำดับที่พบ)
     const docColorMap = useRef<Record<string, string>>({});
@@ -224,6 +240,8 @@ export default function TtmDashboardPage() {
     const icdRows = data?.icd10.rows ?? [];
     const queueRows = data?.queue.queue ?? [];
     const allPatients = data?.patients.rows ?? [];
+    const icd9Rows = data?.icd9?.rows ?? [];
+    const herbalRows = useMemo(() => data?.herbal?.rows ?? [], [data]);
 
     // ── KPI ──
     const kpi = useMemo(() => {
@@ -277,6 +295,12 @@ export default function TtmDashboardPage() {
         [icdRows],
     );
 
+    // ── icd9 → HBarList ──
+    const icd9Data = useMemo(
+        () => icd9Rows.map((r) => ({ label: `${r.icd9_code} · ${r.icd9_name}`, count: r.use_count })),
+        [icd9Rows],
+    );
+
     // ── patient filter + sort ──
     const ptDoctors = useMemo(() => [...new Set(allPatients.map((r) => r.doctor_name))].sort(), [allPatients]);
     const ptRights = useMemo(() => [...new Set(allPatients.map((r) => r.right_name))].sort(), [allPatients]);
@@ -288,7 +312,7 @@ export default function TtmDashboardPage() {
             if (ptRight && r.right_name !== ptRight) return false;
             if (ptShift && getShift(r.vsttime) !== ptShift) return false;
             if (q) {
-                const hay = `${r.hn} ${r.patient_name} ${r.icd10} ${r.icd10_name}`.toLowerCase();
+                const hay = `${r.hn} ${r.patient_name} ${r.icd10} ${r.icd10_name} ${r.icd9} ${r.icd9_name}`.toLowerCase();
                 if (!hay.includes(q)) return false;
             }
             return true;
@@ -303,6 +327,100 @@ export default function TtmDashboardPage() {
             return 0;
         });
     }, [allPatients, ptSearch, ptDoctor, ptRight, ptShift, ptSortKey, ptSortAsc]);
+
+    // ── ยาสมุนไพร: ตัวกรอง + aggregate (ฝั่ง client เหมือน dashboard ต้นฉบับ) ──
+    const hbDepts = useMemo(
+        () => [...new Set(herbalRows.map((r) => r.department).filter(Boolean))].sort(),
+        [herbalRows],
+    );
+
+    const hbFiltered = useMemo(() => {
+        const q = hbSearch.toLowerCase().trim();
+        return herbalRows.filter((r) => {
+            if (hbDept && r.department !== hbDept) return false;
+            if (q) {
+                const hay = `${r.prescriber_name} ${r.department} ${r.drug_name} ${r.drug_code} ${r.hn}`.toLowerCase();
+                if (!hay.includes(q)) return false;
+            }
+            return true;
+        });
+    }, [herbalRows, hbSearch, hbDept]);
+
+    const hb = useMemo(() => {
+        const byPrescriber = new Map<string, {
+            name: string; department: string; items: number; qty: number; revenue: number; hn: Set<string>;
+        }>();
+        const byDrug: Record<string, number> = {};
+        const byDate: Record<string, number> = {};
+        const hnSet = new Set<string>();
+        let qty = 0, revenue = 0;
+
+        hbFiltered.forEach((r) => {
+            const key = r.prescriber_name || "ไม่ระบุผู้สั่ง";
+            let p = byPrescriber.get(key);
+            if (!p) {
+                p = { name: key, department: r.department, items: 0, qty: 0, revenue: 0, hn: new Set<string>() };
+                byPrescriber.set(key, p);
+            }
+            p.items++;
+            p.qty += r.qty;
+            p.revenue += r.revenue;
+            p.hn.add(r.hn);
+
+            byDrug[r.drug_name] = (byDrug[r.drug_name] || 0) + 1;
+            byDate[r.vstdate] = (byDate[r.vstdate] || 0) + 1;
+            hnSet.add(r.hn);
+            qty += r.qty;
+            revenue += r.revenue;
+        });
+
+        const prescribers = [...byPrescriber.values()].map((p) => ({
+            name: p.name, department: p.department, items: p.items,
+            qty: p.qty, revenue: p.revenue, patients: p.hn.size,
+        }));
+        const topDrugs = Object.entries(byDrug)
+            .sort((a, b) => b[1] - a[1])
+            .map(([name, count]) => ({ name, count }));
+        const trend = Object.keys(byDate).sort().map((d) => ({ date: d, count: byDate[d] }));
+
+        return {
+            items: hbFiltered.length,
+            patients: hnSet.size,
+            qty, revenue,
+            prescribers, topDrugs, trend,
+            maxItems: Math.max(1, ...prescribers.map((p) => p.items)),
+        };
+    }, [hbFiltered]);
+
+    const hbSorted = useMemo(() => {
+        const dir = hbSortAsc ? 1 : -1;
+        return hb.prescribers.slice().sort((a, b) => {
+            if (hbSortKey === "name") return dir * a.name.localeCompare(b.name, "th");
+            return dir * (a[hbSortKey] - b[hbSortKey]);
+        });
+    }, [hb, hbSortKey, hbSortAsc]);
+
+    const sortHb = (key: "items" | "patients" | "qty" | "name") => {
+        if (hbSortKey === key) setHbSortAsc((p) => !p);
+        else { setHbSortKey(key); setHbSortAsc(false); }
+    };
+
+    const exportHerbalCsv = () => {
+        if (!hbFiltered.length) return;
+        const header = ["วันที่", "เวลา", "HN", "ชื่อ-สกุล", "ผู้สั่งจ่าย", "แผนก", "รหัสยา", "ยาสมุนไพร", "จำนวน", "มูลค่า (฿)"];
+        const lines = [header.join(",")].concat(
+            hbFiltered.map((r) =>
+                [r.vstdate, r.vsttime, r.hn, r.patient_name, r.prescriber_name, r.department, r.drug_code, r.drug_name, r.qty, r.revenue]
+                    .map((v) => `"${String(v ?? "").replace(/"/g, '""')}"`).join(","),
+            ),
+        );
+        const blob = new Blob(["\uFEFF" + lines.join("\n")], { type: "text/csv;charset=utf-8;" });
+        const a = document.createElement("a");
+        a.href = URL.createObjectURL(blob);
+        a.download = `herbal_usage_${preset === "custom" ? `${customStart}_${customEnd}` : preset}.csv`;
+        a.click();
+        URL.revokeObjectURL(a.href);
+    };
 
     const totalRev = useMemo(
         () => filteredPatients.reduce((s, r) => s + Number(r.revenue || 0), 0),
@@ -342,13 +460,29 @@ export default function TtmDashboardPage() {
             ICD10_ที่ใช้บ่อย: icdRows.slice(0, 10).map((r) => ({
                 รหัส: r.icd10_code, ชื่อ: r.icd10_name, ครั้ง: r.use_count,
             })),
+            ICD9_หัตถการที่ทำบ่อย: icd9Rows.slice(0, 10).map((r) => ({
+                รหัส: r.icd9_code, ชื่อ: r.icd9_name, ครั้ง: r.use_count,
+            })),
+            ยาสมุนไพร: {
+                รายการสั่งใช้: hb.items,
+                ผู้ป่วยไม่ซ้ำ: hb.patients,
+                ผู้สั่งจ่าย: hb.prescribers.length,
+                มูลค่ารวม_บาท: Math.round(hb.revenue),
+                ยาที่ใช้บ่อย: hb.topDrugs.slice(0, 10).map((d) => ({ ชื่อ: d.name, ครั้ง: d.count })),
+                อันดับผู้สั่งจ่าย: hb.prescribers
+                    .slice()
+                    .sort((a, b) => b.items - a.items)
+                    .slice(0, 10)
+                    .map((p) => ({ ชื่อ: p.name, แผนก: p.department, รายการ: p.items, ผู้ป่วย: p.patients })),
+            },
             คิวคงเหลือ: queueRows.length,
         };
-    }, [data, doctors, rightRows, icdRows, queueRows, kpi, periodLabel]);
+    }, [data, doctors, rightRows, icdRows, icd9Rows, hb, queueRows, kpi, periodLabel]);
 
     const PT_COLUMNS: [string, string][] = [
         ["vstdate", "วันที่"], ["hn", "HN"], ["patient_name", "ชื่อ-สกุล"],
-        ["doctor_name", "แพทย์แผนไทย"], ["shift", "เวร"], ["right_name", "สิทธิ์"], ["icd10", "ICD-10"],
+        ["doctor_name", "แพทย์แผนไทย"], ["shift", "เวร"], ["right_name", "สิทธิ์"],
+        ["icd10", "ICD-10"], ["icd9", "ICD-9 (หัตถการ)"],
     ];
 
     const PeriodBadge = () => (
@@ -431,6 +565,36 @@ export default function TtmDashboardPage() {
                 </div>
             </div>
 
+            {/* Tabs */}
+            <div className="bg-white border border-gray-200 rounded-2xl shadow-sm px-3 py-2 flex flex-wrap items-center gap-2 no-print">
+                {([
+                    { id: "overview" as Tab, label: "ภาพรวมงานแพทย์แผนไทย", icon: Leaf },
+                    { id: "herbal" as Tab, label: "การใช้ยาสมุนไพรรายผู้สั่งจ่าย", icon: Pill },
+                ]).map((t) => {
+                    const Icon = t.icon;
+                    const active = tab === t.id;
+                    return (
+                        <button key={t.id} onClick={() => setTab(t.id)}
+                            className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm transition-colors border"
+                            style={{
+                                backgroundColor: active ? MINT[500] : "#fff",
+                                color: active ? "#fff" : "#4b5563",
+                                borderColor: active ? MINT[500] : "#e5e7eb",
+                                fontWeight: active ? 700 : 500,
+                            }}>
+                            <Icon size={15} />
+                            {t.label}
+                            {t.id === "herbal" && (
+                                <span className="ml-1 text-[11px] px-1.5 py-0.5 rounded-full"
+                                    style={{ backgroundColor: active ? "rgba(255,255,255,.22)" : MINT[50], color: active ? "#fff" : MINT[800] }}>
+                                    {fmt(herbalRows.length)}
+                                </span>
+                            )}
+                        </button>
+                    );
+                })}
+            </div>
+
             {/* Error */}
             {error && (
                 <div className="bg-red-50 border border-red-200 rounded-2xl p-4 text-sm font-medium text-red-700">
@@ -451,8 +615,8 @@ export default function TtmDashboardPage() {
                 </>
             )}
 
-            {/* Content */}
-            {data && (
+            {/* Content — แท็บภาพรวม */}
+            {data && tab === "overview" && (
                 <>
                     {/* KPI */}
                     <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
@@ -602,7 +766,7 @@ export default function TtmDashboardPage() {
                         )}
                     </SectionCard>
 
-                    {/* ICD10 + Queue */}
+                    {/* ICD10 + ICD9 */}
                     <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                         <SectionCard title="รหัสวินิจฉัย ICD-10 ที่ใช้บ่อย" icon={Tags} titleColor={MINT[800]}>
                             {icdData.length === 0 ? (
@@ -612,6 +776,17 @@ export default function TtmDashboardPage() {
                             )}
                         </SectionCard>
 
+                        <SectionCard title="หัตถการ ICD-9 ที่ทำบ่อย" icon={Stethoscope} titleColor={MINT[800]}>
+                            {icd9Data.length === 0 ? (
+                                <p className="text-center text-gray-400 py-8 text-sm">ไม่มีข้อมูลหัตถการ (doctor_operation)</p>
+                            ) : (
+                                <HBarList data={icd9Data} colors={["#185FA5"]} labelWidth={170} />
+                            )}
+                        </SectionCard>
+                    </div>
+
+                    {/* Queue */}
+                    <div className="grid grid-cols-1 gap-4">
                         <SectionCard title="คิวรอรับบริการ ณ ปัจจุบัน" icon={ListChecks} titleColor={MINT[800]}>
                             {queueRows.length === 0 ? (
                                 <p className="text-center text-gray-400 py-8 text-sm">ไม่มีคิวรอบริการ</p>
@@ -650,7 +825,7 @@ export default function TtmDashboardPage() {
                         <div className="flex flex-wrap gap-2 mb-4 no-print">
                             <div className="relative flex-1 min-w-[200px]">
                                 <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-                                <input type="text" placeholder="ค้นหา HN / ชื่อ-สกุล / ICD-10" value={ptSearch}
+                                <input type="text" placeholder="ค้นหา HN / ชื่อ-สกุล / ICD-10 / ICD-9" value={ptSearch}
                                     onChange={(e) => setPtSearch(e.target.value)}
                                     className="w-full border-2 border-gray-200 rounded-full pl-9 pr-4 py-2 text-sm text-gray-800 bg-white focus:outline-none focus:border-[#7ec8a0] transition-colors" />
                             </div>
@@ -694,7 +869,7 @@ export default function TtmDashboardPage() {
                                 </thead>
                                 <tbody>
                                     {filteredPatients.length === 0 ? (
-                                        <tr><td colSpan={8} className="text-center text-gray-400 py-6 text-sm">ไม่มีข้อมูลผู้ป่วย</td></tr>
+                                        <tr><td colSpan={9} className="text-center text-gray-400 py-6 text-sm">ไม่มีข้อมูลผู้ป่วย</td></tr>
                                     ) : (
                                         filteredPatients.map((r, i) => {
                                             const sh = getShift(r.vsttime);
@@ -707,6 +882,11 @@ export default function TtmDashboardPage() {
                                                     <td className="px-3 py-2"><span className={`${BADGE} ${shiftTagClass(sh)}`}>{shiftLabel[sh]}</span></td>
                                                     <td className="px-3 py-2"><span className={`${BADGE} ${rightBadgeClass(r.right_code)}`}>{r.right_name}</span></td>
                                                     <td className="px-3 py-2 text-gray-600 text-xs"><b className="font-mono">{r.icd10}</b> {r.icd10_name}</td>
+                                                    <td className="px-3 py-2 text-gray-600 text-xs">
+                                                        {r.icd9
+                                                            ? <><b className="font-mono">{r.icd9}</b> {r.icd9_name && r.icd9_name !== r.icd9 ? r.icd9_name : ""}</>
+                                                            : <span className="text-gray-300">—</span>}
+                                                    </td>
                                                     <td className="px-3 py-2 text-right font-semibold" style={{ color: MINT[800] }}>{fmtB(r.revenue)}</td>
                                                 </Tr>
                                             );
@@ -715,10 +895,189 @@ export default function TtmDashboardPage() {
                                 </tbody>
                                 <tfoot>
                                     <tr style={{ backgroundColor: MINT[100] }}>
-                                        <td colSpan={7} className="px-3 py-2 font-bold text-gray-800">รวม</td>
+                                        <td colSpan={8} className="px-3 py-2 font-bold text-gray-800">รวม</td>
                                         <td className="px-3 py-2 text-right font-extrabold" style={{ color: MINT[800] }}>
                                             {filteredPatients.length ? fmtB(totalRev) : "—"}
                                         </td>
+                                    </tr>
+                                </tfoot>
+                            </table>
+                        </div>
+                    </SectionCard>
+                </>
+            )}
+
+            {/* Content — แท็บยาสมุนไพร */}
+            {data && tab === "herbal" && (
+                <>
+                    {/* ตัวกรองเฉพาะแท็บนี้ */}
+                    <div className="bg-white border border-gray-200 rounded-2xl shadow-sm px-6 py-3 flex flex-wrap items-center gap-3 no-print">
+                        <div className="relative flex-1 min-w-[220px]">
+                            <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                            <input type="text" placeholder="ค้นหา ผู้สั่งจ่าย / แผนก / ชื่อยา / HN" value={hbSearch}
+                                onChange={(e) => setHbSearch(e.target.value)}
+                                className="w-full border-2 border-gray-200 rounded-full pl-9 pr-4 py-2 text-sm text-gray-800 bg-white focus:outline-none focus:border-[#7ec8a0] transition-colors" />
+                        </div>
+                        <select value={hbDept} onChange={(e) => setHbDept(e.target.value)}
+                            className="border-2 border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-700 bg-white focus:outline-none focus:border-[#7ec8a0]">
+                            <option value="">— ทุกแผนก —</option>
+                            {hbDepts.map((d) => <option key={d} value={d}>{d}</option>)}
+                        </select>
+                        <button onClick={exportHerbalCsv} disabled={!hbFiltered.length}
+                            className="flex items-center gap-1.5 text-sm font-semibold px-4 py-2 rounded-lg border transition-colors disabled:opacity-40"
+                            style={{ color: MINT[800], borderColor: MINT[200], backgroundColor: MINT[50] }}>
+                            <Download size={15} /> ดาวน์โหลด CSV
+                        </button>
+                        <span className="text-xs text-gray-400">แสดง {fmt(hbFiltered.length)} รายการ</span>
+                    </div>
+
+                    {/* KPI */}
+                    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+                        <KpiCard icon={Pill} label="รายการสั่งใช้ยาสมุนไพร" value={fmt(hb.items)} sub="รายการ" accent="#1a5233" bg="#f0faf4" />
+                        <KpiCard icon={Users} label="ผู้ป่วยไม่ซ้ำ (HN)" value={fmt(hb.patients)} sub="ราย" accent="#0369A1" bg="#E0F2FE" />
+                        <KpiCard icon={Stethoscope} label="ผู้สั่งจ่ายที่ใช้" value={fmt(hb.prescribers.length)} sub="คน" accent="#5B21B6" bg="#EDE9FE" />
+                        <KpiCard icon={Banknote} label="มูลค่ายาสมุนไพร" value={fmtB(hb.revenue)} sub="บาท" accent="#854D0E" bg="#FEF9C3" />
+                        <KpiCard icon={Leaf} label="ยาที่นิยมสุด"
+                            value={hb.topDrugs[0]?.name ?? "—"}
+                            sub={hb.topDrugs[0] ? `${fmt(hb.topDrugs[0].count)} รายการ` : ""}
+                            accent="#065F46" bg="#D1FAE5" />
+                    </div>
+
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                        {/* อันดับผู้สั่งจ่าย */}
+                        <SectionCard title="อันดับแพทย์ / ผู้สั่งจ่ายยาสมุนไพร" icon={Users} titleColor={MINT[800]}>
+                            <div className="flex items-center gap-2 mb-3 -mt-2"><PeriodBadge /></div>
+                            {hbSorted.length === 0 ? (
+                                <p className="text-center text-gray-400 py-8 text-sm">ไม่มีการสั่งใช้ยาสมุนไพรในช่วงที่เลือก</p>
+                            ) : (
+                                <div className="overflow-auto max-h-[420px] rounded-xl border border-gray-200">
+                                    <table className="min-w-full text-sm border-collapse">
+                                        <thead>
+                                            <tr>
+                                                <Th>#</Th>
+                                                {([["name", "แพทย์ / ผู้สั่งจ่าย"], ["items", "รายการ"], ["patients", "ผู้ป่วย"], ["qty", "จำนวนรวม"]] as const).map(([key, label]) => (
+                                                    <th key={key} onClick={() => sortHb(key)}
+                                                        className={`sticky top-0 text-white px-3 py-2 text-xs font-semibold whitespace-nowrap cursor-pointer select-none ${key === "name" ? "text-left" : "text-right"}`}
+                                                        style={{ backgroundColor: MINT[300] }}>
+                                                        {label}<SortIcon active={hbSortKey === key} asc={hbSortAsc} />
+                                                    </th>
+                                                ))}
+                                                <Th className="!text-right">สัดส่วน</Th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {hbSorted.map((p, i) => {
+                                                const share = hb.items ? (p.items / hb.items) * 100 : 0;
+                                                return (
+                                                    <Tr key={p.name} index={i}>
+                                                        <td className="px-3 py-2">
+                                                            <span className={`inline-flex items-center justify-center w-5 h-5 rounded-full text-[11px] font-bold ${i < 3 ? "bg-amber-100 text-amber-700" : "bg-green-100 text-green-700"}`}>{i + 1}</span>
+                                                        </td>
+                                                        <td className="px-3 py-2 text-gray-800">
+                                                            {p.name}
+                                                            {p.department && <span className="block text-[11px] text-gray-400">{p.department}</span>}
+                                                        </td>
+                                                        <td className="px-3 py-2 text-right font-semibold tabular-nums" style={{ color: MINT[800] }}>{fmt(p.items)}</td>
+                                                        <td className="px-3 py-2 text-right tabular-nums text-gray-700">{fmt(p.patients)}</td>
+                                                        <td className="px-3 py-2 text-right tabular-nums text-gray-700">{fmt(p.qty)}</td>
+                                                        <td className="px-3 py-2">
+                                                            <div className="flex items-center gap-2">
+                                                                <div className="flex-1 h-1.5 rounded bg-gray-100 overflow-hidden min-w-[60px]">
+                                                                    <div className="h-full rounded" style={{ width: `${Math.round((p.items / hb.maxItems) * 100)}%`, backgroundColor: MINT[400] }} />
+                                                                </div>
+                                                                <span className="text-[11px] text-gray-400 tabular-nums w-10 text-right">{share.toFixed(1)}%</span>
+                                                            </div>
+                                                        </td>
+                                                    </Tr>
+                                                );
+                                            })}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            )}
+                        </SectionCard>
+
+                        {/* ยาที่ใช้บ่อย */}
+                        <SectionCard title="ยาสมุนไพรที่ใช้บ่อยสุด (8 อันดับ)" icon={BarChart3} titleColor={MINT[800]}>
+                            {hb.topDrugs.length === 0 ? (
+                                <p className="text-center text-gray-400 py-8 text-sm">ไม่มีข้อมูล</p>
+                            ) : (
+                                <ResponsiveContainer width="100%" height={320}>
+                                    <BarChart data={hb.topDrugs.slice(0, 8)} layout="vertical" margin={{ top: 4, right: 16, left: 8, bottom: 0 }}>
+                                        <CartesianGrid horizontal={false} stroke="#e5e7eb" />
+                                        <XAxis type="number" tick={{ fontSize: 11, fill: "#6b7280" }} axisLine={false} tickLine={false} />
+                                        <YAxis type="category" dataKey="name" width={150}
+                                            tick={{ fontSize: 11, fill: "#6b7280" }} axisLine={false} tickLine={false} />
+                                        <RTooltip formatter={(v) => [fmt(Number(v ?? 0)), "รายการ"]}
+                                            contentStyle={{ fontSize: 12, borderRadius: 8, border: "1px solid #e5e7eb" }} />
+                                        <Bar dataKey="count" radius={[0, 5, 5, 0]} fill={MINT[400]} />
+                                    </BarChart>
+                                </ResponsiveContainer>
+                            )}
+                        </SectionCard>
+                    </div>
+
+                    {/* แนวโน้มรายวัน */}
+                    <SectionCard title="แนวโน้มการสั่งใช้ยาสมุนไพรรายวัน" icon={TrendingUp} titleColor={MINT[800]}>
+                        {hb.trend.length === 0 ? (
+                            <p className="text-center text-gray-400 py-8 text-sm">ไม่มีข้อมูล</p>
+                        ) : (
+                            <ResponsiveContainer width="100%" height={280}>
+                                <LineChart data={hb.trend} margin={{ top: 4, right: 12, left: 0, bottom: 0 }}>
+                                    <CartesianGrid vertical={false} stroke="#e5e7eb" />
+                                    <XAxis dataKey="date" tick={{ fontSize: 10, fill: "#6b7280" }} axisLine={false} tickLine={false} minTickGap={18} />
+                                    <YAxis allowDecimals={false} tick={{ fontSize: 11, fill: "#6b7280" }} axisLine={false} tickLine={false} />
+                                    <RTooltip formatter={(v) => [fmt(Number(v ?? 0)), "รายการ"]}
+                                        labelFormatter={(l) => formatThaiDate(String(l)) || String(l)}
+                                        contentStyle={{ fontSize: 12, borderRadius: 8, border: "1px solid #e5e7eb" }} />
+                                    <Line type="monotone" dataKey="count" stroke={MINT[600]} strokeWidth={2} dot={false} />
+                                </LineChart>
+                            </ResponsiveContainer>
+                        )}
+                    </SectionCard>
+
+                    {/* รายการสั่งใช้ */}
+                    <SectionCard title="รายการสั่งใช้ยาสมุนไพร" icon={Table2} titleColor={MINT[800]}>
+                        <div className="flex items-center gap-2 mb-3 -mt-2"><PeriodBadge /></div>
+                        <div className="overflow-auto max-h-[460px] rounded-xl border border-gray-200">
+                            <table className="min-w-full text-sm border-collapse">
+                                <thead>
+                                    <tr>
+                                        {["วันที่", "HN", "ชื่อ-สกุล", "ผู้สั่งจ่าย", "แผนก", "ยาสมุนไพร"].map((h) => (
+                                            <th key={h} className="sticky top-0 text-white px-3 py-2 text-xs font-semibold whitespace-nowrap text-left"
+                                                style={{ backgroundColor: MINT[300] }}>{h}</th>
+                                        ))}
+                                        {["จำนวน", "มูลค่า (฿)"].map((h) => (
+                                            <th key={h} className="sticky top-0 text-white px-3 py-2 text-xs font-semibold whitespace-nowrap text-right"
+                                                style={{ backgroundColor: MINT[300] }}>{h}</th>
+                                        ))}
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {hbFiltered.length === 0 ? (
+                                        <tr><td colSpan={8} className="text-center text-gray-400 py-6 text-sm">ไม่มีรายการสั่งใช้ยาสมุนไพร</td></tr>
+                                    ) : (
+                                        hbFiltered.slice(0, 500).map((r, i) => (
+                                            <Tr key={`${r.vn}-${r.drug_code}-${i}`} index={i}>
+                                                <td className="px-3 py-2 text-gray-600 whitespace-nowrap">{formatThaiDate(r.vstdate) || "—"} {r.vsttime}</td>
+                                                <td className="px-3 py-2 font-mono font-semibold text-gray-700">{r.hn}</td>
+                                                <td className="px-3 py-2 text-gray-800">{r.patient_name}</td>
+                                                <td className="px-3 py-2"><span className={`${BADGE} ${getDocColor(r.prescriber_name)}`}>{r.prescriber_name}</span></td>
+                                                <td className="px-3 py-2 text-gray-600 text-xs">{r.department || "—"}</td>
+                                                <td className="px-3 py-2 text-gray-700">{r.drug_name}</td>
+                                                <td className="px-3 py-2 text-right tabular-nums text-gray-700">{fmt(r.qty)}</td>
+                                                <td className="px-3 py-2 text-right font-semibold tabular-nums" style={{ color: MINT[800] }}>{fmtB(r.revenue)}</td>
+                                            </Tr>
+                                        ))
+                                    )}
+                                </tbody>
+                                <tfoot>
+                                    <tr style={{ backgroundColor: MINT[100] }}>
+                                        <td colSpan={6} className="px-3 py-2 font-bold text-gray-800">
+                                            รวม{hbFiltered.length > 500 ? ` (แสดง 500 จาก ${fmt(hbFiltered.length)} รายการ — ดาวน์โหลด CSV เพื่อดูทั้งหมด)` : ""}
+                                        </td>
+                                        <td className="px-3 py-2 text-right font-extrabold tabular-nums" style={{ color: MINT[800] }}>{fmt(hb.qty)}</td>
+                                        <td className="px-3 py-2 text-right font-extrabold tabular-nums" style={{ color: MINT[800] }}>{fmtB(hb.revenue)}</td>
                                     </tr>
                                 </tfoot>
                             </table>

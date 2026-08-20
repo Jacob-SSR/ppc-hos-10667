@@ -27,6 +27,73 @@ const TTM_VISIT_EXISTS = `
         WHERE oo.vn = v.vn AND ${TTM_STAFF_PREDICATE}
       )`;
 
+// ── ตารางชื่อหัตถการ ICD-9 — whitelist กันชื่อตารางแปลกปลอม (ใส่ใน SQL ตรง ๆ ไม่ใช่ param) ──
+const ICD9_TABLE_WHITELIST = ["icd9cm", "icd9_sss"] as const;
+const TTM_ICD9_TABLE = ICD9_TABLE_WHITELIST.includes(
+  (process.env.TTM_ICD9_TABLE ?? "") as (typeof ICD9_TABLE_WHITELIST)[number],
+)
+  ? (process.env.TTM_ICD9_TABLE as string)
+  : "icd9_sss";
+
+// ── เกณฑ์ "เป็นยาสมุนไพร" บน drugitems (alias di) ──────────────────────────────
+// ตั้งค่าได้ผ่าน env ให้ตรงกับ master ของ รพ. (คั่นด้วย , )
+//   TTM_HERBAL_DRUGTYPES      : drugitems.drugtype ที่เป็นยาสมุนไพร (default "10")
+//   TTM_HERBAL_ICODES         : icode เฉพาะรายการ (ถ้าอยากบังคับเพิ่ม)
+//   TTM_HERBAL_NAME_KEYWORDS  : คำในชื่อยา (LIKE %คำ%) — default ใช้ชื่อยาสมุนไพรที่พบบ่อย
+const envList = (v: string | undefined): string[] =>
+  (v ?? "")
+    .split(",")
+    .map((x) => x.trim())
+    .filter(Boolean);
+
+const HERBAL_DRUGTYPES = envList(process.env.TTM_HERBAL_DRUGTYPES ?? "10");
+const HERBAL_ICODES = envList(process.env.TTM_HERBAL_ICODES);
+const HERBAL_KEYWORDS = envList(
+  process.env.TTM_HERBAL_NAME_KEYWORDS ??
+    [
+      "ฟ้าทะลายโจร",
+      "ขมิ้นชัน",
+      "เพชรสังฆาต",
+      "มะขามแขก",
+      "ชุมเห็ดเทศ",
+      "เถาวัลย์เปรียง",
+      "สหัศธารา",
+      "ประสะไพล",
+      "เบญจกูล",
+      "ธาตุอบเชย",
+      "ไพล",
+      "ยาหอม",
+      "ตรีผลา",
+      "หญ้าดอกขาว",
+      "บัวบก",
+      "ว่านหางจระเข้",
+      "กระชาย",
+      "ขิง",
+      "มะระขี้นก",
+      "สมุนไพร",
+    ].join(","),
+);
+
+// สร้าง predicate + params (ใช้ ? ทั้งหมด กัน SQL injection)
+function herbalPredicate(): { sql: string; params: string[] } {
+  const parts: string[] = [];
+  const params: string[] = [];
+  if (HERBAL_DRUGTYPES.length) {
+    parts.push(`di.drugtype IN (${HERBAL_DRUGTYPES.map(() => "?").join(",")})`);
+    params.push(...HERBAL_DRUGTYPES);
+  }
+  if (HERBAL_ICODES.length) {
+    parts.push(`di.icode IN (${HERBAL_ICODES.map(() => "?").join(",")})`);
+    params.push(...HERBAL_ICODES);
+  }
+  if (HERBAL_KEYWORDS.length) {
+    parts.push(`(${HERBAL_KEYWORDS.map(() => "di.name LIKE ?").join(" OR ")})`);
+    params.push(...HERBAL_KEYWORDS.map((k) => `%${k}%`));
+  }
+  // ไม่ได้ตั้งค่าอะไรเลย → ไม่ match อะไร (กันดึงยาทั้งโรงพยาบาล)
+  return { sql: parts.length ? `(${parts.join(" OR ")})` : "1=0", params };
+}
+
 // เจ้าของงาน = บุคลากรแผนไทยที่คิดเงินรวมมากสุดของ VN
 const TTM_STAFF_SUBQ = `
         (SELECT oo.doctor
@@ -50,6 +117,27 @@ interface VisitRow extends RowDataPacket {
   pcode: string;
   icd10: string;
   icd10_name: string;
+}
+
+interface OperationRow extends RowDataPacket {
+  vn: string;
+  icd9: string;
+  icd9_name: string;
+}
+
+interface HerbalDbRow extends RowDataPacket {
+  vstdate: string;
+  vsttime: string;
+  vn: string;
+  hn: string;
+  patient_name: string;
+  prescriber_id: string;
+  prescriber_name: string;
+  department: string;
+  drug_code: string;
+  drug_name: string;
+  qty: number;
+  revenue: number;
 }
 
 interface QueueRow extends RowDataPacket {
@@ -93,6 +181,27 @@ export interface TtmIcdRow {
   use_count: number;
 }
 
+export interface TtmIcd9Row {
+  icd9_code: string;
+  icd9_name: string;
+  use_count: number;
+}
+
+export interface TtmHerbalRow {
+  vstdate: string;
+  vsttime: string;
+  vn: string;
+  hn: string;
+  patient_name: string;
+  prescriber_id: string;
+  prescriber_name: string;
+  department: string;
+  drug_code: string;
+  drug_name: string;
+  qty: number;
+  revenue: number;
+}
+
 export interface TtmPatientRow {
   vstdate: string;
   vsttime: string;
@@ -105,6 +214,8 @@ export interface TtmPatientRow {
   right_name: string;
   icd10: string;
   icd10_name: string;
+  icd9: string;
+  icd9_name: string;
   revenue: number;
 }
 
@@ -124,8 +235,10 @@ export interface TtmDashboardData {
   summary: { doctors: TtmDoctorSummary[] };
   rights: { rows: TtmRightRow[] };
   icd10: { rows: TtmIcdRow[] };
+  icd9: { rows: TtmIcd9Row[] };
   queue: { queue: TtmQueueRow[] };
   patients: { rows: TtmPatientRow[] };
+  herbal: { rows: TtmHerbalRow[] };
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -188,6 +301,43 @@ export async function getTtmDashboard(
     `,
     [start, end],
   );
+
+  // 1b) หัตถการ ICD-9 ของ visit เดียวกัน (1 visit มีได้หลายหัตถการ เช่น นวด/ประคบ/อบ)
+  const [operations] = await db.query<OperationRow[]>(
+    `
+    SELECT
+      op.vn,
+      op.icd9,
+      COALESCE(NULLIF(ic9.name, ''), op.icd9) AS icd9_name
+    FROM doctor_operation op
+    INNER JOIN vn_stat v ON v.vn = op.vn
+    LEFT JOIN ${TTM_ICD9_TABLE} ic9 ON ic9.code = op.icd9
+    WHERE v.vstdate BETWEEN ? AND ?
+      AND op.icd9 IS NOT NULL AND op.icd9 <> ''
+      AND ${TTM_VISIT_EXISTS}
+    ORDER BY op.vn, op.icd9
+    `,
+    [start, end],
+  );
+
+  // vn → รายการหัตถการ (ใช้ทั้งตารางผู้ป่วยและอันดับ ICD-9)
+  const opsByVn = new Map<string, { code: string; name: string }[]>();
+  const icd9Map = new Map<string, TtmIcd9Row>();
+  for (const o of operations) {
+    const code = String(o.icd9).trim();
+    if (!code) continue;
+    const name = (o.icd9_name || code).trim();
+    const list = opsByVn.get(o.vn) ?? [];
+    if (!list.some((x) => x.code === code)) list.push({ code, name });
+    opsByVn.set(o.vn, list);
+
+    let ic9 = icd9Map.get(code);
+    if (!ic9) {
+      ic9 = { icd9_code: code, icd9_name: name, use_count: 0 };
+      icd9Map.set(code, ic9);
+    }
+    ic9.use_count++;
+  }
 
   // ── summary รายแพทย์ + shifts ──
   const docMap = new Map<string, TtmDoctorSummary & { _hn: Set<string> }>();
@@ -258,6 +408,7 @@ export async function getTtmDashboard(
     }
 
     // patient row
+    const ops = opsByVn.get(r.vn) ?? [];
     patients.push({
       vstdate: r.vstdate,
       vsttime: r.vsttime,
@@ -270,6 +421,8 @@ export async function getTtmDashboard(
       right_name: right.name,
       icd10: r.icd10,
       icd10_name: r.icd10_name,
+      icd9: ops.map((x) => x.code).join(", "),
+      icd9_name: ops.map((x) => x.name).join(", "),
       revenue: rev,
     });
   }
@@ -290,6 +443,10 @@ export async function getTtmDashboard(
   );
 
   const icdRows = Array.from(icdMap.values())
+    .sort((a, b) => b.use_count - a.use_count)
+    .slice(0, 10);
+
+  const icd9Rows = Array.from(icd9Map.values())
     .sort((a, b) => b.use_count - a.use_count)
     .slice(0, 10);
 
@@ -334,12 +491,60 @@ export async function getTtmDashboard(
     status: q.ovstist && q.ovstist.trim() !== "" ? "กำลังรับบริการ" : "รอ",
   }));
 
+  // 3) การใช้ยาสมุนไพรรายแพทย์/ผู้สั่งจ่าย — ทั้งโรงพยาบาลในช่วงที่เลือก
+  //    (ไม่จำกัดเฉพาะแผนกแผนไทย เพราะรายงานนี้ดูว่า "ใครสั่งใช้ยาสมุนไพรบ้าง")
+  const herb = herbalPredicate();
+  const [herbalRows] = await db.query<HerbalDbRow[]>(
+    `
+    SELECT
+      op.vstdate,
+      COALESCE(o.vsttime, '')                              AS vsttime,
+      op.vn,
+      op.hn,
+      CONCAT(pt.pname, pt.fname, ' ', pt.lname)            AS patient_name,
+      COALESCE(NULLIF(op.doctor, ''), o.doctor, '')        AS prescriber_id,
+      COALESCE(NULLIF(d.name, ''), NULLIF(op.doctor, ''), 'ไม่ระบุผู้สั่ง') AS prescriber_name,
+      COALESCE(NULLIF(k.department, ''), '')               AS department,
+      op.icode                                             AS drug_code,
+      COALESCE(NULLIF(di.name, ''), op.icode)              AS drug_name,
+      COALESCE(op.qty, 1)                                  AS qty,
+      COALESCE(op.sum_price, 0)                            AS revenue
+    FROM opitemrece op
+    INNER JOIN drugitems di ON di.icode = op.icode
+    LEFT JOIN ovst o           ON o.vn = op.vn
+    LEFT JOIN patient pt       ON pt.hn = op.hn
+    LEFT JOIN doctor d         ON d.code = COALESCE(NULLIF(op.doctor, ''), o.doctor)
+    LEFT JOIN kskdepartment k  ON k.depcode = o.main_dep
+    WHERE op.vstdate BETWEEN ? AND ?
+      AND ${herb.sql}
+    ORDER BY op.vstdate, o.vsttime
+    `,
+    [start, end, ...herb.params],
+  );
+
+  const herbal: TtmHerbalRow[] = herbalRows.map((r) => ({
+    vstdate: String(r.vstdate ?? ""),
+    vsttime: (r.vsttime || "").slice(0, 5),
+    vn: r.vn,
+    hn: r.hn,
+    patient_name: (r.patient_name || "").trim(),
+    prescriber_id: (r.prescriber_id || "").trim(),
+    prescriber_name: (r.prescriber_name || "ไม่ระบุผู้สั่ง").trim(),
+    department: (r.department || "").trim(),
+    drug_code: r.drug_code,
+    drug_name: (r.drug_name || r.drug_code || "").trim(),
+    qty: Number(r.qty) || 0,
+    revenue: Number(r.revenue) || 0,
+  }));
+
   return {
     updatedAt: new Date().toISOString(),
     summary: { doctors },
     rights: { rows: rightRows },
     icd10: { rows: icdRows },
+    icd9: { rows: icd9Rows },
     queue: { queue },
     patients: { rows: patients },
+    herbal: { rows: herbal },
   };
 }
