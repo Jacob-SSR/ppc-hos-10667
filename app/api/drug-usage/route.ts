@@ -1,6 +1,7 @@
 // app/api/drug-usage/route.ts
 // สรุปยอดการใช้เวชภัณฑ์ตามมูลค่าการใช้ทั้งหมดในสถานบริการ
-// รับ ?preset=today|7days|30days|thismonth|thisyear|fiscal  หรือ  ?start=YYYY-MM-DD&end=YYYY-MM-DD
+// รับ ?preset=today|thismonth|fiscal  หรือ  ?start=YYYY-MM-DD&end=YYYY-MM-DD
+//     ?fy=2569 — ปีงบประมาณ พ.ศ. (ใช้กับ preset=fiscal, default = ปีงบปัจจุบัน)
 //     ?kind=drug (เวชภัณฑ์ยา — default) | nondrug (เวชภัณฑ์ที่ไม่ใช่ยา)
 import { NextResponse } from "next/server";
 import { getDrugUsageDashboard, isItemKind } from "@/lib/drugUsage.service";
@@ -26,25 +27,32 @@ function bangkokToday(): Date {
   return new Date(now.getFullYear(), now.getMonth(), now.getDate());
 }
 
-function rangeFromPreset(preset: string): { start: string; end: string } {
+/** ปีงบประมาณ พ.ศ. ปัจจุบัน (ปีงบเริ่ม 1 ต.ค.) */
+function currentFiscalYear(today: Date): number {
+  return today.getFullYear() + 543 + (today.getMonth() >= 9 ? 1 : 0);
+}
+
+/**
+ * ช่วงวันของปีงบประมาณ พ.ศ. ที่ระบุ — 1 ต.ค. ปีก่อนหน้า ถึง 30 ก.ย.
+ * ปีงบปัจจุบันตัดปลายที่ "วันนี้" (ยังไม่จบปีงบ)
+ */
+function fiscalRange(fyBE: number, today: Date): { start: string; end: string } {
+  const ceEnd = fyBE - 543; // ปี ค.ศ. ที่ปีงบสิ้นสุด
+  const fyEnd = new Date(ceEnd, 8, 30); // 30 ก.ย.
+  return {
+    start: fmt(new Date(ceEnd - 1, 9, 1)), // 1 ต.ค. ปีก่อนหน้า
+    end: fmt(fyEnd < today ? fyEnd : today),
+  };
+}
+
+function rangeFromPreset(preset: string, fy: number | null): { start: string; end: string } {
   const today = bangkokToday();
   const end = fmt(today);
 
-  if (preset === "7days" || preset === "30days") {
-    const days = preset === "7days" ? 6 : 29;
-    const s = new Date(today);
-    s.setDate(s.getDate() - days);
-    return { start: fmt(s), end };
-  }
   if (preset === "thismonth")
     return { start: fmt(new Date(today.getFullYear(), today.getMonth(), 1)), end };
-  if (preset === "thisyear")
-    return { start: fmt(new Date(today.getFullYear(), 0, 1)), end };
-  if (preset === "fiscal") {
-    // ปีงบประมาณเริ่ม 1 ต.ค.
-    const y = today.getMonth() >= 9 ? today.getFullYear() : today.getFullYear() - 1;
-    return { start: fmt(new Date(y, 9, 1)), end };
-  }
+  if (preset === "fiscal")
+    return fiscalRange(fy ?? currentFiscalYear(today), today);
   return { start: end, end }; // today
 }
 
@@ -57,6 +65,10 @@ export async function GET(req: Request) {
     const kindParam = searchParams.get("kind");
     const kind = isItemKind(kindParam) ? kindParam : "drug";
 
+    // ปีงบประมาณ พ.ศ. — รับเฉพาะค่าที่สมเหตุสมผล (2500–2699)
+    const fyRaw = Number(searchParams.get("fy"));
+    const fy = Number.isInteger(fyRaw) && fyRaw >= 2500 && fyRaw <= 2699 ? fyRaw : null;
+
     const useCustom =
       !!startParam &&
       !!endParam &&
@@ -65,7 +77,7 @@ export async function GET(req: Request) {
 
     let { start, end } = useCustom
       ? { start: startParam as string, end: endParam as string }
-      : rangeFromPreset(preset);
+      : rangeFromPreset(preset, fy);
 
     if (start > end) [start, end] = [end, start];
 

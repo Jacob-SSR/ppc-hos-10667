@@ -23,6 +23,7 @@ import { THAI_MONTHS_SHORT, toThaiDateLabel } from "@/lib/thaiDate";
 type Kind = "drug" | "nondrug";
 
 interface ItemRow {
+    fiscal_year: number;
     icode: string; name: string; strength: string; units: string;
     order_count: number; qty: number; vn_count: number; hn_count: number;
     value: number; opd_value: number; ipd_value: number;
@@ -38,11 +39,12 @@ interface Totals {
 }
 interface DashData {
     updatedAt: string; kind: Kind; kindLabel: string; start: string; end: string;
+    fiscalYears: number[];
     totals: Totals; items: ItemRow[]; trend: TrendRow[];
     departments: DimRow[]; prescribers: DimRow[]; rights: DimRow[];
 }
 
-type Preset = "today" | "7days" | "30days" | "thismonth" | "thisyear" | "fiscal" | "custom";
+type Preset = "today" | "thismonth" | "fiscal" | "custom";
 type SortKey = "value" | "qty" | "order_count" | "vn_count" | "name";
 type AbcClass = "A" | "B" | "C";
 
@@ -54,13 +56,20 @@ const MINT = {
 const PALETTE = ["#3aa36a", "#185FA5", "#6a1b9a", "#e65100", "#00695c", "#880e4f", "#5b21b6", "#b45309"];
 
 const PRESETS: { key: Preset; label: string }[] = [
-    { key: "today", label: "วันนี้" },
-    { key: "7days", label: "7 วันล่าสุด" },
-    { key: "30days", label: "30 วันล่าสุด" },
-    { key: "thismonth", label: "เดือนนี้" },
     { key: "fiscal", label: "ปีงบประมาณ" },
+    { key: "thismonth", label: "เดือนนี้" },
+    { key: "today", label: "วันนี้" },
     { key: "custom", label: "กำหนดเอง" },
 ];
+
+/** ปีงบประมาณ พ.ศ. ปัจจุบัน — ปีงบเริ่ม 1 ต.ค. */
+function currentFiscalYear(): number {
+    const now = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Bangkok" }));
+    return now.getFullYear() + 543 + (now.getMonth() >= 9 ? 1 : 0);
+}
+
+/** 5 ปีงบล่าสุด (ปีปัจจุบันก่อน) เช่น 2569 2568 2567 2566 2565 */
+const FISCAL_YEARS: number[] = Array.from({ length: 5 }, (_, i) => currentFiscalYear() - i);
 
 const PAGE_SIZE = 25;
 
@@ -163,12 +172,14 @@ export default function DrugUsageDashboardPage() {
     const [error, setError] = useState<string | null>(null);
 
     const [kind, setKind] = useState<Kind>("drug");
-    const [preset, setPreset] = useState<Preset>("thismonth");
+    const [preset, setPreset] = useState<Preset>("fiscal");
+    const [fiscalYear, setFiscalYear] = useState<number>(FISCAL_YEARS[0]);
     const [customStart, setCustomStart] = useState(bangkokToday);
     const [customEnd, setCustomEnd] = useState(bangkokToday);
 
     const [search, setSearch] = useState("");
     const [abcFilter, setAbcFilter] = useState<"" | AbcClass>("");
+    const [yearFilter, setYearFilter] = useState<number | "">("");
     const [sortKey, setSortKey] = useState<SortKey>("value");
     const [sortAsc, setSortAsc] = useState(false);
     const [page, setPage] = useState(1);
@@ -185,6 +196,7 @@ export default function DrugUsageDashboardPage() {
                 params.set("end", customEnd);
             } else {
                 params.set("preset", preset);
+                if (preset === "fiscal") params.set("fy", String(fiscalYear));
             }
             params.set("kind", kind);
             const res = await fetch(`/api/drug-usage?${params}`, { credentials: "include" });
@@ -195,22 +207,25 @@ export default function DrugUsageDashboardPage() {
         } finally {
             setLoading(false);
         }
-    }, [kind, preset, customStart, customEnd]);
+    }, [kind, preset, fiscalYear, customStart, customEnd]);
 
     // preset อื่นดึงทันที — custom รอผู้ใช้กด "ค้นหา" (แต่สลับชนิดเวชภัณฑ์ให้ดึงใหม่เสมอ)
     useEffect(() => {
         if (preset !== "custom") fetchData();
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [preset, kind]);
+    }, [preset, kind, fiscalYear]);
 
     // เปลี่ยนตัวกรอง → กลับหน้าแรกเสมอ
-    useEffect(() => { setPage(1); }, [search, abcFilter, sortKey, sortAsc, data]);
+    useEffect(() => { setPage(1); }, [search, abcFilter, yearFilter, sortKey, sortAsc, data]);
 
     // ── derived ──
     const totals = data?.totals;
     const items = useMemo(() => data?.items ?? [], [data]);
     const periodLabel = data ? toThaiDateLabel(data.start, data.end) : "—";
     const kindMeta = KINDS.find((k) => k.key === kind) ?? KINDS[0];
+    // ปีงบที่มีข้อมูลจริงในชุดนี้ — ปกติ 1 ปี ยกเว้นเลือกช่วง "กำหนดเอง" ที่คร่อมปีงบ
+    const dataYears = useMemo(() => data?.fiscalYears ?? [], [data]);
+    const multiYear = dataYears.length > 1;
 
     /** ทุกรายการ + %สัดส่วน, %สะสม และ ABC class (เรียงตามมูลค่าจาก API อยู่แล้ว) */
     const ranked = useMemo(() => {
@@ -243,6 +258,7 @@ export default function DrugUsageDashboardPage() {
     const filtered = useMemo(() => {
         const q = search.toLowerCase().trim();
         const rows = ranked.filter((r) => {
+            if (yearFilter !== "" && r.fiscal_year !== yearFilter) return false;
             if (abcFilter && r.abc !== abcFilter) return false;
             if (!q) return true;
             return `${r.icode} ${r.name} ${r.strength} ${r.units}`.toLowerCase().includes(q);
@@ -255,7 +271,7 @@ export default function DrugUsageDashboardPage() {
             const vb = b[sortKey] as number;
             return sortAsc ? va - vb : vb - va;
         });
-    }, [ranked, search, abcFilter, sortKey, sortAsc]);
+    }, [ranked, search, abcFilter, yearFilter, sortKey, sortAsc]);
 
     const filteredValue = useMemo(() => filtered.reduce((s, r) => s + r.value, 0), [filtered]);
     const pageCount = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
@@ -302,6 +318,7 @@ export default function DrugUsageDashboardPage() {
         exportToExcel(
             filtered.map((r) => ({
                 อันดับ: r.rank,
+                ปีงบประมาณ: r.fiscal_year,
                 รหัสเวชภัณฑ์: r.icode,
                 ชื่อเวชภัณฑ์: r.name,
                 ความแรง: r.strength,
@@ -319,7 +336,9 @@ export default function DrugUsageDashboardPage() {
             })),
             {
                 sheetName: kind === "drug" ? "DrugUsage" : "NonDrugUsage",
-                filePrefix: kind === "drug" ? "drug_usage" : "nondrug_usage",
+                filePrefix: `${kind === "drug" ? "drug_usage" : "nondrug_usage"}_${
+                    preset === "fiscal" ? `fy${fiscalYear}` : `${data?.start ?? ""}_${data?.end ?? ""}`
+                }`,
                 dateKeys: [],
             },
         );
@@ -330,6 +349,7 @@ export default function DrugUsageDashboardPage() {
         if (!data || !totals) return null;
         return {
             ประเภทเวชภัณฑ์: kindMeta.label,
+            ปีงบประมาณ: dataYears.join(", "),
             ช่วงข้อมูล: periodLabel,
             มูลค่ายารวม_บาท: Math.round(totals.value),
             มูลค่า_OPD: Math.round(totals.opd_value),
@@ -345,7 +365,7 @@ export default function DrugUsageDashboardPage() {
                 C: { รายการ: abcSummary.C.items, มูลค่า: Math.round(abcSummary.C.value) },
             },
             รายการ_20_อันดับแรกตามมูลค่า: ranked.slice(0, 20).map((r) => ({
-                ชื่อ: r.name, ความแรง: r.strength, จำนวน: r.qty,
+                ปีงบ: r.fiscal_year, ชื่อ: r.name, ความแรง: r.strength, จำนวน: r.qty,
                 มูลค่า: Math.round(r.value), สัดส่วน_ร้อยละ: Number(r.share.toFixed(2)),
             })),
             แยกตามแผนก: (data.departments ?? []).slice(0, 10).map((r) => ({
@@ -358,7 +378,7 @@ export default function DrugUsageDashboardPage() {
                 ผู้สั่ง: r.label, มูลค่า: Math.round(r.value),
             })),
         };
-    }, [data, totals, periodLabel, abcSummary, ranked, kindMeta]);
+    }, [data, totals, periodLabel, abcSummary, ranked, kindMeta, dataYears]);
 
     const sortBy = (key: SortKey) => {
         if (sortKey === key) setSortAsc((p) => !p);
@@ -381,6 +401,14 @@ export default function DrugUsageDashboardPage() {
                     <p className="text-xs text-gray-400 mt-0.5">
                         มูลค่าการใช้{kindMeta.label}ทั้งหมดในสถานบริการ (HOSxP) · ช่วงข้อมูล{" "}
                         <span className="font-semibold" style={{ color: MINT[700] }}>{periodLabel}</span>
+                        {dataYears.length > 0 && (
+                            <>
+                                {" · ปีงบ "}
+                                <span className="font-semibold" style={{ color: MINT[700] }}>
+                                    {dataYears.join(", ")}
+                                </span>
+                            </>
+                        )}
                     </p>
                 </div>
 
@@ -412,6 +440,25 @@ export default function DrugUsageDashboardPage() {
                             <option key={p.key} value={p.key}>{p.label}</option>
                         ))}
                     </select>
+
+                    {/* ปีงบประมาณ 5 ปีล่าสุด */}
+                    {preset === "fiscal" && (
+                        <div className="flex items-center gap-1 p-1 rounded-xl bg-gray-100">
+                            {FISCAL_YEARS.map((y) => {
+                                const active = y === fiscalYear;
+                                return (
+                                    <button
+                                        key={y}
+                                        onClick={() => setFiscalYear(y)}
+                                        className={`px-2.5 py-1 rounded-lg text-sm font-semibold tabular-nums transition-all ${active ? "shadow-sm" : "text-gray-500 hover:text-gray-700"}`}
+                                        style={active ? { backgroundColor: "#ffffff", color: MINT[700] } : undefined}
+                                    >
+                                        {y}
+                                    </button>
+                                );
+                            })}
+                        </div>
+                    )}
 
                     {preset === "custom" && (
                         <>
@@ -689,6 +736,20 @@ export default function DrugUsageDashboardPage() {
                                     className="border border-gray-200 rounded-lg pl-8 pr-3 py-1.5 text-sm w-64"
                                 />
                             </div>
+                            {multiYear && (
+                                <select
+                                    value={yearFilter}
+                                    onChange={(e) =>
+                                        setYearFilter(e.target.value === "" ? "" : Number(e.target.value))
+                                    }
+                                    className="border border-gray-200 rounded-lg px-2 py-1.5 text-sm text-gray-600 bg-white"
+                                >
+                                    <option value="">ทุกปีงบ</option>
+                                    {dataYears.map((y) => (
+                                        <option key={y} value={y}>ปีงบ {y}</option>
+                                    ))}
+                                </select>
+                            )}
                             <select
                                 value={abcFilter}
                                 onChange={(e) => setAbcFilter(e.target.value as "" | AbcClass)}
@@ -706,7 +767,10 @@ export default function DrugUsageDashboardPage() {
                         </div>
 
                         {filtered.length === 0 ? (
-                            <EmptyState variant="noResult" onClear={() => { setSearch(""); setAbcFilter(""); }} />
+                            <EmptyState
+                                variant="noResult"
+                                onClear={() => { setSearch(""); setAbcFilter(""); setYearFilter(""); }}
+                            />
                         ) : (
                             <>
                                 <div className="overflow-x-auto rounded-lg border border-gray-100">
@@ -714,6 +778,7 @@ export default function DrugUsageDashboardPage() {
                                         <thead>
                                             <tr>
                                                 <Th className="text-right">#</Th>
+                                                <Th className="text-center">ปีงบ</Th>
                                                 <Th>รหัส</Th>
                                                 <Th onClick={() => sortBy("name")} active={sortKey === "name"} asc={sortAsc}>
                                                     ชื่อเวชภัณฑ์
@@ -739,11 +804,19 @@ export default function DrugUsageDashboardPage() {
                                         <tbody>
                                             {pageRows.map((r: RankedRow, i) => (
                                                 <tr
-                                                    key={r.icode}
+                                                    key={`${r.icode}_${r.fiscal_year}`}
                                                     className="border-b border-gray-100"
                                                     style={{ backgroundColor: i % 2 ? "#f9fafb" : "#ffffff" }}
                                                 >
                                                     <td className="px-3 py-2 text-right text-gray-400 tabular-nums">{r.rank}</td>
+                                                    <td className="px-3 py-2 text-center">
+                                                        <span
+                                                            className="inline-block px-2 py-0.5 rounded-full text-[11px] font-bold tabular-nums"
+                                                            style={{ backgroundColor: MINT[50], color: MINT[800] }}
+                                                        >
+                                                            {r.fiscal_year}
+                                                        </span>
+                                                    </td>
                                                     <td className="px-3 py-2 text-gray-500 whitespace-nowrap">{r.icode}</td>
                                                     <td className="px-3 py-2 font-medium">{r.name}</td>
                                                     <td className="px-3 py-2 text-gray-500 whitespace-nowrap">

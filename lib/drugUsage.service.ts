@@ -54,6 +54,16 @@ export function isItemKind(v: unknown): v is ItemKind {
   return v === "drug" || v === "nondrug";
 }
 
+// ปีงบประมาณไทย (พ.ศ.) — เริ่ม 1 ต.ค. เช่น 1 ต.ค. 2025 (2568) = ปีงบ 2569
+const FY_EXPR = `(YEAR(o.vstdate) + 543 + IF(MONTH(o.vstdate) >= 10, 1, 0))`;
+
+/** "YYYY-MM-DD" → ปีงบประมาณ พ.ศ. */
+export function fiscalYearOf(isoDate: string): number {
+  const [y, m] = String(isoDate).slice(0, 10).split("-").map(Number);
+  if (!y || !m) return 0;
+  return y + 543 + (m >= 10 ? 1 : 0);
+}
+
 // ─── ตรวจคอลัมน์จริงของตาราง (cache ต่อ process) ───────────────────────────────
 const colsCache = new Map<string, Set<string>>();
 
@@ -94,6 +104,8 @@ function firstCol(
 // ─── Types ────────────────────────────────────────────────────────────────────
 export interface DrugUsageItemRow {
   icode: string;
+  /** ปีงบประมาณ พ.ศ. ของยอดแถวนี้ — แยกแถวเมื่อช่วงข้อมูลคร่อมหลายปีงบ */
+  fiscal_year: number;
   name: string;
   strength: string;
   units: string;
@@ -141,6 +153,8 @@ export interface DrugUsageDashboardData {
   kindLabel: string;
   start: string;
   end: string;
+  /** ปีงบประมาณ พ.ศ. ทั้งหมดที่มีข้อมูลในช่วงนี้ (มาก → น้อย) */
+  fiscalYears: number[];
   totals: DrugUsageTotals;
   items: DrugUsageItemRow[];
   trend: DrugUsageTrendRow[];
@@ -162,6 +176,7 @@ interface TotalRow extends RowDataPacket {
 }
 interface ItemDbRow extends RowDataPacket {
   icode: string;
+  fiscal_year: number;
   name: string;
   strength: string;
   units: string;
@@ -265,6 +280,7 @@ export async function getDrugUsageDashboard(
       `
       SELECT
         o.icode                                  AS icode,
+        ${FY_EXPR}                               AS fiscal_year,
         COALESCE(NULLIF(d.name, ''), o.icode)    AS name,
         ${strengthExpr}                          AS strength,
         ${unitsExpr}                             AS units,
@@ -276,7 +292,7 @@ export async function getDrugUsageDashboard(
         ${opdValue}                              AS opd_value,
         ${ipdValue}                              AS ipd_value
       ${FROM_LINES}
-      GROUP BY o.icode
+      GROUP BY o.icode, fiscal_year
       ORDER BY value DESC
       LIMIT ${MAX_ITEM_ROWS}
       `,
@@ -385,15 +401,22 @@ export async function getDrugUsageDashboard(
     vn_count: num(r.vn_count),
   });
 
+  // ปีงบที่มีข้อมูลจริง — อ่านจาก trend ซึ่งครอบคลุมทุกวันในช่วง (ไม่ถูก LIMIT ตัด)
+  const fiscalYears = [
+    ...new Set(trendRows.map((r) => fiscalYearOf(str(r.date))).filter(Boolean)),
+  ].sort((a, b) => b - a);
+
   return {
     updatedAt: new Date().toISOString(),
     kind,
     kindLabel: cfg.label,
     start,
     end,
+    fiscalYears,
     totals,
     items: itemRows.map((r) => ({
       icode: str(r.icode),
+      fiscal_year: num(r.fiscal_year),
       name: str(r.name),
       strength: str(r.strength),
       units: str(r.units),
