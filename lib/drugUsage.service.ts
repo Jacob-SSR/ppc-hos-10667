@@ -180,12 +180,17 @@ export interface DrugUsageTotals {
   ipd_value: number;
 }
 
-export interface DrugUsageDashboardData {
+/** ความละเอียดของกราฟแนวโน้ม — ช่วงยาวสรุปเป็นรายเดือนให้จุดน้อยลง */
+export type TrendUnit = "day" | "month";
+
+/** ส่วนหลักของหน้า — โหลดก่อน เรนเดอร์ได้ทันที */
+export interface DrugUsageCoreData {
   updatedAt: string;
   kind: ItemKind;
   kindLabel: string;
   start: string;
   end: string;
+  trendUnit: TrendUnit;
   /** ปีงบประมาณ พ.ศ. ทั้งหมดที่มีข้อมูลในช่วงนี้ (มาก → น้อย) */
   fiscalYears: number[];
   /** ยอดรวมแยกรายปีงบ (ใหม่ → เก่า) สำหรับตารางเปรียบเทียบ */
@@ -193,22 +198,18 @@ export interface DrugUsageDashboardData {
   totals: DrugUsageTotals;
   items: DrugUsageItemRow[];
   trend: DrugUsageTrendRow[];
+}
+
+/** ส่วนแยกมิติ — โหลดตามหลัง เพราะต้อง join ตารางใหญ่ */
+export interface DrugUsageDimsData {
   departments: DrugUsageDimRow[];
   prescribers: DrugUsageDimRow[];
   rights: DrugUsageDimRow[];
 }
 
+export type DrugUsageDashboardData = DrugUsageCoreData & DrugUsageDimsData;
+
 // ─── DB rows ──────────────────────────────────────────────────────────────────
-interface TotalRow extends RowDataPacket {
-  value: number;
-  qty: number;
-  order_count: number;
-  item_count: number;
-  vn_count: number;
-  hn_count: number;
-  opd_value: number;
-  ipd_value: number;
-}
 interface ItemDbRow extends RowDataPacket {
   icode: string;
   fiscal_year: number;
@@ -224,7 +225,7 @@ interface ItemDbRow extends RowDataPacket {
   ipd_value: number;
 }
 interface YearDbRow extends RowDataPacket {
-  fiscal_year: number;
+  fiscal_year: number | null;
   value: number;
   qty: number;
   order_count: number;
@@ -251,20 +252,38 @@ interface DimDbRow extends RowDataPacket {
 
 // จำนวนรายการสูงสุดที่ส่งกลับ (กัน payload บวมกรณีเลือกช่วงยาว ๆ) —
 // เรียงตามมูลค่าแล้ว รายการที่ตัดทิ้งจึงเป็นรายการมูลค่าน้อยที่สุด
+// ช่วงหลายปีงบจะแตกเป็นแถวละปี → ขยายเพดานตามจำนวนปี แต่ไม่เกิน 6000 แถว
 const MAX_ITEM_ROWS = 2000;
+function itemRowLimit(start: string, end: string): number {
+  const years = Math.max(
+    1,
+    Math.ceil((Date.parse(end) - Date.parse(start)) / 86_400_000 / 365),
+  );
+  return Math.min(6000, MAX_ITEM_ROWS + 800 * (years - 1));
+}
 const MAX_DIM_ROWS = 30;
 
 const num = (v: unknown) => Number(v ?? 0) || 0;
 const str = (v: unknown) => String(v ?? "").trim();
+// ─── ตัวช่วย: ประกอบ SQL ส่วนที่ใช้ร่วมกันทุก query ────────────────────────────
+interface QueryCtx {
+  cfg: (typeof KIND_CONFIG)[ItemKind];
+  nameExpr: string;
+  strengthExpr: string;
+  unitsExpr: string;
+  opdValue: string;
+  ipdValue: string;
+  where: string;
+  from: string;
+  params: (string | number)[];
+}
 
-// ─── Main ─────────────────────────────────────────────────────────────────────
-export async function getDrugUsageDashboard(
+async function buildCtx(
   start: string,
   end: string,
-  kind: ItemKind = "drug",
-): Promise<DrugUsageDashboardData> {
+  kind: ItemKind,
+): Promise<QueryCtx> {
   const cfg = KIND_CONFIG[kind];
-
   const [itemCols, opCols] = await Promise.all([
     tableColumns(cfg.table),
     tableColumns("opitemrece"),
@@ -292,39 +311,45 @@ export async function getDrugUsageDashboard(
     : "";
   const params = useIncome ? [start, end, ...cfg.income] : [start, end];
 
-  const WHERE = `WHERE o.vstdate BETWEEN ? AND ?${incomeSql}`;
-  const FROM_LINES = `
+  const where = `WHERE o.vstdate BETWEEN ? AND ?${incomeSql}`;
+  return {
+    cfg,
+    nameExpr,
+    strengthExpr,
+    unitsExpr,
+    opdValue,
+    ipdValue,
+    where,
+    params,
+    from: `
     FROM opitemrece o
     INNER JOIN ${cfg.table} d ON d.icode = o.icode
-    ${WHERE}`;
+    ${where}`,
+  };
+}
 
-  const [
-    [totalRows],
-    [yearRows],
-    [itemRows],
-    [trendRows],
-    [deptRows],
-    [prescriberRows],
-    [rightRows],
-  ] = await Promise.all([
-    // 1) ยอดรวมทั้งสถานบริการ
-    db.query<TotalRow[]>(
-      `
-      SELECT
-        SUM(COALESCE(o.sum_price, 0))  AS value,
-        SUM(COALESCE(o.qty, 0))        AS qty,
-        COUNT(*)                       AS order_count,
-        COUNT(DISTINCT o.icode)        AS item_count,
-        COUNT(DISTINCT o.vn)           AS vn_count,
-        COUNT(DISTINCT o.hn)           AS hn_count,
-        ${opdValue}                    AS opd_value,
-        ${ipdValue}                    AS ipd_value
-      ${FROM_LINES}
-      `,
-      params,
-    ),
+/** ช่วงยาว ๆ สรุปเป็นรายเดือนแทนรายวัน — จุดบนกราฟน้อยลงมาก payload/เรนเดอร์เบาลง */
+function trendUnitFor(start: string, end: string): TrendUnit {
+  const days = (Date.parse(end) - Date.parse(start)) / 86_400_000 + 1;
+  return days > 92 ? "month" : "day";
+}
 
-    // 2) ยอดรวมแยกรายปีงบ — ตารางเปรียบเทียบย้อนหลัง
+// ─── ส่วนหลักของหน้า: totals + byYear + items + trend (3 query) ────────────────
+export async function getDrugUsageCore(
+  start: string,
+  end: string,
+  kind: ItemKind = "drug",
+): Promise<DrugUsageCoreData> {
+  const c = await buildCtx(start, end, kind);
+  const trendUnit = trendUnitFor(start, end);
+  const trendExpr =
+    trendUnit === "month"
+      ? `DATE_FORMAT(o.vstdate, '%Y-%m-01')`
+      : `DATE_FORMAT(o.vstdate, '%Y-%m-%d')`;
+
+  const [[yearRows], [itemRows], [trendRows]] = await Promise.all([
+    // 1) ยอดรวมรายปีงบ + ยอดรวมทั้งหมดในคราวเดียว (WITH ROLLUP → แถวสรุปท้ายสุด)
+    //    ประหยัดการสแกน opitemrece ไป 1 รอบเทียบกับแยก query totals
     db.query<YearDbRow[]>(
       `
       SELECT
@@ -335,163 +360,108 @@ export async function getDrugUsageDashboard(
         COUNT(DISTINCT o.icode)        AS item_count,
         COUNT(DISTINCT o.vn)           AS vn_count,
         COUNT(DISTINCT o.hn)           AS hn_count,
-        ${opdValue}                    AS opd_value,
-        ${ipdValue}                    AS ipd_value
-      ${FROM_LINES}
-      GROUP BY fiscal_year
-      ORDER BY fiscal_year DESC
+        ${c.opdValue}                  AS opd_value,
+        ${c.ipdValue}                  AS ipd_value
+      ${c.from}
+      GROUP BY fiscal_year WITH ROLLUP
       `,
-      params,
+      c.params,
     ),
 
-    // 3) รายการเวชภัณฑ์ เรียงตามมูลค่าการใช้ (หัวใจของรายงาน)
+    // 2) รายการเวชภัณฑ์ เรียงตามมูลค่าการใช้ (หัวใจของรายงาน)
     db.query<ItemDbRow[]>(
       `
       SELECT
         o.icode                                  AS icode,
         ${FY_EXPR}                               AS fiscal_year,
-        ${nameExpr}                              AS name,
-        ${strengthExpr}                          AS strength,
-        ${unitsExpr}                             AS units,
+        ${c.nameExpr}                            AS name,
+        ${c.strengthExpr}                        AS strength,
+        ${c.unitsExpr}                           AS units,
         COUNT(*)                                 AS order_count,
         SUM(COALESCE(o.qty, 0))                  AS qty,
         COUNT(DISTINCT o.vn)                     AS vn_count,
         COUNT(DISTINCT o.hn)                     AS hn_count,
         SUM(COALESCE(o.sum_price, 0))            AS value,
-        ${opdValue}                              AS opd_value,
-        ${ipdValue}                              AS ipd_value
-      ${FROM_LINES}
+        ${c.opdValue}                            AS opd_value,
+        ${c.ipdValue}                            AS ipd_value
+      ${c.from}
       GROUP BY o.icode, fiscal_year
       ORDER BY value DESC
-      LIMIT ${MAX_ITEM_ROWS}
+      LIMIT ${itemRowLimit(start, end)}
       `,
-      params,
+      c.params,
     ),
 
-    // 4) แนวโน้มรายวัน
+    // 3) แนวโน้ม — รายวัน (ช่วงสั้น) หรือรายเดือน (ช่วงยาว)
     db.query<TrendDbRow[]>(
       `
       SELECT
-        DATE_FORMAT(o.vstdate, '%Y-%m-%d') AS date,
+        ${trendExpr}                       AS date,
         SUM(COALESCE(o.sum_price, 0))      AS value,
         SUM(COALESCE(o.qty, 0))            AS qty,
         COUNT(DISTINCT o.vn)               AS vn_count
-      ${FROM_LINES}
-      GROUP BY o.vstdate
-      ORDER BY o.vstdate
+      ${c.from}
+      GROUP BY date
+      ORDER BY date
       `,
-      params,
-    ),
-
-    // 5) แยกตามแผนกที่รับบริการ (main_dep ของ visit)
-    db.query<DimDbRow[]>(
-      `
-      SELECT
-        COALESCE(NULLIF(ov.main_dep, ''), '-')          AS \`key\`,
-        COALESCE(NULLIF(k.department, ''), 'ไม่ระบุแผนก') AS label,
-        SUM(COALESCE(o.sum_price, 0))                   AS value,
-        SUM(COALESCE(o.qty, 0))                         AS qty,
-        COUNT(*)                                        AS order_count,
-        COUNT(DISTINCT o.vn)                            AS vn_count
-      FROM opitemrece o
-      INNER JOIN ${cfg.table} d   ON d.icode = o.icode
-      LEFT  JOIN ovst ov          ON ov.vn = o.vn
-      LEFT  JOIN kskdepartment k  ON k.depcode = ov.main_dep
-      ${WHERE}
-      GROUP BY \`key\`, label
-      ORDER BY value DESC
-      LIMIT ${MAX_DIM_ROWS}
-      `,
-      params,
-    ),
-
-    // 6) แยกตามผู้สั่งใช้
-    db.query<DimDbRow[]>(
-      `
-      SELECT
-        COALESCE(NULLIF(o.doctor, ''), '-')                       AS \`key\`,
-        COALESCE(NULLIF(dr.name, ''), NULLIF(o.doctor, ''), 'ไม่ระบุผู้สั่ง') AS label,
-        SUM(COALESCE(o.sum_price, 0))                             AS value,
-        SUM(COALESCE(o.qty, 0))                                   AS qty,
-        COUNT(*)                                                  AS order_count,
-        COUNT(DISTINCT o.vn)                                      AS vn_count
-      FROM opitemrece o
-      INNER JOIN ${cfg.table} d ON d.icode = o.icode
-      LEFT  JOIN doctor dr      ON dr.code = o.doctor
-      ${WHERE}
-      GROUP BY \`key\`, label
-      ORDER BY value DESC
-      LIMIT ${MAX_DIM_ROWS}
-      `,
-      params,
-    ),
-
-    // 7) แยกตามสิทธิ์การรักษา
-    db.query<DimDbRow[]>(
-      `
-      SELECT
-        COALESCE(NULLIF(v.pttype, ''), '-')          AS \`key\`,
-        COALESCE(NULLIF(p.name, ''), 'ไม่ระบุสิทธิ์') AS label,
-        SUM(COALESCE(o.sum_price, 0))                AS value,
-        SUM(COALESCE(o.qty, 0))                      AS qty,
-        COUNT(*)                                     AS order_count,
-        COUNT(DISTINCT o.vn)                         AS vn_count
-      FROM opitemrece o
-      INNER JOIN ${cfg.table} d ON d.icode = o.icode
-      LEFT  JOIN vn_stat v      ON v.vn = o.vn
-      LEFT  JOIN pttype p       ON p.pttype = v.pttype
-      ${WHERE}
-      GROUP BY \`key\`, label
-      ORDER BY value DESC
-      LIMIT ${MAX_DIM_ROWS}
-      `,
-      params,
+      c.params,
     ),
   ]);
 
-  const t = totalRows[0];
-  const totals: DrugUsageTotals = {
-    value: num(t?.value),
-    qty: num(t?.qty),
-    order_count: num(t?.order_count),
-    item_count: num(t?.item_count),
-    vn_count: num(t?.vn_count),
-    hn_count: num(t?.hn_count),
-    opd_value: num(t?.opd_value),
-    ipd_value: num(t?.ipd_value),
-  };
+  // แถว ROLLUP (fiscal_year เป็น NULL) = ยอดรวมทั้งช่วง — แยกออกจากแถวรายปี
+  const rollup = yearRows.find((r) => r.fiscal_year === null);
+  const byYear: DrugUsageYearRow[] = yearRows
+    .filter((r) => r.fiscal_year !== null)
+    .map((r) => ({
+      fiscal_year: num(r.fiscal_year),
+      value: num(r.value),
+      qty: num(r.qty),
+      order_count: num(r.order_count),
+      item_count: num(r.item_count),
+      vn_count: num(r.vn_count),
+      hn_count: num(r.hn_count),
+      opd_value: num(r.opd_value),
+      ipd_value: num(r.ipd_value),
+    }))
+    .sort((a, b) => b.fiscal_year - a.fiscal_year);
 
-  const toDim = (r: DimDbRow): DrugUsageDimRow => ({
-    key: str(r.key),
-    label: str(r.label) || "ไม่ระบุ",
-    value: num(r.value),
-    qty: num(r.qty),
-    order_count: num(r.order_count),
-    vn_count: num(r.vn_count),
-  });
-
-  const byYear: DrugUsageYearRow[] = yearRows.map((r) => ({
-    fiscal_year: num(r.fiscal_year),
-    value: num(r.value),
-    qty: num(r.qty),
-    order_count: num(r.order_count),
-    item_count: num(r.item_count),
-    vn_count: num(r.vn_count),
-    hn_count: num(r.hn_count),
-    opd_value: num(r.opd_value),
-    ipd_value: num(r.ipd_value),
-  }));
-
-  // ปีงบที่มีข้อมูลจริง (ใหม่ → เก่า)
-  const fiscalYears = byYear.map((y) => y.fiscal_year).filter(Boolean);
+  // ไม่มีแถว ROLLUP (บาง engine) → รวมจากรายปีแทน (distinct จะเป็นค่าประมาณสูงสุด)
+  const totals: DrugUsageTotals = rollup
+    ? {
+        value: num(rollup.value),
+        qty: num(rollup.qty),
+        order_count: num(rollup.order_count),
+        item_count: num(rollup.item_count),
+        vn_count: num(rollup.vn_count),
+        hn_count: num(rollup.hn_count),
+        opd_value: num(rollup.opd_value),
+        ipd_value: num(rollup.ipd_value),
+      }
+    : byYear.reduce(
+        (a, y) => ({
+          value: a.value + y.value,
+          qty: a.qty + y.qty,
+          order_count: a.order_count + y.order_count,
+          item_count: Math.max(a.item_count, y.item_count),
+          vn_count: a.vn_count + y.vn_count,
+          hn_count: Math.max(a.hn_count, y.hn_count),
+          opd_value: a.opd_value + y.opd_value,
+          ipd_value: a.ipd_value + y.ipd_value,
+        }),
+        {
+          value: 0, qty: 0, order_count: 0, item_count: 0,
+          vn_count: 0, hn_count: 0, opd_value: 0, ipd_value: 0,
+        },
+      );
 
   return {
     updatedAt: new Date().toISOString(),
     kind,
-    kindLabel: cfg.label,
+    kindLabel: c.cfg.label,
     start,
     end,
-    fiscalYears,
+    trendUnit,
+    fiscalYears: byYear.map((y) => y.fiscal_year).filter(Boolean),
     byYear,
     totals,
     items: itemRows.map((r) => ({
@@ -514,8 +484,126 @@ export async function getDrugUsageDashboard(
       qty: num(r.qty),
       vn_count: num(r.vn_count),
     })),
+  };
+}
+
+// ─── ส่วนแยกมิติ: แผนก / ผู้สั่งใช้ / สิทธิ์ (3 query) ─────────────────────────
+// โหลดทีหลังจากส่วนหลัก เพราะ 2 ใน 3 ต้อง join ตารางใหญ่ (ovst / vn_stat)
+export async function getDrugUsageDims(
+  start: string,
+  end: string,
+  kind: ItemKind = "drug",
+): Promise<DrugUsageDimsData> {
+  const c = await buildCtx(start, end, kind);
+
+  const toDim = (r: DimDbRow): DrugUsageDimRow => ({
+    key: str(r.key),
+    label: str(r.label) || "ไม่ระบุ",
+    value: num(r.value),
+    qty: num(r.qty),
+    order_count: num(r.order_count),
+    vn_count: num(r.vn_count),
+  });
+
+  const [[deptRows], [prescriberRows], [rightRows]] = await Promise.all([
+    // แยกตามแผนกที่รับบริการ (main_dep ของ visit)
+    db.query<DimDbRow[]>(
+      `
+      SELECT
+        COALESCE(NULLIF(ov.main_dep, ''), '-')          AS \`key\`,
+        COALESCE(NULLIF(k.department, ''), 'ไม่ระบุแผนก') AS label,
+        SUM(COALESCE(o.sum_price, 0))                   AS value,
+        SUM(COALESCE(o.qty, 0))                         AS qty,
+        COUNT(*)                                        AS order_count,
+        COUNT(DISTINCT o.vn)                            AS vn_count
+      FROM opitemrece o
+      INNER JOIN ${c.cfg.table} d ON d.icode = o.icode
+      LEFT  JOIN ovst ov          ON ov.vn = o.vn
+      LEFT  JOIN kskdepartment k  ON k.depcode = ov.main_dep
+      ${c.where}
+      GROUP BY \`key\`, label
+      ORDER BY value DESC
+      LIMIT ${MAX_DIM_ROWS}
+      `,
+      c.params,
+    ),
+
+    // แยกตามผู้สั่งใช้ — o.doctor อยู่บน opitemrece อยู่แล้ว ไม่ต้อง join ตาราง doctor
+    // (ชื่อผู้สั่งค่อยดึงทีหลังด้วย query เล็ก ๆ ตามรหัสที่ได้จริง ≤ MAX_DIM_ROWS แถว)
+    db.query<DimDbRow[]>(
+      `
+      SELECT
+        COALESCE(NULLIF(o.doctor, ''), '-')  AS \`key\`,
+        ''                                   AS label,
+        SUM(COALESCE(o.sum_price, 0))        AS value,
+        SUM(COALESCE(o.qty, 0))              AS qty,
+        COUNT(*)                             AS order_count,
+        COUNT(DISTINCT o.vn)                 AS vn_count
+      ${c.from}
+      GROUP BY \`key\`
+      ORDER BY value DESC
+      LIMIT ${MAX_DIM_ROWS}
+      `,
+      c.params,
+    ),
+
+    // แยกตามสิทธิ์การรักษา
+    db.query<DimDbRow[]>(
+      `
+      SELECT
+        COALESCE(NULLIF(v.pttype, ''), '-')          AS \`key\`,
+        COALESCE(NULLIF(p.name, ''), 'ไม่ระบุสิทธิ์') AS label,
+        SUM(COALESCE(o.sum_price, 0))                AS value,
+        SUM(COALESCE(o.qty, 0))                      AS qty,
+        COUNT(*)                                     AS order_count,
+        COUNT(DISTINCT o.vn)                         AS vn_count
+      FROM opitemrece o
+      INNER JOIN ${c.cfg.table} d ON d.icode = o.icode
+      LEFT  JOIN vn_stat v      ON v.vn = o.vn
+      LEFT  JOIN pttype p       ON p.pttype = v.pttype
+      ${c.where}
+      GROUP BY \`key\`, label
+      ORDER BY value DESC
+      LIMIT ${MAX_DIM_ROWS}
+      `,
+      c.params,
+    ),
+  ]);
+
+  // เติมชื่อผู้สั่งใช้จากรหัสที่ได้ (query เล็ก คิดเป็นภาระแทบเป็นศูนย์)
+  const prescribers = prescriberRows.map(toDim);
+  const codes = prescribers.map((r) => r.key).filter((k) => k && k !== "-");
+  if (codes.length) {
+    try {
+      const [names] = await db.query<RowDataPacket[]>(
+        `SELECT code, name FROM doctor WHERE code IN (${codes.map(() => "?").join(",")})`,
+        codes,
+      );
+      const nameOf = new Map(names.map((n) => [str(n.code), str(n.name)]));
+      for (const r of prescribers) r.label = nameOf.get(r.key) || r.key || "ไม่ระบุผู้สั่ง";
+    } catch {
+      for (const r of prescribers) r.label = r.key || "ไม่ระบุผู้สั่ง";
+    }
+  } else {
+    for (const r of prescribers) r.label = "ไม่ระบุผู้สั่ง";
+  }
+
+  return {
     departments: deptRows.map(toDim),
-    prescribers: prescriberRows.map(toDim),
+    prescribers,
     rights: rightRows.map(toDim),
   };
+}
+
+/** ทั้งหน้าในครั้งเดียว — ใช้กับ cache warmer / ผู้เรียกที่อยากได้ครบทีเดียว */
+export async function getDrugUsageDashboard(
+  start: string,
+  end: string,
+  kind: ItemKind = "drug",
+): Promise<DrugUsageDashboardData> {
+  const [core, dims] = await Promise.all([
+    getDrugUsageCore(start, end, kind),
+    getDrugUsageDims(start, end, kind),
+  ]);
+  return { ...core, ...dims };
 }

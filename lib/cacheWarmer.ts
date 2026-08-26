@@ -35,9 +35,13 @@ const TARGETS: WarmTarget[] = [
   // TTL 600
   { path: "/api/sepsis-sheets", everySec: 480 },
   // มูลค่าการใช้เวชภัณฑ์ — TTL 600, warm ปีงบปัจจุบันซึ่งเป็นค่าเริ่มต้นของหน้า
-  { path: "/api/drug-usage?preset=fiscal&kind=drug", everySec: 480 },
-  { path: "/api/drug-usage?preset=fiscal&kind=nondrug", everySec: 480 },
-  { path: "/api/drug-usage?preset=fiscal&kind=lab", everySec: 480 },
+  // ต้อง warm ให้ตรง section ที่หน้าเว็บเรียกจริง (คนละ cache key กับ "ทั้งหมด")
+  { path: "/api/drug-usage?preset=fiscal&kind=drug&section=core", everySec: 480 },
+  { path: "/api/drug-usage?preset=fiscal&kind=drug&section=dims", everySec: 480 },
+  { path: "/api/drug-usage?preset=fiscal&kind=nondrug&section=core", everySec: 480 },
+  { path: "/api/drug-usage?preset=fiscal&kind=nondrug&section=dims", everySec: 480 },
+  { path: "/api/drug-usage?preset=fiscal&kind=lab&section=core", everySec: 480 },
+  { path: "/api/drug-usage?preset=fiscal&kind=lab&section=dims", everySec: 480 },
   // TTL 180
   { path: "/api/ipd/ward-census", everySec: 150 },
 ];

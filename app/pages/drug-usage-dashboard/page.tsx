@@ -43,10 +43,15 @@ interface YearRow {
     item_count: number; vn_count: number; hn_count: number;
     opd_value: number; ipd_value: number;
 }
+/** ส่วนหลัก — โหลดก่อน เรนเดอร์ได้ทันที */
 interface DashData {
     updatedAt: string; kind: Kind; kindLabel: string; start: string; end: string;
+    trendUnit: "day" | "month";
     fiscalYears: number[]; byYear: YearRow[];
     totals: Totals; items: ItemRow[]; trend: TrendRow[];
+}
+/** ส่วนแยกมิติ — โหลดตามหลัง (query หนักกว่า) */
+interface DimsData {
     departments: DimRow[]; prescribers: DimRow[]; rights: DimRow[];
 }
 
@@ -131,6 +136,13 @@ function fmtMoneyShort(n: number): string {
     if (v >= 100_000) return `${(v / 1_000).toFixed(1)} พัน`;
     return fmtB(v);
 }
+
+/** "YYYY-MM-01" → "ก.ค. 69" (ป้ายแกน X ตอนสรุปรายเดือน) */
+const thaiMonthTick = (iso: string) => {
+    const [y, m] = String(iso).slice(0, 10).split("-").map(Number);
+    if (!y || !m || m < 1 || m > 12) return String(iso);
+    return `${THAI_MONTHS_SHORT[m - 1]} ${String((y + 543) % 100).padStart(2, "0")}`;
+};
 
 /** "YYYY-MM-DD" → "24 ก.ค." */
 const thaiTick = (iso: string) => {
@@ -277,8 +289,11 @@ function DashboardSkeleton() {
 // ─── Component ────────────────────────────────────────────────────────────────
 export default function DrugUsageDashboardPage() {
     const [data, setData] = useState<DashData | null>(null);
+    const [dims, setDims] = useState<DimsData | null>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
+    // นับรอบคำขอ — คำตอบที่มาช้ากว่ารอบล่าสุดจะถูกทิ้ง (สลับแท็บรัว ๆ ไม่สลับข้อมูลกัน)
+    const reqSeq = useRef(0);
 
     const [kind, setKind] = useState<Kind>("drug");
     const [preset, setPreset] = useState<Preset>("fiscal");
@@ -297,29 +312,44 @@ export default function DrugUsageDashboardPage() {
 
     // ── fetch ──
     const fetchData = useCallback(async () => {
+        const params = new URLSearchParams();
+        if (preset === "custom") {
+            if (!customStart || !customEnd) return;
+            params.set("start", customStart);
+            params.set("end", customEnd);
+        } else {
+            params.set("preset", preset);
+            if (preset === "fiscal") params.set("fy", String(fiscalYear));
+            if (preset === "back") params.set("years", String(backYears));
+        }
+        params.set("kind", kind);
+
+        const seq = ++reqSeq.current;
         setLoading(true);
         setError(null);
         // ทิ้งชุดเดิมทันที กัน UI ค้างที่ตัวเลขของชนิด/ช่วงเวลาก่อนหน้าระหว่างรอ
         setData(null);
+        setDims(null);
+
+        // จังหวะที่ 2: มิติแผนก/ผู้สั่ง/สิทธิ์ (query หนักกว่า) — ยิงคู่ขนาน ไม่บล็อกการเรนเดอร์
+        fetch(`/api/drug-usage?${params}&section=dims`, { credentials: "include" })
+            .then((r) => (r.ok ? r.json() : null))
+            .then((d: DimsData | null) => { if (d && seq === reqSeq.current) setDims(d); })
+            .catch(() => { /* มิติเสริมล้มเหลว ไม่ทำให้ทั้งหน้าพัง */ });
+
+        // จังหวะที่ 1: ส่วนหลัก — มาถึงเมื่อไหร่เรนเดอร์ทันที
         try {
-            const params = new URLSearchParams();
-            if (preset === "custom") {
-                if (!customStart || !customEnd) { setLoading(false); return; }
-                params.set("start", customStart);
-                params.set("end", customEnd);
-            } else {
-                params.set("preset", preset);
-                if (preset === "fiscal") params.set("fy", String(fiscalYear));
-                if (preset === "back") params.set("years", String(backYears));
-            }
-            params.set("kind", kind);
-            const res = await fetch(`/api/drug-usage?${params}`, { credentials: "include" });
+            const res = await fetch(`/api/drug-usage?${params}&section=core`, {
+                credentials: "include",
+            });
             if (!res.ok) throw new Error(`HTTP ${res.status}`);
-            setData((await res.json()) as DashData);
+            const json = (await res.json()) as DashData;
+            if (seq !== reqSeq.current) return; // มีคำขอใหม่แซงไปแล้ว
+            setData(json);
         } catch (e) {
-            setError((e as Error).message);
+            if (seq === reqSeq.current) setError((e as Error).message);
         } finally {
-            setLoading(false);
+            if (seq === reqSeq.current) setLoading(false);
         }
     }, [kind, preset, fiscalYear, backYears, customStart, customEnd]);
 
@@ -467,10 +497,13 @@ export default function DrugUsageDashboardPage() {
         () => ranked.slice(0, 10).map((r) => ({ name: shortName(r), value: r.value })),
         [ranked],
     );
-    const trendData = useMemo(
-        () => (data?.trend ?? []).map((t) => ({ ...t, label: thaiTick(t.date) })),
-        [data],
-    );
+    const trendData = useMemo(() => {
+        const monthly = data?.trendUnit === "month";
+        return (data?.trend ?? []).map((t) => ({
+            ...t,
+            label: monthly ? thaiMonthTick(t.date) : thaiTick(t.date),
+        }));
+    }, [data]);
     const typePie = useMemo(() => {
         if (!totals) return [];
         return [
@@ -480,18 +513,18 @@ export default function DrugUsageDashboardPage() {
     }, [totals]);
     const rightPie = useMemo(
         () =>
-            (data?.rights ?? []).slice(0, 6).map((r, i) => ({
+            (dims?.rights ?? []).slice(0, 6).map((r, i) => ({
                 name: r.label, value: r.value, color: PALETTE[i % PALETTE.length],
             })),
-        [data],
+        [dims],
     );
     const deptBars = useMemo(
-        () => (data?.departments ?? []).slice(0, 10).map((r) => ({ label: r.label, count: r.value })),
-        [data],
+        () => (dims?.departments ?? []).slice(0, 10).map((r) => ({ label: r.label, count: r.value })),
+        [dims],
     );
     const prescriberBars = useMemo(
-        () => (data?.prescribers ?? []).slice(0, 10).map((r) => ({ label: r.label, count: r.value })),
-        [data],
+        () => (dims?.prescribers ?? []).slice(0, 10).map((r) => ({ label: r.label, count: r.value })),
+        [dims],
     );
 
     // ── export ──
@@ -563,17 +596,17 @@ export default function DrugUsageDashboardPage() {
                 ปีงบ: r.fiscal_year, ชื่อ: r.name, ความแรง: r.strength, จำนวน: r.qty,
                 มูลค่า: Math.round(r.value), สัดส่วน_ร้อยละ: Number(r.share.toFixed(2)),
             })),
-            แยกตามแผนก: (data.departments ?? []).slice(0, 10).map((r) => ({
+            แยกตามแผนก: (dims?.departments ?? []).slice(0, 10).map((r) => ({
                 แผนก: r.label, มูลค่า: Math.round(r.value),
             })),
-            แยกตามสิทธิ์: (data.rights ?? []).slice(0, 10).map((r) => ({
+            แยกตามสิทธิ์: (dims?.rights ?? []).slice(0, 10).map((r) => ({
                 สิทธิ์: r.label, มูลค่า: Math.round(r.value),
             })),
-            แยกตามผู้สั่งใช้: (data.prescribers ?? []).slice(0, 10).map((r) => ({
+            แยกตามผู้สั่งใช้: (dims?.prescribers ?? []).slice(0, 10).map((r) => ({
                 ผู้สั่ง: r.label, มูลค่า: Math.round(r.value),
             })),
         };
-    }, [data, totals, periodLabel, abcSummary, ranked, kindMeta, dataYears, byYear, yoyOf]);
+    }, [data, dims, totals, periodLabel, abcSummary, ranked, kindMeta, dataYears, byYear, yoyOf]);
 
     const sortBy = (key: SortKey) => {
         if (sortKey === key) setSortAsc((p) => !p);
@@ -987,7 +1020,7 @@ export default function DrugUsageDashboardPage() {
                     {/* Trend + Top 10 */}
                     <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
                         <SectionCard
-                            title={`แนวโน้มมูลค่าการใช้${kindMeta.short}รายวัน`}
+                            title={`แนวโน้มมูลค่าการใช้${kindMeta.short}${data?.trendUnit === "month" ? "รายเดือน" : "รายวัน"}`}
                             icon={TrendingUp} titleColor={MINT[800]}
                         >
                             {trendData.length ? (
@@ -998,7 +1031,9 @@ export default function DrugUsageDashboardPage() {
                                         <YAxis tick={{ fontSize: 11 }} tickFormatter={(v) => fmt(Number(v))} width={70} />
                                         <RTooltip
                                             formatter={(v?: number) => [`${fmtB(Number(v))} บาท`, "มูลค่า"]}
-                                            labelFormatter={(l) => `วันที่ ${l}`}
+                                            labelFormatter={(l) =>
+                                                data?.trendUnit === "month" ? `เดือน ${l}` : `วันที่ ${l}`
+                                            }
                                         />
                                         <Line
                                             type="monotone" dataKey="value" name="มูลค่า (บาท)"
@@ -1060,7 +1095,9 @@ export default function DrugUsageDashboardPage() {
                             title={`มูลค่า${kindMeta.short}แยกตามสิทธิ์การรักษา`}
                             icon={ShieldCheck} titleColor={MINT[800]}
                         >
-                            {rightPie.length ? (
+                            {!dims ? (
+                                <Shimmer h="h-[240px]" />
+                            ) : rightPie.length ? (
                                 <ResponsiveContainer width="100%" height={240}>
                                     <PieChart>
                                         <Pie
@@ -1082,7 +1119,9 @@ export default function DrugUsageDashboardPage() {
                             title={`มูลค่า${kindMeta.short}แยกตามแผนกที่รับบริการ`}
                             icon={Building2} titleColor={MINT[800]}
                         >
-                            {deptBars.length ? (
+                            {!dims ? (
+                                <Shimmer h="h-[240px]" />
+                            ) : deptBars.length ? (
                                 <HBarList data={deptBars} colors={PALETTE} total={totals.value} labelWidth={120} />
                             ) : (
                                 <EmptyState variant="noData" />
@@ -1099,7 +1138,13 @@ export default function DrugUsageDashboardPage() {
                         }
                         icon={Stethoscope} titleColor={MINT[800]}
                     >
-                        {prescriberBars.length ? (
+                        {!dims ? (
+                            <div className="space-y-2">
+                                {Array.from({ length: 6 }).map((_, i) => (
+                                    <Shimmer key={i} h="h-5" />
+                                ))}
+                            </div>
+                        ) : prescriberBars.length ? (
                             <HBarList data={prescriberBars} colors={PALETTE} total={totals.value} labelWidth={180} />
                         ) : (
                             <EmptyState variant="noData" />

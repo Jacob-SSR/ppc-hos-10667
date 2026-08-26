@@ -4,14 +4,25 @@
 //     ?fy=2569 — ปีงบประมาณ พ.ศ. (ใช้กับ preset=fiscal, default = ปีงบปัจจุบัน)
 //     ?years=3 — จำนวนปีงบย้อนหลังรวมปีปัจจุบัน (ใช้กับ preset=back, 1–10)
 //     ?kind=drug (เวชภัณฑ์ยา — default) | nondrug (เวชภัณฑ์ที่ไม่ใช่ยา) | lab (ตรวจทางห้องปฏิบัติการ)
+//     ?section=core — KPI/ปีงบ/รายการ/แนวโน้ม (เบา เรนเดอร์ได้ทันที)
+//                dims — แผนก/ผู้สั่งใช้/สิทธิ์ (หนักกว่า โหลดตามหลัง)
+//                ไม่ระบุ = ทั้งหมด (ใช้กับงานที่อยากได้ครบทีเดียว)
 import { NextResponse } from "next/server";
-import { getDrugUsageDashboard, isItemKind } from "@/lib/drugUsage.service";
+import {
+  getDrugUsageCore,
+  getDrugUsageDashboard,
+  getDrugUsageDims,
+  isItemKind,
+} from "@/lib/drugUsage.service";
 import { cachedQuery } from "@/lib/cache";
 
 export const dynamic = "force-dynamic";
 
-// ข้อมูลค่าใช้จ่ายไม่ต้องสดระดับวินาที + query ค่อนข้างหนัก → 10 นาที
-const TTL_SECONDS = 600;
+// ช่วงที่ยังไม่จบ (มีวันนี้อยู่ด้วย) ข้อมูลยังเพิ่มได้ → 10 นาที
+const TTL_ONGOING = 600;
+// ช่วงที่จบไปแล้ว (ปีงบเก่า/เดือนที่ผ่านมา) ข้อมูลนิ่งแล้ว → 24 ชม.
+// ผลคือกดดูปีย้อนหลังซ้ำ ๆ แทบไม่เคยแตะ HOSxP อีกเลย
+const TTL_CLOSED = 86_400;
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -95,13 +106,37 @@ export async function GET(req: Request) {
 
     if (start > end) [start, end] = [end, start];
 
-    const data = await cachedQuery(
-      ["drug-usage", kind, start, end],
-      () => getDrugUsageDashboard(start, end, kind),
-      TTL_SECONDS,
-    );
+    const section = searchParams.get("section");
+    const closed = end < fmt(bangkokToday()); // ช่วงจบแล้ว = ข้อมูลไม่เปลี่ยนอีก
+    const ttl = closed ? TTL_CLOSED : TTL_ONGOING;
 
-    return NextResponse.json(data);
+    const data =
+      section === "core"
+        ? await cachedQuery(
+            ["drug-usage-core", kind, start, end],
+            () => getDrugUsageCore(start, end, kind),
+            ttl,
+          )
+        : section === "dims"
+          ? await cachedQuery(
+              ["drug-usage-dims", kind, start, end],
+              () => getDrugUsageDims(start, end, kind),
+              ttl,
+            )
+          : await cachedQuery(
+              ["drug-usage", kind, start, end],
+              () => getDrugUsageDashboard(start, end, kind),
+              ttl,
+            );
+
+    return NextResponse.json(data, {
+      headers: {
+        // ให้เบราว์เซอร์เก็บไว้เองด้วย — สลับแท็บกลับไปมาในช่วงสั้น ๆ ไม่ต้องยิงซ้ำ
+        "Cache-Control": closed
+          ? "private, max-age=3600"
+          : "private, max-age=60, stale-while-revalidate=600",
+      },
+    });
   } catch (error) {
     console.error("Medical supply usage dashboard error:", error);
     return NextResponse.json(
