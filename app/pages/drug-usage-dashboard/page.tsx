@@ -13,6 +13,7 @@ import {
 import {
     HBarList, KpiCard, LiveBadge, RefreshButton, SectionCard,
 } from "@/app/components/dashboard/live";
+import { motion } from "framer-motion";
 import { EmptyState } from "@/app/components/ui/EmptyState";
 import { Shimmer } from "@/app/components/ui/Shimmer";
 import AiSummaryCard from "@/app/components/ai/AiSummaryCard";
@@ -185,6 +186,88 @@ function AbcBadge({ cls }: { cls: AbcClass }) {
     );
 }
 
+// โครง skeleton ที่วางทับตำแหน่งจริงของทุก section — ใช้ตอนสลับ top bar / เปลี่ยนช่วงวันที่
+// เพื่อให้เห็นชัดว่ากำลังโหลดชุดข้อมูลใหม่ ไม่ใช่ค้างอยู่ที่ตัวเลขชุดเดิม
+function DashboardSkeleton() {
+    return (
+        <div className="space-y-4">
+            {/* KPI */}
+            <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3">
+                {Array.from({ length: 6 }).map((_, i) => (
+                    <div key={i} className="rounded-2xl p-5 bg-gray-50 flex flex-col gap-2">
+                        <Shimmer h="h-9" className="w-9" />
+                        <Shimmer h="h-3" className="w-2/3" />
+                        <Shimmer h="h-7" className="w-1/2" />
+                        <Shimmer h="h-2.5" className="w-3/4" />
+                    </div>
+                ))}
+            </div>
+
+            {/* ABC */}
+            <div className="bg-white border border-gray-200 rounded-2xl shadow-sm p-5">
+                <Shimmer h="h-4" className="w-56 mb-4" />
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                    {Array.from({ length: 3 }).map((_, i) => (
+                        <div key={i} className="rounded-2xl p-4 bg-gray-50 flex flex-col gap-2">
+                            <Shimmer h="h-3.5" className="w-24" />
+                            <Shimmer h="h-6" className="w-2/3" />
+                            <Shimmer h="h-1.5" className="w-full" />
+                            <Shimmer h="h-2.5" className="w-4/5" />
+                        </div>
+                    ))}
+                </div>
+            </div>
+
+            {/* กราฟแนวโน้ม + top 10 */}
+            <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+                {Array.from({ length: 2 }).map((_, i) => (
+                    <div key={i} className="bg-white border border-gray-200 rounded-2xl shadow-sm p-5">
+                        <Shimmer h="h-4" className="w-52 mb-4" />
+                        <Shimmer h="h-[260px]" />
+                    </div>
+                ))}
+            </div>
+
+            {/* pie / pie / bar list */}
+            <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
+                {Array.from({ length: 3 }).map((_, i) => (
+                    <div key={i} className="bg-white border border-gray-200 rounded-2xl shadow-sm p-5">
+                        <Shimmer h="h-4" className="w-44 mb-4" />
+                        <Shimmer h="h-[240px]" />
+                    </div>
+                ))}
+            </div>
+
+            {/* ผู้สั่งใช้ */}
+            <div className="bg-white border border-gray-200 rounded-2xl shadow-sm p-5">
+                <Shimmer h="h-4" className="w-52 mb-4" />
+                <div className="space-y-2">
+                    {Array.from({ length: 6 }).map((_, i) => (
+                        <Shimmer key={i} h="h-5" />
+                    ))}
+                </div>
+            </div>
+
+            {/* ตาราง */}
+            <div className="bg-white border border-gray-200 rounded-2xl shadow-sm p-5">
+                <Shimmer h="h-4" className="w-64 mb-4" />
+                <div className="flex flex-wrap gap-2 mb-3">
+                    <Shimmer h="h-9" className="w-64" />
+                    <Shimmer h="h-9" className="w-32" />
+                </div>
+                <div className="rounded-lg border border-gray-100 overflow-hidden">
+                    <Shimmer h="h-9" className="rounded-none" />
+                    {Array.from({ length: 8 }).map((_, i) => (
+                        <div key={i} className="border-t border-gray-100 px-3 py-2">
+                            <Shimmer h="h-4" />
+                        </div>
+                    ))}
+                </div>
+            </div>
+        </div>
+    );
+}
+
 // ─── Component ────────────────────────────────────────────────────────────────
 export default function DrugUsageDashboardPage() {
     const [data, setData] = useState<DashData | null>(null);
@@ -208,6 +291,8 @@ export default function DrugUsageDashboardPage() {
     const fetchData = useCallback(async () => {
         setLoading(true);
         setError(null);
+        // ทิ้งชุดเดิมทันที กัน UI ค้างที่ตัวเลขของชนิด/ช่วงเวลาก่อนหน้าระหว่างรอ
+        setData(null);
         try {
             const params = new URLSearchParams();
             if (preset === "custom") {
@@ -439,10 +524,17 @@ export default function DrugUsageDashboardPage() {
                             <button
                                 key={k.key}
                                 onClick={() => setKind(k.key)}
-                                className={`flex-1 sm:flex-none flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-semibold transition-all ${active ? "shadow-sm" : "text-gray-500 hover:text-gray-700"}`}
+                                disabled={loading}
+                                className={`flex-1 sm:flex-none flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-semibold transition-all disabled:cursor-wait ${active ? "shadow-sm" : "text-gray-500 hover:text-gray-700 disabled:opacity-50"}`}
                                 style={active ? { backgroundColor: "#ffffff", color: MINT[700] } : undefined}
                             >
-                                <k.icon size={14} />
+                                {active && loading ? (
+                                    <span
+                                        className="w-3.5 h-3.5 rounded-full border-2 border-current border-t-transparent animate-spin inline-block"
+                                    />
+                                ) : (
+                                    <k.icon size={14} />
+                                )}
                                 {k.label}
                             </button>
                         );
@@ -469,7 +561,8 @@ export default function DrugUsageDashboardPage() {
                                     <button
                                         key={y}
                                         onClick={() => setFiscalYear(y)}
-                                        className={`px-2.5 py-1 rounded-lg text-sm font-semibold tabular-nums transition-all ${active ? "shadow-sm" : "text-gray-500 hover:text-gray-700"}`}
+                                        disabled={loading}
+                                        className={`px-2.5 py-1 rounded-lg text-sm font-semibold tabular-nums transition-all disabled:cursor-wait ${active ? "shadow-sm" : "text-gray-500 hover:text-gray-700 disabled:opacity-50"}`}
                                         style={active ? { backgroundColor: "#ffffff", color: MINT[700] } : undefined}
                                     >
                                         {y}
@@ -520,16 +613,18 @@ export default function DrugUsageDashboardPage() {
                 </div>
             )}
 
-            {loading && !data ? (
-                <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3">
-                    {Array.from({ length: 6 }).map((_, i) => (
-                        <Shimmer key={i} h="h-28" />
-                    ))}
-                </div>
+            {loading ? (
+                <DashboardSkeleton />
             ) : !totals || totals.order_count === 0 ? (
                 <EmptyState variant="noData" message={`ไม่พบข้อมูล${kindMeta.label}ในช่วงเวลานี้`} />
             ) : (
-                <>
+                <motion.div
+                    key={`${kind}-${data?.start}-${data?.end}`}
+                    className="space-y-4"
+                    initial={{ opacity: 0, y: 6 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: 0.25, ease: "easeOut" }}
+                >
                     {/* KPI */}
                     <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3">
                         <KpiCard
@@ -893,7 +988,7 @@ export default function DrugUsageDashboardPage() {
                         context={`สรุปการใช้${kindMeta.label}ตามมูลค่าการใช้ทั้งหมดในสถานบริการ (HOSxP)`}
                         disabled={!aiSummary}
                     />
-                </>
+                </motion.div>
             )}
         </div>
     );
