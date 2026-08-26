@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
     Bar, BarChart, CartesianGrid, Cell, Legend, Line, LineChart, Pie, PieChart,
     ResponsiveContainer, Tooltip as RTooltip, XAxis, YAxis,
@@ -314,9 +314,15 @@ export default function DrugUsageDashboardPage() {
         }
     }, [kind, preset, fiscalYear, customStart, customEnd]);
 
-    // preset อื่นดึงทันที — custom รอผู้ใช้กด "ค้นหา" (แต่สลับชนิดเวชภัณฑ์ให้ดึงใหม่เสมอ)
+    // preset/ปีงบ เปลี่ยน → ดึงทันที ยกเว้นโหมด "กำหนดเอง" ที่รอผู้ใช้กด "ค้นหา"
+    // แต่การสลับชนิดเวชภัณฑ์ต้องดึงใหม่เสมอ แม้อยู่โหมดกำหนดเอง (ใช้ช่วงวันที่เดิม)
+    const firstRun = useRef(true);
+    const prevKind = useRef(kind);
     useEffect(() => {
-        if (preset !== "custom") fetchData();
+        const kindChanged = prevKind.current !== kind;
+        prevKind.current = kind;
+        if (firstRun.current || kindChanged || preset !== "custom") fetchData();
+        firstRun.current = false;
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [preset, kind, fiscalYear]);
 
@@ -324,6 +330,8 @@ export default function DrugUsageDashboardPage() {
     useEffect(() => { setPage(1); }, [search, abcFilter, yearFilter, sortKey, sortAsc, data]);
 
     // ── derived ──
+    // ข้อมูลในมือยังไม่ใช่ของชนิดที่เลือกอยู่ → ถือว่ายังโหลดไม่เสร็จ
+    const stale = !!data && data.kind !== kind;
     const totals = data?.totals;
     const items = useMemo(() => data?.items ?? [], [data]);
     const periodLabel = data ? toThaiDateLabel(data.start, data.end) : "—";
@@ -613,7 +621,7 @@ export default function DrugUsageDashboardPage() {
                 </div>
             )}
 
-            {loading ? (
+            {loading || stale ? (
                 <DashboardSkeleton />
             ) : !totals || totals.order_count === 0 ? (
                 <EmptyState variant="noData" message={`ไม่พบข้อมูล${kindMeta.label}ในช่วงเวลานี้`} />
