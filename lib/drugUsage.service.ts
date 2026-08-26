@@ -37,9 +37,12 @@ const envList = (v: string | undefined): string[] =>
     .map((x) => x.trim())
     .filter(Boolean);
 
-// รหัสหมวดค่าใช้จ่าย (opitemrece.income) ที่ถือเป็นเวชภัณฑ์แต่ละแบบ
-// - ยา: ไม่กรอง (การ join drugitems เพียงพอแล้ว)
-// - ไม่ใช่ยา: '05' = ค่าเวชภัณฑ์ที่มิใช่ยา ตามรายงานต้นฉบับ — ปรับได้ด้วย env
+// รหัสหมวดค่าใช้จ่าย (opitemrece.income) ที่จะกรองเพิ่มจากการ join ตารางทะเบียน
+// ค่าเริ่มต้น "ไม่กรอง" ทุกชนิด — การ join ตารางทะเบียนเวชภัณฑ์คัดรายการให้แล้ว
+// การกรอง income ซ้ำจะทำให้ยอดหายไปจากที่ query ตรง ๆ บน HOSxP ได้
+// ถ้าโรงพยาบาลไหนอยากกรองหมวดด้วย ตั้ง env ได้:
+//   DRUG_USAGE_DRUG_INCOME / DRUG_USAGE_NONDRUG_INCOME / DRUG_USAGE_LAB_INCOME
+//   (ใส่หลายค่าคั่นด้วย , เช่น "05" หรือ "05,06")
 const KIND_CONFIG: Record<
   ItemKind,
   {
@@ -60,7 +63,7 @@ const KIND_CONFIG: Record<
     table: "nondrugitems",
     label: "เวชภัณฑ์ที่ไม่ใช่ยา",
     nameCols: ["name"],
-    income: envList(process.env.DRUG_USAGE_NONDRUG_INCOME ?? "05"),
+    income: envList(process.env.DRUG_USAGE_NONDRUG_INCOME),
   },
   lab: {
     table: "lab_items",
@@ -197,6 +200,10 @@ export interface DrugUsageCoreData {
   byYear: DrugUsageYearRow[];
   totals: DrugUsageTotals;
   items: DrugUsageItemRow[];
+  /** จำนวนแถวสูงสุดที่ query นี้ยอมส่งกลับ */
+  itemsLimit: number;
+  /** true = มีรายการมูลค่าน้อยถูกตัดออกด้วย LIMIT (ยอดในตารางจะน้อยกว่า totals) */
+  itemsTruncated: boolean;
   trend: DrugUsageTrendRow[];
 }
 
@@ -342,6 +349,7 @@ export async function getDrugUsageCore(
 ): Promise<DrugUsageCoreData> {
   const c = await buildCtx(start, end, kind);
   const trendUnit = trendUnitFor(start, end);
+  const itemsLimit = itemRowLimit(start, end);
   const trendExpr =
     trendUnit === "month"
       ? `DATE_FORMAT(o.vstdate, '%Y-%m-01')`
@@ -387,7 +395,7 @@ export async function getDrugUsageCore(
       ${c.from}
       GROUP BY o.icode, fiscal_year
       ORDER BY value DESC
-      LIMIT ${itemRowLimit(start, end)}
+      LIMIT ${itemsLimit}
       `,
       c.params,
     ),
@@ -464,6 +472,8 @@ export async function getDrugUsageCore(
     fiscalYears: byYear.map((y) => y.fiscal_year).filter(Boolean),
     byYear,
     totals,
+    itemsLimit,
+    itemsTruncated: itemRows.length >= itemsLimit,
     items: itemRows.map((r) => ({
       icode: str(r.icode),
       fiscal_year: num(r.fiscal_year),

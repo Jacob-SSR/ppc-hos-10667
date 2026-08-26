@@ -49,6 +49,7 @@ interface DashData {
     trendUnit: "day" | "month";
     fiscalYears: number[]; byYear: YearRow[];
     totals: Totals; items: ItemRow[]; trend: TrendRow[];
+    itemsLimit: number; itemsTruncated: boolean;
 }
 /** ส่วนแยกมิติ — โหลดตามหลัง (query หนักกว่า) */
 interface DimsData {
@@ -1194,8 +1195,23 @@ export default function DrugUsageDashboardPage() {
                             <span className="text-xs text-gray-500">
                                 {fmt(filtered.length)} รายการ · รวม{" "}
                                 <span className="font-bold" style={{ color: MINT[700] }}>{fmtB(filteredValue)}</span> บาท
+                                {Math.abs(filteredValue - totals.value) > 0.5 && (
+                                    <>
+                                        {" "}· จากยอดรวมทั้งช่วง{" "}
+                                        <span className="font-bold">{fmtB(totals.value)}</span> บาท
+                                    </>
+                                )}
                             </span>
                         </div>
+
+                        {data?.itemsTruncated && (
+                            <div className="mb-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                                ช่วงนี้มีรายการมากเกิน {fmt(data.itemsLimit)} แถว — ตารางและไฟล์ Excel
+                                แสดงเฉพาะรายการมูลค่าสูงสุด {fmt(data.itemsLimit)} อันดับแรก
+                                ยอดรวมของตารางจึงน้อยกว่ายอดรวมทั้งช่วงใน KPI ด้านบน
+                                (KPI คำนวณจากข้อมูลทั้งหมด ไม่ถูกตัด)
+                            </div>
+                        )}
 
                         {filtered.length === 0 ? (
                             <EmptyState
