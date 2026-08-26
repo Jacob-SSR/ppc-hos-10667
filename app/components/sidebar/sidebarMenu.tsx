@@ -234,6 +234,18 @@ export const DASHBOARD_GROUPS: SidebarSubGroup[] = [
   },
 
   {
+    title: "เภสัชกรรม",
+    items: [
+      {
+        label: "การใช้เวชภัณฑ์ยาตามมูลค่า",
+        href: "/pages/drug-usage-dashboard",
+        icon: Pill,
+        group: "claim",
+      },
+    ],
+  },
+
+  {
     title: "โรคติดเชื้อ",
     items: [
       {

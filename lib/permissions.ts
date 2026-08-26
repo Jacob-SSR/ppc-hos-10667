@@ -146,6 +146,9 @@ export const FEATURE_PATHS = {
   // เภสัชกรรม
   RDU: ["/pages/rdu-dashboard", "/api/rdu-dashboard"],
 
+  // มูลค่าการใช้เวชภัณฑ์ยา — เภสัชฯ ใช้บริหารคลังยา, การเงินใช้ดูต้นทุนยา
+  DRUG_VALUE: ["/pages/drug-usage-dashboard", "/api/drug-usage"],
+
   // งานเคลม / การเงิน / งานประกัน
   CLAIM: [
     "/pages/anc-dashboard",
@@ -264,7 +267,7 @@ export const ROLE_FEATURES: Record<string, FeatureKey[] | "*"> = {
   DENTIST: ["CORE", "DENTAL"],
 
   // เภสัชกรรม
-  PHARMACY: ["CORE", "RDU", "MENTAL"],
+  PHARMACY: ["CORE", "RDU", "DRUG_VALUE", "MENTAL"],
 
   // กายภาพบำบัด
   PT: ["CORE", "PT", "IMC"],
@@ -273,7 +276,7 @@ export const ROLE_FEATURES: Record<string, FeatureKey[] | "*"> = {
   TTM: ["CORE", "TTM"],
 
   // การเงิน / งานประกัน / เวชระเบียน
-  FINANCE: ["CORE", "CLAIM", "REPORT"],
+  FINANCE: ["CORE", "CLAIM", "REPORT", "DRUG_VALUE"],
 
   // นักวิชาการสาธารณสุข / ปฐมภูมิ
   PUBLIC_HEALTH: ["CORE", "PRIMARY_CARE", "PPA", "REPORT", "INFECTIOUS"],

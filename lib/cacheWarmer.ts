@@ -34,6 +34,8 @@ const TARGETS: WarmTarget[] = [
   { path: "/api/acs-sheets", everySec: 240 },
   // TTL 600
   { path: "/api/sepsis-sheets", everySec: 480 },
+  // มูลค่าการใช้ยา — TTL 600, warm เฉพาะช่วง "เดือนนี้" ซึ่งเป็นค่าเริ่มต้นของหน้า
+  { path: "/api/drug-usage?preset=thismonth", everySec: 480 },
   // TTL 180
   { path: "/api/ipd/ward-census", everySec: 150 },
 ];
