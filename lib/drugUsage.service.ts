@@ -2,6 +2,7 @@
 // สรุปยอดการใช้เวชภัณฑ์ตามมูลค่าการใช้ทั้งหมดในสถานบริการ — ใช้ได้ 2 แบบ
 //   kind = "drug"    → เวชภัณฑ์ยา            (opitemrece JOIN drugitems)
 //   kind = "nondrug" → เวชภัณฑ์ที่ไม่ใช่ยา   (opitemrece JOIN nondrugitems + income = '05')
+//   kind = "lab"     → ตรวจทางห้องปฏิบัติการ (opitemrece JOIN lab_items)
 //
 // การ inner join กับตารางทะเบียนเวชภัณฑ์ทำให้เหลือเฉพาะรายการเวชภัณฑ์จริง
 // (ตัด lab / x-ray / ค่าบริการ ออก)
@@ -17,13 +18,18 @@
 //     from opitemrece o left outer join nondrugitems d on d.icode = o.icode
 //    where o.icode = d.icode and o.vstdate between ? and ? and o.income = '05'
 //    group by d.name order by sum_price desc
+//   -- lab
+//   select d.icode, d.lab_items_name, count(distinct o.vn), sum(o.qty), sum(o.sum_price)
+//     from opitemrece o left outer join lab_items d on d.icode = o.icode
+//    where o.icode = d.icode and o.vstdate between ? and ?
+//    group by d.lab_items_name order by sum_price desc
 //
 // โครงสร้างตารางต่างกันตามเวอร์ชัน HOSxP → คอลัมน์ที่ไม่การันตี
 // (strength/units/unit/an/income) จะถูกตรวจจาก information_schema ก่อนนำไปประกอบ SQL
 import { db } from "@/lib/db";
 import { RowDataPacket } from "mysql2";
 
-export type ItemKind = "drug" | "nondrug";
+export type ItemKind = "drug" | "nondrug" | "lab";
 
 const envList = (v: string | undefined): string[] =>
   (v ?? "")
@@ -36,22 +42,36 @@ const envList = (v: string | undefined): string[] =>
 // - ไม่ใช่ยา: '05' = ค่าเวชภัณฑ์ที่มิใช่ยา ตามรายงานต้นฉบับ — ปรับได้ด้วย env
 const KIND_CONFIG: Record<
   ItemKind,
-  { table: "drugitems" | "nondrugitems"; label: string; income: string[] }
+  {
+    table: "drugitems" | "nondrugitems" | "lab_items";
+    label: string;
+    /** ชื่อคอลัมน์ชื่อรายการ — ไล่ตามลำดับ ใช้ตัวแรกที่มีอยู่จริง */
+    nameCols: string[];
+    income: string[];
+  }
 > = {
   drug: {
     table: "drugitems",
     label: "เวชภัณฑ์ยา",
+    nameCols: ["name"],
     income: envList(process.env.DRUG_USAGE_DRUG_INCOME),
   },
   nondrug: {
     table: "nondrugitems",
     label: "เวชภัณฑ์ที่ไม่ใช่ยา",
+    nameCols: ["name"],
     income: envList(process.env.DRUG_USAGE_NONDRUG_INCOME ?? "05"),
+  },
+  lab: {
+    table: "lab_items",
+    label: "ตรวจทางห้องปฏิบัติการ",
+    nameCols: ["lab_items_name", "name"],
+    income: envList(process.env.DRUG_USAGE_LAB_INCOME),
   },
 };
 
 export function isItemKind(v: unknown): v is ItemKind {
-  return v === "drug" || v === "nondrug";
+  return v === "drug" || v === "nondrug" || v === "lab";
 }
 
 // ปีงบประมาณไทย (พ.ศ.) — เริ่ม 1 ต.ค. เช่น 1 ต.ค. 2025 (2568) = ปีงบ 2569
@@ -225,8 +245,10 @@ export async function getDrugUsageDashboard(
   ]);
 
   // drugitems ใช้ strength + units, nondrugitems ใช้ unit (เอกพจน์) และไม่มี strength
+  // lab_items ใช้ lab_items_name เป็นชื่อรายการ และไม่มีทั้ง strength/units
   const strengthExpr = firstCol(itemCols, "d", ["strength"]);
   const unitsExpr = firstCol(itemCols, "d", ["units", "unit"]);
+  const nameExpr = `COALESCE(NULLIF(${firstCol(itemCols, "d", cfg.nameCols)}, ''), o.icode)`;
 
   // IPD = บรรทัดที่ผูกกับ AN (admit), นอกนั้นเป็น OPD
   const hasAn = opCols.has("an");
@@ -281,7 +303,7 @@ export async function getDrugUsageDashboard(
       SELECT
         o.icode                                  AS icode,
         ${FY_EXPR}                               AS fiscal_year,
-        COALESCE(NULLIF(d.name, ''), o.icode)    AS name,
+        ${nameExpr}                              AS name,
         ${strengthExpr}                          AS strength,
         ${unitsExpr}                             AS units,
         COUNT(*)                                 AS order_count,

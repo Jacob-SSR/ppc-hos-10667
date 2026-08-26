@@ -37,6 +37,7 @@ const TARGETS: WarmTarget[] = [
   // มูลค่าการใช้เวชภัณฑ์ — TTL 600, warm ปีงบปัจจุบันซึ่งเป็นค่าเริ่มต้นของหน้า
   { path: "/api/drug-usage?preset=fiscal&kind=drug", everySec: 480 },
   { path: "/api/drug-usage?preset=fiscal&kind=nondrug", everySec: 480 },
+  { path: "/api/drug-usage?preset=fiscal&kind=lab", everySec: 480 },
   // TTL 180
   { path: "/api/ipd/ward-census", everySec: 150 },
 ];

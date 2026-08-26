@@ -2,7 +2,7 @@
 // สรุปยอดการใช้เวชภัณฑ์ตามมูลค่าการใช้ทั้งหมดในสถานบริการ
 // รับ ?preset=today|thismonth|fiscal  หรือ  ?start=YYYY-MM-DD&end=YYYY-MM-DD
 //     ?fy=2569 — ปีงบประมาณ พ.ศ. (ใช้กับ preset=fiscal, default = ปีงบปัจจุบัน)
-//     ?kind=drug (เวชภัณฑ์ยา — default) | nondrug (เวชภัณฑ์ที่ไม่ใช่ยา)
+//     ?kind=drug (เวชภัณฑ์ยา — default) | nondrug (เวชภัณฑ์ที่ไม่ใช่ยา) | lab (ตรวจทางห้องปฏิบัติการ)
 import { NextResponse } from "next/server";
 import { getDrugUsageDashboard, isItemKind } from "@/lib/drugUsage.service";
 import { cachedQuery } from "@/lib/cache";

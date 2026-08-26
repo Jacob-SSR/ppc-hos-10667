@@ -6,7 +6,7 @@ import {
     ResponsiveContainer, Tooltip as RTooltip, XAxis, YAxis,
 } from "recharts";
 import {
-    Pill, Syringe, Coins, Boxes, Users, Receipt, Building2, Stethoscope, ShieldCheck,
+    Pill, Syringe, FlaskConical, Coins, Boxes, Users, Receipt, Building2, Stethoscope, ShieldCheck,
     TrendingUp, Table2, Download, Search, ChevronUp, ChevronDown, ChevronsUpDown,
     ChevronLeft, ChevronRight, Layers,
 } from "lucide-react";
@@ -20,7 +20,7 @@ import { exportToExcel } from "@/lib/exportExcel";
 import { THAI_MONTHS_SHORT, toThaiDateLabel } from "@/lib/thaiDate";
 
 // ─── Types (ตรงกับ lib/drugUsage.service.ts) ─────────────────────────────────
-type Kind = "drug" | "nondrug";
+type Kind = "drug" | "nondrug" | "lab";
 
 interface ItemRow {
     fiscal_year: number;
@@ -73,14 +73,34 @@ const FISCAL_YEARS: number[] = Array.from({ length: 5 }, (_, i) => currentFiscal
 
 const PAGE_SIZE = 25;
 
-// สองมุมมองที่สลับกันได้บน top bar — โครงรายงานเหมือนกัน ต่างแค่ตารางต้นทาง
+// มุมมองที่สลับกันได้บน top bar — โครงรายงานเหมือนกัน ต่างแค่ตารางต้นทาง
 const KINDS: {
-    key: Kind; label: string; short: string; icon: React.ElementType; unitWord: string;
+    key: Kind; label: string; short: string; icon: React.ElementType;
+    /** หัวเรื่องหน้า + คำอธิบายใต้หัวเรื่อง */
+    title: string; desc: string;
+    /** ป้าย KPI ที่ต้องเลี่ยงคำว่า "การใช้" ให้อ่านลื่นในภาษาไทย */
+    unitWord: string; valueKpi: string; qtyKpi: string; qtySub: string;
 }[] = [
-        { key: "drug", label: "เวชภัณฑ์ยา", short: "ยา", icon: Pill, unitWord: "รายการยา" },
         {
-            key: "nondrug", label: "เวชภัณฑ์ที่ไม่ใช่ยา", short: "ไม่ใช่ยา",
-            icon: Syringe, unitWord: "รายการเวชภัณฑ์",
+            key: "drug", label: "เวชภัณฑ์ยา", short: "ยา", icon: Pill,
+            title: "สรุปการใช้เวชภัณฑ์ยาตามมูลค่า",
+            desc: "มูลค่าการใช้เวชภัณฑ์ยาทั้งหมดในสถานบริการ (HOSxP)",
+            unitWord: "รายการยา", valueKpi: "มูลค่าการใช้ยารวม",
+            qtyKpi: "จำนวนที่จ่ายรวม", qtySub: "หน่วยจ่ายรวมทุกรายการ",
+        },
+        {
+            key: "nondrug", label: "เวชภัณฑ์ที่ไม่ใช่ยา", short: "ไม่ใช่ยา", icon: Syringe,
+            title: "สรุปการใช้เวชภัณฑ์ที่ไม่ใช่ยาตามมูลค่า",
+            desc: "มูลค่าการใช้เวชภัณฑ์ที่ไม่ใช่ยาทั้งหมดในสถานบริการ (HOSxP)",
+            unitWord: "รายการเวชภัณฑ์", valueKpi: "มูลค่าการใช้เวชภัณฑ์รวม",
+            qtyKpi: "จำนวนที่จ่ายรวม", qtySub: "หน่วยจ่ายรวมทุกรายการ",
+        },
+        {
+            key: "lab", label: "ตรวจทางห้องปฏิบัติการ", short: "Lab", icon: FlaskConical,
+            title: "สรุปการตรวจทางห้องปฏิบัติการตามมูลค่า",
+            desc: "มูลค่าการส่งตรวจทางห้องปฏิบัติการทั้งหมดในสถานบริการ (HOSxP)",
+            unitWord: "รายการตรวจ", valueKpi: "มูลค่าการตรวจรวม",
+            qtyKpi: "จำนวนที่ตรวจรวม", qtySub: "จำนวนรวมทุกรายการตรวจ",
         },
     ];
 
@@ -335,8 +355,9 @@ export default function DrugUsageDashboardPage() {
                 กลุ่ม_ABC: r.abc,
             })),
             {
-                sheetName: kind === "drug" ? "DrugUsage" : "NonDrugUsage",
-                filePrefix: `${kind === "drug" ? "drug_usage" : "nondrug_usage"}_${
+                sheetName:
+                    kind === "drug" ? "DrugUsage" : kind === "nondrug" ? "NonDrugUsage" : "LabUsage",
+                filePrefix: `${kind}_usage_${
                     preset === "fiscal" ? `fy${fiscalYear}` : `${data?.start ?? ""}_${data?.end ?? ""}`
                 }`,
                 dateKeys: [],
@@ -393,13 +414,11 @@ export default function DrugUsageDashboardPage() {
                 <div>
                     <div className="flex items-center gap-2">
                         <kindMeta.icon size={18} style={{ color: MINT[800] }} />
-                        <h1 className="text-lg font-bold text-gray-800">
-                            สรุปการใช้{kindMeta.label}ตามมูลค่า
-                        </h1>
+                        <h1 className="text-lg font-bold text-gray-800">{kindMeta.title}</h1>
                         <LiveBadge />
                     </div>
                     <p className="text-xs text-gray-400 mt-0.5">
-                        มูลค่าการใช้{kindMeta.label}ทั้งหมดในสถานบริการ (HOSxP) · ช่วงข้อมูล{" "}
+                        {kindMeta.desc} · ช่วงข้อมูล{" "}
                         <span className="font-semibold" style={{ color: MINT[700] }}>{periodLabel}</span>
                         {dataYears.length > 0 && (
                             <>
@@ -508,13 +527,13 @@ export default function DrugUsageDashboardPage() {
                     ))}
                 </div>
             ) : !totals || totals.order_count === 0 ? (
-                <EmptyState variant="noData" message={`ไม่พบรายการใช้${kindMeta.label}ในช่วงเวลานี้`} />
+                <EmptyState variant="noData" message={`ไม่พบข้อมูล${kindMeta.label}ในช่วงเวลานี้`} />
             ) : (
                 <>
                     {/* KPI */}
                     <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3">
                         <KpiCard
-                            icon={Coins} label={`มูลค่าการใช้${kindMeta.short}รวม`}
+                            icon={Coins} label={kindMeta.valueKpi}
                             value={`${fmtMoneyShort(totals.value)} ฿`}
                             sub={`${fmtB(totals.value)} บาท`}
                             accent="#1a5233" bg={MINT[50]}
@@ -526,16 +545,17 @@ export default function DrugUsageDashboardPage() {
                         />
                         <KpiCard
                             icon={Receipt} label="ครั้งที่สั่งใช้"
-                            value={fmt(totals.order_count)} sub="บรรทัดรายการเวชภัณฑ์"
+                            value={fmt(totals.order_count)} sub="บรรทัดรายการ"
                             accent="#6a1b9a" bg="#faf5ff"
                         />
                         <KpiCard
-                            icon={Boxes} label="จำนวนที่จ่ายรวม"
-                            value={fmt(totals.qty)} sub="หน่วยจ่ายรวมทุกรายการ"
+                            icon={Boxes} label={kindMeta.qtyKpi}
+                            value={fmt(totals.qty)} sub={kindMeta.qtySub}
                             accent="#b45309" bg="#fffbeb"
                         />
                         <KpiCard
-                            icon={Users} label={`ผู้ป่วยที่ได้รับ${kindMeta.short}`}
+                            icon={Users}
+                            label={kind === "lab" ? "ผู้ป่วยที่ได้รับการตรวจ" : `ผู้ป่วยที่ได้รับ${kindMeta.short}`}
                             value={fmt(totals.hn_count)}
                             sub={`${fmt(totals.vn_count)} visit`}
                             accent="#00695c" bg="#ecfdf5"
@@ -710,7 +730,11 @@ export default function DrugUsageDashboardPage() {
 
                     {/* ผู้สั่งใช้ */}
                     <SectionCard
-                        title={`10 อันดับผู้สั่งใช้${kindMeta.short}ตามมูลค่า`}
+                        title={
+                            kind === "lab"
+                                ? "10 อันดับผู้สั่งตรวจ Lab ตามมูลค่า"
+                                : `10 อันดับผู้สั่งใช้${kindMeta.short}ตามมูลค่า`
+                        }
                         icon={Stethoscope} titleColor={MINT[800]}
                     >
                         {prescriberBars.length ? (
@@ -783,9 +807,11 @@ export default function DrugUsageDashboardPage() {
                                                 <Th onClick={() => sortBy("name")} active={sortKey === "name"} asc={sortAsc}>
                                                     ชื่อเวชภัณฑ์
                                                 </Th>
-                                                <Th>{kind === "drug" ? "ความแรง / หน่วย" : "หน่วย"}</Th>
+                                                <Th>
+                                                    {kind === "drug" ? "ความแรง / หน่วย" : "หน่วย"}
+                                                </Th>
                                                 <Th className="text-right" onClick={() => sortBy("qty")} active={sortKey === "qty"} asc={sortAsc}>
-                                                    จำนวนจ่าย
+                                                    {kind === "lab" ? "จำนวนตรวจ" : "จำนวนจ่าย"}
                                                 </Th>
                                                 <Th className="text-right" onClick={() => sortBy("order_count")} active={sortKey === "order_count"} asc={sortAsc}>
                                                     ครั้งที่สั่ง

@@ -237,7 +237,7 @@ export const DASHBOARD_GROUPS: SidebarSubGroup[] = [
     title: "เภสัชกรรม",
     items: [
       {
-        label: "การใช้เวชภัณฑ์ตามมูลค่า (ยา/ไม่ใช่ยา)",
+        label: "การใช้เวชภัณฑ์/Lab ตามมูลค่า",
         href: "/pages/drug-usage-dashboard",
         icon: Pill,
         group: "claim",
