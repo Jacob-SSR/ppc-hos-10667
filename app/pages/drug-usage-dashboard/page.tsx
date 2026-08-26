@@ -8,7 +8,7 @@ import {
 import {
     Pill, Syringe, FlaskConical, Coins, Boxes, Users, Receipt, Building2, Stethoscope, ShieldCheck,
     TrendingUp, Table2, Download, Search, ChevronUp, ChevronDown, ChevronsUpDown,
-    ChevronLeft, ChevronRight, Layers,
+    ChevronLeft, ChevronRight, Layers, CalendarRange,
 } from "lucide-react";
 import {
     HBarList, KpiCard, LiveBadge, RefreshButton, SectionCard,
@@ -38,14 +38,19 @@ interface Totals {
     value: number; qty: number; order_count: number; item_count: number;
     vn_count: number; hn_count: number; opd_value: number; ipd_value: number;
 }
+interface YearRow {
+    fiscal_year: number; value: number; qty: number; order_count: number;
+    item_count: number; vn_count: number; hn_count: number;
+    opd_value: number; ipd_value: number;
+}
 interface DashData {
     updatedAt: string; kind: Kind; kindLabel: string; start: string; end: string;
-    fiscalYears: number[];
+    fiscalYears: number[]; byYear: YearRow[];
     totals: Totals; items: ItemRow[]; trend: TrendRow[];
     departments: DimRow[]; prescribers: DimRow[]; rights: DimRow[];
 }
 
-type Preset = "today" | "thismonth" | "fiscal" | "custom";
+type Preset = "today" | "thismonth" | "fiscal" | "back" | "custom";
 type SortKey = "value" | "qty" | "order_count" | "vn_count" | "name";
 type AbcClass = "A" | "B" | "C";
 
@@ -58,6 +63,7 @@ const PALETTE = ["#3aa36a", "#185FA5", "#6a1b9a", "#e65100", "#00695c", "#880e4f
 
 const PRESETS: { key: Preset; label: string }[] = [
     { key: "fiscal", label: "ปีงบประมาณ" },
+    { key: "back", label: "ย้อนหลังหลายปีงบ" },
     { key: "thismonth", label: "เดือนนี้" },
     { key: "today", label: "วันนี้" },
     { key: "custom", label: "กำหนดเอง" },
@@ -277,6 +283,8 @@ export default function DrugUsageDashboardPage() {
     const [kind, setKind] = useState<Kind>("drug");
     const [preset, setPreset] = useState<Preset>("fiscal");
     const [fiscalYear, setFiscalYear] = useState<number>(FISCAL_YEARS[0]);
+    // ย้อนหลังกี่ปีงบ (รวมปีงบปัจจุบัน) — พิมพ์เลขเองได้ 1–10
+    const [backYears, setBackYears] = useState(3);
     const [customStart, setCustomStart] = useState(bangkokToday);
     const [customEnd, setCustomEnd] = useState(bangkokToday);
 
@@ -302,6 +310,7 @@ export default function DrugUsageDashboardPage() {
             } else {
                 params.set("preset", preset);
                 if (preset === "fiscal") params.set("fy", String(fiscalYear));
+                if (preset === "back") params.set("years", String(backYears));
             }
             params.set("kind", kind);
             const res = await fetch(`/api/drug-usage?${params}`, { credentials: "include" });
@@ -312,7 +321,7 @@ export default function DrugUsageDashboardPage() {
         } finally {
             setLoading(false);
         }
-    }, [kind, preset, fiscalYear, customStart, customEnd]);
+    }, [kind, preset, fiscalYear, backYears, customStart, customEnd]);
 
     // preset/ปีงบ เปลี่ยน → ดึงทันที ยกเว้นโหมด "กำหนดเอง" ที่รอผู้ใช้กด "ค้นหา"
     // แต่การสลับชนิดเวชภัณฑ์ต้องดึงใหม่เสมอ แม้อยู่โหมดกำหนดเอง (ใช้ช่วงวันที่เดิม)
@@ -322,6 +331,8 @@ export default function DrugUsageDashboardPage() {
         const kindChanged = prevKind.current !== kind;
         prevKind.current = kind;
         if (firstRun.current || kindChanged || preset !== "custom") fetchData();
+        // หมายเหตุ: การแก้จำนวนปีของ preset "back" ไม่อยู่ใน deps — รอผู้ใช้กด "ดู"
+        //           กันยิง query ทุกครั้งที่พิมพ์เลข
         firstRun.current = false;
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [preset, kind, fiscalYear]);
@@ -338,6 +349,7 @@ export default function DrugUsageDashboardPage() {
     const kindMeta = KINDS.find((k) => k.key === kind) ?? KINDS[0];
     // ปีงบที่มีข้อมูลจริงในชุดนี้ — ปกติ 1 ปี ยกเว้นเลือกช่วง "กำหนดเอง" ที่คร่อมปีงบ
     const dataYears = useMemo(() => data?.fiscalYears ?? [], [data]);
+    const byYear = useMemo(() => data?.byYear ?? [], [data]);
     const multiYear = dataYears.length > 1;
 
     /** ทุกรายการ + %สัดส่วน, %สะสม และ ABC class (เรียงตามมูลค่าจาก API อยู่แล้ว) */
@@ -391,6 +403,63 @@ export default function DrugUsageDashboardPage() {
     const pageRows = useMemo(
         () => filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE),
         [filtered, page],
+    );
+
+    // ── ตารางเปรียบเทียบรายปีงบ (โครงเดียวกับหน้า hospital-profile: แถว = รายการ, คอลัมน์ = ปีงบ) ──
+    const yearCols = useMemo(
+        () => [...byYear].sort((a, b) => b.fiscal_year - a.fiscal_year),
+        [byYear],
+    );
+
+    /** %เปลี่ยนแปลงเทียบปีงบก่อนหน้า — ไม่มีปีก่อนหน้าในชุดข้อมูล = null */
+    const yoyOf = useCallback(
+        (y: YearRow): number | null => {
+            const prev = byYear.find((p) => p.fiscal_year === y.fiscal_year - 1);
+            if (!prev || prev.value === 0) return null;
+            return ((y.value - prev.value) / prev.value) * 100;
+        },
+        [byYear],
+    );
+
+    const YEAR_METRICS: { label: string; get: (y: YearRow) => string }[] = [
+        { label: "มูลค่ารวม (บาท)", get: (y) => fmtB(y.value) },
+        { label: `${kindMeta.unitWord}ที่มีการใช้`, get: (y) => fmt(y.item_count) },
+        { label: "ครั้งที่สั่งใช้ (บรรทัด)", get: (y) => fmt(y.order_count) },
+        { label: kindMeta.qtyKpi, get: (y) => fmt(y.qty) },
+        { label: "จำนวน visit", get: (y) => fmt(y.vn_count) },
+        { label: "ผู้ป่วยไม่ซ้ำ (คน)", get: (y) => fmt(y.hn_count) },
+        {
+            label: "มูลค่าเฉลี่ยต่อ visit (บาท)",
+            get: (y) => fmtB(y.vn_count ? y.value / y.vn_count : 0),
+        },
+        { label: "มูลค่า OPD (บาท)", get: (y) => fmtB(y.opd_value) },
+        { label: "มูลค่า IPD (บาท)", get: (y) => fmtB(y.ipd_value) },
+    ];
+
+    /** top 15 รายการตามมูลค่ารวมทุกปี แล้วกางเป็นคอลัมน์รายปีงบ */
+    const yearPivot = useMemo(() => {
+        const map = new Map<string, { name: string; total: number; perYear: Record<number, number> }>();
+        for (const r of items) {
+            let row = map.get(r.icode);
+            if (!row) {
+                row = { name: r.name, total: 0, perYear: {} };
+                map.set(r.icode, row);
+            }
+            row.total += r.value;
+            row.perYear[r.fiscal_year] = (row.perYear[r.fiscal_year] ?? 0) + r.value;
+        }
+        return [...map.entries()]
+            .map(([icode, v]) => ({ icode, ...v }))
+            .sort((a, b) => b.total - a.total)
+            .slice(0, 15);
+    }, [items]);
+
+    const yearBars = useMemo(
+        () =>
+            [...byYear]
+                .sort((a, b) => a.fiscal_year - b.fiscal_year)
+                .map((y) => ({ name: String(y.fiscal_year), value: y.value })),
+        [byYear],
     );
 
     // ── charts ──
@@ -464,6 +533,18 @@ export default function DrugUsageDashboardPage() {
         return {
             ประเภทเวชภัณฑ์: kindMeta.label,
             ปีงบประมาณ: dataYears.join(", "),
+            เปรียบเทียบรายปีงบ: byYear.map((y) => ({
+                ปีงบ: y.fiscal_year,
+                มูลค่า: Math.round(y.value),
+                รายการ: y.item_count,
+                ครั้งที่สั่ง: y.order_count,
+                visit: y.vn_count,
+                ผู้ป่วย: y.hn_count,
+                เปลี่ยนแปลงจากปีก่อน_ร้อยละ: (() => {
+                    const d = yoyOf(y);
+                    return d === null ? null : Number(d.toFixed(1));
+                })(),
+            })),
             ช่วงข้อมูล: periodLabel,
             มูลค่ายารวม_บาท: Math.round(totals.value),
             มูลค่า_OPD: Math.round(totals.opd_value),
@@ -492,7 +573,7 @@ export default function DrugUsageDashboardPage() {
                 ผู้สั่ง: r.label, มูลค่า: Math.round(r.value),
             })),
         };
-    }, [data, totals, periodLabel, abcSummary, ranked, kindMeta, dataYears]);
+    }, [data, totals, periodLabel, abcSummary, ranked, kindMeta, dataYears, byYear, yoyOf]);
 
     const sortBy = (key: SortKey) => {
         if (sortKey === key) setSortAsc((p) => !p);
@@ -578,6 +659,32 @@ export default function DrugUsageDashboardPage() {
                                 );
                             })}
                         </div>
+                    )}
+
+                    {preset === "back" && (
+                        <>
+                            <div className="flex items-center gap-1.5 text-sm text-gray-600">
+                                ย้อนหลัง
+                                <input
+                                    type="number" min={1} max={10} value={backYears}
+                                    onChange={(e) => setBackYears(Number(e.target.value))}
+                                    onKeyDown={(e) => { if (e.key === "Enter") fetchData(); }}
+                                    className="border border-gray-200 rounded-lg px-2 py-1.5 text-sm w-16 text-center tabular-nums"
+                                />
+                                ปีงบ
+                            </div>
+                            <button
+                                onClick={fetchData}
+                                disabled={loading}
+                                className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm text-white disabled:opacity-50"
+                                style={{ backgroundColor: MINT[500] }}
+                            >
+                                <Search size={14} /> ดู
+                            </button>
+                            <span className="text-xs text-gray-400">
+                                นับรวมปีงบปัจจุบัน (สูงสุด 10 ปี)
+                            </span>
+                        </>
                     )}
 
                     {preset === "custom" && (
@@ -724,6 +831,158 @@ export default function DrugUsageDashboardPage() {
                             </p>
                         )}
                     </SectionCard>
+
+                    {/* เปรียบเทียบรายปีงบ — โผล่เมื่อช่วงข้อมูลคร่อมมากกว่า 1 ปีงบ */}
+                    {yearCols.length > 1 && (
+                        <SectionCard
+                            title="เปรียบเทียบรายปีงบประมาณ"
+                            icon={CalendarRange}
+                            titleColor={MINT[800]}
+                        >
+                            <ResponsiveContainer width="100%" height={200}>
+                                <BarChart data={yearBars} margin={{ top: 4, right: 12, bottom: 0, left: 0 }}>
+                                    <CartesianGrid strokeDasharray="3 3" stroke="#eef2f6" />
+                                    <XAxis dataKey="name" tick={{ fontSize: 11 }} />
+                                    <YAxis tick={{ fontSize: 11 }} tickFormatter={(v) => fmt(Number(v))} width={70} />
+                                    <RTooltip formatter={(v?: number) => [`${fmtB(Number(v))} บาท`, "มูลค่า"]}
+                                        labelFormatter={(l) => `ปีงบ ${l}`} />
+                                    <Bar dataKey="value" radius={[6, 6, 0, 0]}>
+                                        {yearBars.map((_, i) => (
+                                            <Cell key={i} fill={PALETTE[i % PALETTE.length]} />
+                                        ))}
+                                    </Bar>
+                                </BarChart>
+                            </ResponsiveContainer>
+
+                            <div className="overflow-x-auto mt-4">
+                                <table className="min-w-full text-sm border-collapse">
+                                    <thead>
+                                        <tr>
+                                            <th
+                                                className="px-3 py-2 text-left font-semibold text-white whitespace-nowrap"
+                                                style={{ backgroundColor: MINT[300] }}
+                                            >
+                                                รายการ
+                                            </th>
+                                            {yearCols.map((y) => (
+                                                <th
+                                                    key={y.fiscal_year}
+                                                    className="px-3 py-2 text-center font-semibold text-white whitespace-nowrap"
+                                                    style={{ backgroundColor: MINT[300] }}
+                                                >
+                                                    ปีงบ {y.fiscal_year}
+                                                </th>
+                                            ))}
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {YEAR_METRICS.map((m, mi) => (
+                                            <tr
+                                                key={m.label}
+                                                className="border-b border-gray-100"
+                                                style={{ backgroundColor: mi % 2 ? "#f9fafb" : "#ffffff" }}
+                                            >
+                                                <td className="px-3 py-2 whitespace-nowrap text-gray-700">{m.label}</td>
+                                                {yearCols.map((y) => (
+                                                    <td
+                                                        key={y.fiscal_year}
+                                                        className="px-3 py-2 text-center tabular-nums font-medium text-gray-800"
+                                                    >
+                                                        {m.get(y)}
+                                                    </td>
+                                                ))}
+                                            </tr>
+                                        ))}
+                                        {/* %เปลี่ยนแปลงมูลค่าเทียบปีงบก่อนหน้า */}
+                                        <tr className="border-b border-gray-100 bg-white">
+                                            <td className="px-3 py-2 whitespace-nowrap text-gray-700 font-semibold">
+                                                เปลี่ยนแปลงจากปีก่อน
+                                            </td>
+                                            {yearCols.map((y) => {
+                                                const d = yoyOf(y);
+                                                const color = d === null ? "#9ca3af" : d >= 0 ? "#b91c1c" : "#15803d";
+                                                return (
+                                                    <td
+                                                        key={y.fiscal_year}
+                                                        className="px-3 py-2 text-center tabular-nums font-bold"
+                                                        style={{ color }}
+                                                    >
+                                                        {d === null ? "—" : `${d >= 0 ? "+" : ""}${d.toFixed(1)}%`}
+                                                    </td>
+                                                );
+                                            })}
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+
+                            <p className="text-[11px] text-gray-400 mt-2">
+                                * ปีงบเริ่ม 1 ต.ค. · ปีงบปัจจุบันเป็นยอดสะสมถึงวันนี้ ยังไม่ครบปี
+                                เทียบตรง ๆ กับปีเต็มไม่ได้ · สีแดง = มูลค่าเพิ่มขึ้นจากปีก่อน
+                            </p>
+
+                            {/* 15 อันดับแรกกางเป็นรายปี */}
+                            <p className="text-sm font-bold mt-5 mb-2" style={{ color: MINT[800] }}>
+                                15 อันดับแรกตามมูลค่ารวม เทียบรายปีงบ (บาท)
+                            </p>
+                            <div className="overflow-x-auto">
+                                <table className="min-w-full text-sm border-collapse">
+                                    <thead>
+                                        <tr>
+                                            <th
+                                                className="px-3 py-2 text-left font-semibold text-white whitespace-nowrap"
+                                                style={{ backgroundColor: MINT[300] }}
+                                            >
+                                                {kindMeta.label}
+                                            </th>
+                                            {yearCols.map((y) => (
+                                                <th
+                                                    key={y.fiscal_year}
+                                                    className="px-3 py-2 text-center font-semibold text-white whitespace-nowrap"
+                                                    style={{ backgroundColor: MINT[300] }}
+                                                >
+                                                    ปีงบ {y.fiscal_year}
+                                                </th>
+                                            ))}
+                                            <th
+                                                className="px-3 py-2 text-center font-semibold text-white whitespace-nowrap"
+                                                style={{ backgroundColor: MINT[400] }}
+                                            >
+                                                รวมทุกปี
+                                            </th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {yearPivot.map((r, i) => (
+                                            <tr
+                                                key={r.icode}
+                                                className="border-b border-gray-100"
+                                                style={{ backgroundColor: i % 2 ? "#f9fafb" : "#ffffff" }}
+                                            >
+                                                <td className="px-3 py-2 font-medium">{r.name}</td>
+                                                {yearCols.map((y) => (
+                                                    <td
+                                                        key={y.fiscal_year}
+                                                        className="px-3 py-2 text-right tabular-nums text-gray-700"
+                                                    >
+                                                        {r.perYear[y.fiscal_year]
+                                                            ? fmtB(r.perYear[y.fiscal_year])
+                                                            : "—"}
+                                                    </td>
+                                                ))}
+                                                <td
+                                                    className="px-3 py-2 text-right tabular-nums font-bold"
+                                                    style={{ color: MINT[700] }}
+                                                >
+                                                    {fmtB(r.total)}
+                                                </td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </SectionCard>
+                    )}
 
                     {/* Trend + Top 10 */}
                     <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">

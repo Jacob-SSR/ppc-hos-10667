@@ -1,7 +1,8 @@
 // app/api/drug-usage/route.ts
 // สรุปยอดการใช้เวชภัณฑ์ตามมูลค่าการใช้ทั้งหมดในสถานบริการ
-// รับ ?preset=today|thismonth|fiscal  หรือ  ?start=YYYY-MM-DD&end=YYYY-MM-DD
+// รับ ?preset=today|thismonth|fiscal|back  หรือ  ?start=YYYY-MM-DD&end=YYYY-MM-DD
 //     ?fy=2569 — ปีงบประมาณ พ.ศ. (ใช้กับ preset=fiscal, default = ปีงบปัจจุบัน)
+//     ?years=3 — จำนวนปีงบย้อนหลังรวมปีปัจจุบัน (ใช้กับ preset=back, 1–10)
 //     ?kind=drug (เวชภัณฑ์ยา — default) | nondrug (เวชภัณฑ์ที่ไม่ใช่ยา) | lab (ตรวจทางห้องปฏิบัติการ)
 import { NextResponse } from "next/server";
 import { getDrugUsageDashboard, isItemKind } from "@/lib/drugUsage.service";
@@ -45,7 +46,11 @@ function fiscalRange(fyBE: number, today: Date): { start: string; end: string } 
   };
 }
 
-function rangeFromPreset(preset: string, fy: number | null): { start: string; end: string } {
+function rangeFromPreset(
+  preset: string,
+  fy: number | null,
+  years: number,
+): { start: string; end: string } {
   const today = bangkokToday();
   const end = fmt(today);
 
@@ -53,6 +58,11 @@ function rangeFromPreset(preset: string, fy: number | null): { start: string; en
     return { start: fmt(new Date(today.getFullYear(), today.getMonth(), 1)), end };
   if (preset === "fiscal")
     return fiscalRange(fy ?? currentFiscalYear(today), today);
+  if (preset === "back") {
+    // ย้อนหลัง N ปีงบ "รวมปีงบปัจจุบัน" → เริ่ม 1 ต.ค. ของปีงบที่เก่าที่สุดในชุด
+    const oldest = currentFiscalYear(today) - (years - 1);
+    return { start: fiscalRange(oldest, today).start, end };
+  }
   return { start: end, end }; // today
 }
 
@@ -69,6 +79,10 @@ export async function GET(req: Request) {
     const fyRaw = Number(searchParams.get("fy"));
     const fy = Number.isInteger(fyRaw) && fyRaw >= 2500 && fyRaw <= 2699 ? fyRaw : null;
 
+    // จำนวนปีงบย้อนหลัง — จำกัด 1–10 กันเผลอลากช่วงยาวจน query หนักเกิน
+    const yearsRaw = Math.trunc(Number(searchParams.get("years")));
+    const years = Number.isFinite(yearsRaw) ? Math.min(10, Math.max(1, yearsRaw)) : 3;
+
     const useCustom =
       !!startParam &&
       !!endParam &&
@@ -77,7 +91,7 @@ export async function GET(req: Request) {
 
     let { start, end } = useCustom
       ? { start: startParam as string, end: endParam as string }
-      : rangeFromPreset(preset, fy);
+      : rangeFromPreset(preset, fy, years);
 
     if (start > end) [start, end] = [end, start];
 

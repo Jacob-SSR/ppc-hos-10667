@@ -156,6 +156,19 @@ export interface DrugUsageDimRow {
   vn_count: number;
 }
 
+/** ยอดรวมของหนึ่งปีงบประมาณ — ใช้ทำตารางเปรียบเทียบย้อนหลังหลายปี */
+export interface DrugUsageYearRow {
+  fiscal_year: number;
+  value: number;
+  qty: number;
+  order_count: number;
+  item_count: number;
+  vn_count: number;
+  hn_count: number;
+  opd_value: number;
+  ipd_value: number;
+}
+
 export interface DrugUsageTotals {
   value: number;
   qty: number;
@@ -175,6 +188,8 @@ export interface DrugUsageDashboardData {
   end: string;
   /** ปีงบประมาณ พ.ศ. ทั้งหมดที่มีข้อมูลในช่วงนี้ (มาก → น้อย) */
   fiscalYears: number[];
+  /** ยอดรวมแยกรายปีงบ (ใหม่ → เก่า) สำหรับตารางเปรียบเทียบ */
+  byYear: DrugUsageYearRow[];
   totals: DrugUsageTotals;
   items: DrugUsageItemRow[];
   trend: DrugUsageTrendRow[];
@@ -205,6 +220,17 @@ interface ItemDbRow extends RowDataPacket {
   vn_count: number;
   hn_count: number;
   value: number;
+  opd_value: number;
+  ipd_value: number;
+}
+interface YearDbRow extends RowDataPacket {
+  fiscal_year: number;
+  value: number;
+  qty: number;
+  order_count: number;
+  item_count: number;
+  vn_count: number;
+  hn_count: number;
   opd_value: number;
   ipd_value: number;
 }
@@ -274,6 +300,7 @@ export async function getDrugUsageDashboard(
 
   const [
     [totalRows],
+    [yearRows],
     [itemRows],
     [trendRows],
     [deptRows],
@@ -297,7 +324,27 @@ export async function getDrugUsageDashboard(
       params,
     ),
 
-    // 2) รายการเวชภัณฑ์ เรียงตามมูลค่าการใช้ (หัวใจของรายงาน)
+    // 2) ยอดรวมแยกรายปีงบ — ตารางเปรียบเทียบย้อนหลัง
+    db.query<YearDbRow[]>(
+      `
+      SELECT
+        ${FY_EXPR}                     AS fiscal_year,
+        SUM(COALESCE(o.sum_price, 0))  AS value,
+        SUM(COALESCE(o.qty, 0))        AS qty,
+        COUNT(*)                       AS order_count,
+        COUNT(DISTINCT o.icode)        AS item_count,
+        COUNT(DISTINCT o.vn)           AS vn_count,
+        COUNT(DISTINCT o.hn)           AS hn_count,
+        ${opdValue}                    AS opd_value,
+        ${ipdValue}                    AS ipd_value
+      ${FROM_LINES}
+      GROUP BY fiscal_year
+      ORDER BY fiscal_year DESC
+      `,
+      params,
+    ),
+
+    // 3) รายการเวชภัณฑ์ เรียงตามมูลค่าการใช้ (หัวใจของรายงาน)
     db.query<ItemDbRow[]>(
       `
       SELECT
@@ -321,7 +368,7 @@ export async function getDrugUsageDashboard(
       params,
     ),
 
-    // 3) แนวโน้มรายวัน
+    // 4) แนวโน้มรายวัน
     db.query<TrendDbRow[]>(
       `
       SELECT
@@ -336,7 +383,7 @@ export async function getDrugUsageDashboard(
       params,
     ),
 
-    // 4) แยกตามแผนกที่รับบริการ (main_dep ของ visit)
+    // 5) แยกตามแผนกที่รับบริการ (main_dep ของ visit)
     db.query<DimDbRow[]>(
       `
       SELECT
@@ -358,7 +405,7 @@ export async function getDrugUsageDashboard(
       params,
     ),
 
-    // 5) แยกตามผู้สั่งใช้
+    // 6) แยกตามผู้สั่งใช้
     db.query<DimDbRow[]>(
       `
       SELECT
@@ -379,7 +426,7 @@ export async function getDrugUsageDashboard(
       params,
     ),
 
-    // 6) แยกตามสิทธิ์การรักษา
+    // 7) แยกตามสิทธิ์การรักษา
     db.query<DimDbRow[]>(
       `
       SELECT
@@ -423,10 +470,20 @@ export async function getDrugUsageDashboard(
     vn_count: num(r.vn_count),
   });
 
-  // ปีงบที่มีข้อมูลจริง — อ่านจาก trend ซึ่งครอบคลุมทุกวันในช่วง (ไม่ถูก LIMIT ตัด)
-  const fiscalYears = [
-    ...new Set(trendRows.map((r) => fiscalYearOf(str(r.date))).filter(Boolean)),
-  ].sort((a, b) => b - a);
+  const byYear: DrugUsageYearRow[] = yearRows.map((r) => ({
+    fiscal_year: num(r.fiscal_year),
+    value: num(r.value),
+    qty: num(r.qty),
+    order_count: num(r.order_count),
+    item_count: num(r.item_count),
+    vn_count: num(r.vn_count),
+    hn_count: num(r.hn_count),
+    opd_value: num(r.opd_value),
+    ipd_value: num(r.ipd_value),
+  }));
+
+  // ปีงบที่มีข้อมูลจริง (ใหม่ → เก่า)
+  const fiscalYears = byYear.map((y) => y.fiscal_year).filter(Boolean);
 
   return {
     updatedAt: new Date().toISOString(),
@@ -435,6 +492,7 @@ export async function getDrugUsageDashboard(
     start,
     end,
     fiscalYears,
+    byYear,
     totals,
     items: itemRows.map((r) => ({
       icode: str(r.icode),
