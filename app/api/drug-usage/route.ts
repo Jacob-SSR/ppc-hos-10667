@@ -1,8 +1,9 @@
 // app/api/drug-usage/route.ts
-// สรุปยอดการใช้เวชภัณฑ์ยาตามมูลค่าการใช้ทั้งหมดในสถานบริการ
+// สรุปยอดการใช้เวชภัณฑ์ตามมูลค่าการใช้ทั้งหมดในสถานบริการ
 // รับ ?preset=today|7days|30days|thismonth|thisyear|fiscal  หรือ  ?start=YYYY-MM-DD&end=YYYY-MM-DD
+//     ?kind=drug (เวชภัณฑ์ยา — default) | nondrug (เวชภัณฑ์ที่ไม่ใช่ยา)
 import { NextResponse } from "next/server";
-import { getDrugUsageDashboard } from "@/lib/drugUsage.service";
+import { getDrugUsageDashboard, isItemKind } from "@/lib/drugUsage.service";
 import { cachedQuery } from "@/lib/cache";
 
 export const dynamic = "force-dynamic";
@@ -53,6 +54,8 @@ export async function GET(req: Request) {
     const startParam = searchParams.get("start");
     const endParam = searchParams.get("end");
     const preset = searchParams.get("preset") ?? "today";
+    const kindParam = searchParams.get("kind");
+    const kind = isItemKind(kindParam) ? kindParam : "drug";
 
     const useCustom =
       !!startParam &&
@@ -67,14 +70,14 @@ export async function GET(req: Request) {
     if (start > end) [start, end] = [end, start];
 
     const data = await cachedQuery(
-      ["drug-usage", start, end],
-      () => getDrugUsageDashboard(start, end),
+      ["drug-usage", kind, start, end],
+      () => getDrugUsageDashboard(start, end, kind),
       TTL_SECONDS,
     );
 
     return NextResponse.json(data);
   } catch (error) {
-    console.error("Drug usage dashboard error:", error);
+    console.error("Medical supply usage dashboard error:", error);
     return NextResponse.json(
       { error: "Internal Server Error" },
       { status: 500 },

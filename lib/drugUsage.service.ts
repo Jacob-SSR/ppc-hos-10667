@@ -1,19 +1,58 @@
 // lib/drugUsage.service.ts
-// สรุปยอดการใช้เวชภัณฑ์ยาตามมูลค่าการใช้ทั้งหมดในสถานบริการ
+// สรุปยอดการใช้เวชภัณฑ์ตามมูลค่าการใช้ทั้งหมดในสถานบริการ — ใช้ได้ 2 แบบ
+//   kind = "drug"    → เวชภัณฑ์ยา            (opitemrece JOIN drugitems)
+//   kind = "nondrug" → เวชภัณฑ์ที่ไม่ใช่ยา   (opitemrece JOIN nondrugitems + income = '05')
 //
-// แหล่งข้อมูล = opitemrece (รายการค่าใช้จ่ายรายบรรทัด) JOIN drugitems (ทะเบียนเวชภัณฑ์ยา)
-// การ inner join กับ drugitems ทำให้เหลือเฉพาะ "เวชภัณฑ์ยา" (ตัด lab / x-ray / ค่าบริการ ออก)
+// การ inner join กับตารางทะเบียนเวชภัณฑ์ทำให้เหลือเฉพาะรายการเวชภัณฑ์จริง
+// (ตัด lab / x-ray / ค่าบริการ ออก)
 //
 // อ้างอิงจาก query ต้นฉบับที่ใช้ตรวจสอบหน้างาน:
+//   -- ยา
 //   select d.name, d.strength, d.units, count(distinct vn), sum(qty), sum(o.sum_price)
 //     from opitemrece o, drugitems d
 //    where o.icode = d.icode and o.vstdate between ? and ?
 //    group by d.name, d.strength, d.units order by sum_price desc
+//   -- ไม่ใช่ยา
+//   select d.unit, d.price, d.name, count(hn), sum(qty), sum(o.sum_price)
+//     from opitemrece o left outer join nondrugitems d on d.icode = o.icode
+//    where o.icode = d.icode and o.vstdate between ? and ? and o.income = '05'
+//    group by d.name order by sum_price desc
 //
-// โครงสร้างตารางต่างกันตามเวอร์ชัน HOSxP → คอลัมน์ที่ไม่การันตี (strength/units/an)
-// จะถูกตรวจจาก information_schema ก่อนนำไปประกอบ SQL
+// โครงสร้างตารางต่างกันตามเวอร์ชัน HOSxP → คอลัมน์ที่ไม่การันตี
+// (strength/units/unit/an/income) จะถูกตรวจจาก information_schema ก่อนนำไปประกอบ SQL
 import { db } from "@/lib/db";
 import { RowDataPacket } from "mysql2";
+
+export type ItemKind = "drug" | "nondrug";
+
+const envList = (v: string | undefined): string[] =>
+  (v ?? "")
+    .split(",")
+    .map((x) => x.trim())
+    .filter(Boolean);
+
+// รหัสหมวดค่าใช้จ่าย (opitemrece.income) ที่ถือเป็นเวชภัณฑ์แต่ละแบบ
+// - ยา: ไม่กรอง (การ join drugitems เพียงพอแล้ว)
+// - ไม่ใช่ยา: '05' = ค่าเวชภัณฑ์ที่มิใช่ยา ตามรายงานต้นฉบับ — ปรับได้ด้วย env
+const KIND_CONFIG: Record<
+  ItemKind,
+  { table: "drugitems" | "nondrugitems"; label: string; income: string[] }
+> = {
+  drug: {
+    table: "drugitems",
+    label: "เวชภัณฑ์ยา",
+    income: envList(process.env.DRUG_USAGE_DRUG_INCOME),
+  },
+  nondrug: {
+    table: "nondrugitems",
+    label: "เวชภัณฑ์ที่ไม่ใช่ยา",
+    income: envList(process.env.DRUG_USAGE_NONDRUG_INCOME ?? "05"),
+  },
+};
+
+export function isItemKind(v: unknown): v is ItemKind {
+  return v === "drug" || v === "nondrug";
+}
 
 // ─── ตรวจคอลัมน์จริงของตาราง (cache ต่อ process) ───────────────────────────────
 const colsCache = new Map<string, Set<string>>();
@@ -37,18 +76,23 @@ async function tableColumns(table: string): Promise<Set<string>> {
   return cols;
 }
 
-/** คอลัมน์ที่ "อาจไม่มี" → คืน expression ที่ปลอดภัย (ชื่อคอลัมน์มาจาก whitelist ในโค้ด ไม่ใช่ input ผู้ใช้) */
-function optionalCol(
+/**
+ * คอลัมน์ที่ "อาจไม่มี" → คืน expression ที่ปลอดภัย
+ * ชื่อคอลัมน์ที่ส่งเข้ามาเป็น literal ในโค้ดนี้เท่านั้น (ไม่ใช่ input ผู้ใช้)
+ * และยังต้องมีอยู่จริงใน information_schema จึงจะถูกต่อลง SQL
+ */
+function firstCol(
   cols: Set<string>,
   alias: string,
-  col: string,
-  fallback: string,
+  candidates: string[],
+  fallback = "''",
 ): string {
-  return cols.has(col) ? `COALESCE(${alias}.${col}, ${fallback})` : fallback;
+  const col = candidates.find((c) => cols.has(c));
+  return col ? `COALESCE(${alias}.${col}, ${fallback})` : fallback;
 }
 
 // ─── Types ────────────────────────────────────────────────────────────────────
-export interface DrugUsageDrugRow {
+export interface DrugUsageItemRow {
   icode: string;
   name: string;
   strength: string;
@@ -84,7 +128,7 @@ export interface DrugUsageTotals {
   value: number;
   qty: number;
   order_count: number;
-  drug_count: number;
+  item_count: number;
   vn_count: number;
   hn_count: number;
   opd_value: number;
@@ -93,10 +137,12 @@ export interface DrugUsageTotals {
 
 export interface DrugUsageDashboardData {
   updatedAt: string;
+  kind: ItemKind;
+  kindLabel: string;
   start: string;
   end: string;
   totals: DrugUsageTotals;
-  drugs: DrugUsageDrugRow[];
+  items: DrugUsageItemRow[];
   trend: DrugUsageTrendRow[];
   departments: DrugUsageDimRow[];
   prescribers: DrugUsageDimRow[];
@@ -108,13 +154,13 @@ interface TotalRow extends RowDataPacket {
   value: number;
   qty: number;
   order_count: number;
-  drug_count: number;
+  item_count: number;
   vn_count: number;
   hn_count: number;
   opd_value: number;
   ipd_value: number;
 }
-interface DrugDbRow extends RowDataPacket {
+interface ItemDbRow extends RowDataPacket {
   icode: string;
   name: string;
   strength: string;
@@ -142,9 +188,9 @@ interface DimDbRow extends RowDataPacket {
   vn_count: number;
 }
 
-// จำนวนรายการยาสูงสุดที่ส่งกลับ (กัน payload บวมกรณีเลือกช่วงยาว ๆ) —
+// จำนวนรายการสูงสุดที่ส่งกลับ (กัน payload บวมกรณีเลือกช่วงยาว ๆ) —
 // เรียงตามมูลค่าแล้ว รายการที่ตัดทิ้งจึงเป็นรายการมูลค่าน้อยที่สุด
-const MAX_DRUG_ROWS = 2000;
+const MAX_ITEM_ROWS = 2000;
 const MAX_DIM_ROWS = 30;
 
 const num = (v: unknown) => Number(v ?? 0) || 0;
@@ -154,14 +200,18 @@ const str = (v: unknown) => String(v ?? "").trim();
 export async function getDrugUsageDashboard(
   start: string,
   end: string,
+  kind: ItemKind = "drug",
 ): Promise<DrugUsageDashboardData> {
-  const [drugCols, opCols] = await Promise.all([
-    tableColumns("drugitems"),
+  const cfg = KIND_CONFIG[kind];
+
+  const [itemCols, opCols] = await Promise.all([
+    tableColumns(cfg.table),
     tableColumns("opitemrece"),
   ]);
 
-  const strengthExpr = optionalCol(drugCols, "d", "strength", "''");
-  const unitsExpr = optionalCol(drugCols, "d", "units", "''");
+  // drugitems ใช้ strength + units, nondrugitems ใช้ unit (เอกพจน์) และไม่มี strength
+  const strengthExpr = firstCol(itemCols, "d", ["strength"]);
+  const unitsExpr = firstCol(itemCols, "d", ["units", "unit"]);
 
   // IPD = บรรทัดที่ผูกกับ AN (admit), นอกนั้นเป็น OPD
   const hasAn = opCols.has("an");
@@ -172,16 +222,22 @@ export async function getDrugUsageDashboard(
     ? `SUM(CASE WHEN COALESCE(o.an, '') = '' THEN COALESCE(o.sum_price, 0) ELSE 0 END)`
     : `SUM(COALESCE(o.sum_price, 0))`;
 
-  const FROM_DRUG_LINES = `
-    FROM opitemrece o
-    INNER JOIN drugitems d ON d.icode = o.icode
-    WHERE o.vstdate BETWEEN ? AND ?`;
+  // กรองหมวดค่าใช้จ่าย (เฉพาะเมื่อมีคอลัมน์ income จริงและตั้งค่าไว้)
+  const useIncome = cfg.income.length > 0 && opCols.has("income");
+  const incomeSql = useIncome
+    ? ` AND o.income IN (${cfg.income.map(() => "?").join(",")})`
+    : "";
+  const params = useIncome ? [start, end, ...cfg.income] : [start, end];
 
-  const range = [start, end];
+  const WHERE = `WHERE o.vstdate BETWEEN ? AND ?${incomeSql}`;
+  const FROM_LINES = `
+    FROM opitemrece o
+    INNER JOIN ${cfg.table} d ON d.icode = o.icode
+    ${WHERE}`;
 
   const [
     [totalRows],
-    [drugRows],
+    [itemRows],
     [trendRows],
     [deptRows],
     [prescriberRows],
@@ -194,18 +250,18 @@ export async function getDrugUsageDashboard(
         SUM(COALESCE(o.sum_price, 0))  AS value,
         SUM(COALESCE(o.qty, 0))        AS qty,
         COUNT(*)                       AS order_count,
-        COUNT(DISTINCT o.icode)        AS drug_count,
+        COUNT(DISTINCT o.icode)        AS item_count,
         COUNT(DISTINCT o.vn)           AS vn_count,
         COUNT(DISTINCT o.hn)           AS hn_count,
         ${opdValue}                    AS opd_value,
         ${ipdValue}                    AS ipd_value
-      ${FROM_DRUG_LINES}
+      ${FROM_LINES}
       `,
-      range,
+      params,
     ),
 
-    // 2) รายการยา เรียงตามมูลค่าการใช้ (หัวใจของรายงาน)
-    db.query<DrugDbRow[]>(
+    // 2) รายการเวชภัณฑ์ เรียงตามมูลค่าการใช้ (หัวใจของรายงาน)
+    db.query<ItemDbRow[]>(
       `
       SELECT
         o.icode                                  AS icode,
@@ -219,12 +275,12 @@ export async function getDrugUsageDashboard(
         SUM(COALESCE(o.sum_price, 0))            AS value,
         ${opdValue}                              AS opd_value,
         ${ipdValue}                              AS ipd_value
-      ${FROM_DRUG_LINES}
+      ${FROM_LINES}
       GROUP BY o.icode
       ORDER BY value DESC
-      LIMIT ${MAX_DRUG_ROWS}
+      LIMIT ${MAX_ITEM_ROWS}
       `,
-      range,
+      params,
     ),
 
     // 3) แนวโน้มรายวัน
@@ -235,11 +291,11 @@ export async function getDrugUsageDashboard(
         SUM(COALESCE(o.sum_price, 0))      AS value,
         SUM(COALESCE(o.qty, 0))            AS qty,
         COUNT(DISTINCT o.vn)               AS vn_count
-      ${FROM_DRUG_LINES}
+      ${FROM_LINES}
       GROUP BY o.vstdate
       ORDER BY o.vstdate
       `,
-      range,
+      params,
     ),
 
     // 4) แยกตามแผนกที่รับบริการ (main_dep ของ visit)
@@ -253,15 +309,15 @@ export async function getDrugUsageDashboard(
         COUNT(*)                                        AS order_count,
         COUNT(DISTINCT o.vn)                            AS vn_count
       FROM opitemrece o
-      INNER JOIN drugitems d      ON d.icode = o.icode
+      INNER JOIN ${cfg.table} d   ON d.icode = o.icode
       LEFT  JOIN ovst ov          ON ov.vn = o.vn
       LEFT  JOIN kskdepartment k  ON k.depcode = ov.main_dep
-      WHERE o.vstdate BETWEEN ? AND ?
+      ${WHERE}
       GROUP BY \`key\`, label
       ORDER BY value DESC
       LIMIT ${MAX_DIM_ROWS}
       `,
-      range,
+      params,
     ),
 
     // 5) แยกตามผู้สั่งใช้
@@ -275,14 +331,14 @@ export async function getDrugUsageDashboard(
         COUNT(*)                                                  AS order_count,
         COUNT(DISTINCT o.vn)                                      AS vn_count
       FROM opitemrece o
-      INNER JOIN drugitems d ON d.icode = o.icode
-      LEFT  JOIN doctor dr   ON dr.code = o.doctor
-      WHERE o.vstdate BETWEEN ? AND ?
+      INNER JOIN ${cfg.table} d ON d.icode = o.icode
+      LEFT  JOIN doctor dr      ON dr.code = o.doctor
+      ${WHERE}
       GROUP BY \`key\`, label
       ORDER BY value DESC
       LIMIT ${MAX_DIM_ROWS}
       `,
-      range,
+      params,
     ),
 
     // 6) แยกตามสิทธิ์การรักษา
@@ -296,15 +352,15 @@ export async function getDrugUsageDashboard(
         COUNT(*)                                     AS order_count,
         COUNT(DISTINCT o.vn)                         AS vn_count
       FROM opitemrece o
-      INNER JOIN drugitems d ON d.icode = o.icode
-      LEFT  JOIN vn_stat v   ON v.vn = o.vn
-      LEFT  JOIN pttype p    ON p.pttype = v.pttype
-      WHERE o.vstdate BETWEEN ? AND ?
+      INNER JOIN ${cfg.table} d ON d.icode = o.icode
+      LEFT  JOIN vn_stat v      ON v.vn = o.vn
+      LEFT  JOIN pttype p       ON p.pttype = v.pttype
+      ${WHERE}
       GROUP BY \`key\`, label
       ORDER BY value DESC
       LIMIT ${MAX_DIM_ROWS}
       `,
-      range,
+      params,
     ),
   ]);
 
@@ -313,7 +369,7 @@ export async function getDrugUsageDashboard(
     value: num(t?.value),
     qty: num(t?.qty),
     order_count: num(t?.order_count),
-    drug_count: num(t?.drug_count),
+    item_count: num(t?.item_count),
     vn_count: num(t?.vn_count),
     hn_count: num(t?.hn_count),
     opd_value: num(t?.opd_value),
@@ -331,10 +387,12 @@ export async function getDrugUsageDashboard(
 
   return {
     updatedAt: new Date().toISOString(),
+    kind,
+    kindLabel: cfg.label,
     start,
     end,
     totals,
-    drugs: drugRows.map((r) => ({
+    items: itemRows.map((r) => ({
       icode: str(r.icode),
       name: str(r.name),
       strength: str(r.strength),

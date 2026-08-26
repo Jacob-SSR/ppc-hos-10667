@@ -6,7 +6,7 @@ import {
     ResponsiveContainer, Tooltip as RTooltip, XAxis, YAxis,
 } from "recharts";
 import {
-    Pill, Coins, Boxes, Users, Receipt, Building2, Stethoscope, ShieldCheck,
+    Pill, Syringe, Coins, Boxes, Users, Receipt, Building2, Stethoscope, ShieldCheck,
     TrendingUp, Table2, Download, Search, ChevronUp, ChevronDown, ChevronsUpDown,
     ChevronLeft, ChevronRight, Layers,
 } from "lucide-react";
@@ -20,7 +20,9 @@ import { exportToExcel } from "@/lib/exportExcel";
 import { THAI_MONTHS_SHORT, toThaiDateLabel } from "@/lib/thaiDate";
 
 // ─── Types (ตรงกับ lib/drugUsage.service.ts) ─────────────────────────────────
-interface DrugRow {
+type Kind = "drug" | "nondrug";
+
+interface ItemRow {
     icode: string; name: string; strength: string; units: string;
     order_count: number; qty: number; vn_count: number; hn_count: number;
     value: number; opd_value: number; ipd_value: number;
@@ -31,12 +33,12 @@ interface DimRow {
     order_count: number; vn_count: number;
 }
 interface Totals {
-    value: number; qty: number; order_count: number; drug_count: number;
+    value: number; qty: number; order_count: number; item_count: number;
     vn_count: number; hn_count: number; opd_value: number; ipd_value: number;
 }
 interface DashData {
-    updatedAt: string; start: string; end: string;
-    totals: Totals; drugs: DrugRow[]; trend: TrendRow[];
+    updatedAt: string; kind: Kind; kindLabel: string; start: string; end: string;
+    totals: Totals; items: ItemRow[]; trend: TrendRow[];
     departments: DimRow[]; prescribers: DimRow[]; rights: DimRow[];
 }
 
@@ -61,6 +63,17 @@ const PRESETS: { key: Preset; label: string }[] = [
 ];
 
 const PAGE_SIZE = 25;
+
+// สองมุมมองที่สลับกันได้บน top bar — โครงรายงานเหมือนกัน ต่างแค่ตารางต้นทาง
+const KINDS: {
+    key: Kind; label: string; short: string; icon: React.ElementType; unitWord: string;
+}[] = [
+        { key: "drug", label: "เวชภัณฑ์ยา", short: "ยา", icon: Pill, unitWord: "รายการยา" },
+        {
+            key: "nondrug", label: "เวชภัณฑ์ที่ไม่ใช่ยา", short: "ไม่ใช่ยา",
+            icon: Syringe, unitWord: "รายการเวชภัณฑ์",
+        },
+    ];
 
 // ABC analysis: A = ยาที่รวมกันแล้วกินมูลค่า 80% แรก, B = ถึง 95%, ที่เหลือ C
 const ABC_META: Record<AbcClass, { label: string; color: string; bg: string; hint: string }> = {
@@ -100,7 +113,7 @@ function bangkokToday(): string {
 }
 
 /** ชื่อยาแบบสั้นสำหรับป้ายกราฟ */
-const shortName = (r: DrugRow) => {
+const shortName = (r: ItemRow) => {
     const n = `${r.name}${r.strength ? ` ${r.strength}` : ""}`.trim();
     return n.length > 28 ? `${n.slice(0, 27)}…` : n;
 };
@@ -149,6 +162,7 @@ export default function DrugUsageDashboardPage() {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
 
+    const [kind, setKind] = useState<Kind>("drug");
     const [preset, setPreset] = useState<Preset>("thismonth");
     const [customStart, setCustomStart] = useState(bangkokToday);
     const [customEnd, setCustomEnd] = useState(bangkokToday);
@@ -172,6 +186,7 @@ export default function DrugUsageDashboardPage() {
             } else {
                 params.set("preset", preset);
             }
+            params.set("kind", kind);
             const res = await fetch(`/api/drug-usage?${params}`, { credentials: "include" });
             if (!res.ok) throw new Error(`HTTP ${res.status}`);
             setData((await res.json()) as DashData);
@@ -180,27 +195,28 @@ export default function DrugUsageDashboardPage() {
         } finally {
             setLoading(false);
         }
-    }, [preset, customStart, customEnd]);
+    }, [kind, preset, customStart, customEnd]);
 
-    // preset อื่นดึงทันที — custom รอผู้ใช้กด "ค้นหา"
+    // preset อื่นดึงทันที — custom รอผู้ใช้กด "ค้นหา" (แต่สลับชนิดเวชภัณฑ์ให้ดึงใหม่เสมอ)
     useEffect(() => {
         if (preset !== "custom") fetchData();
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [preset]);
+    }, [preset, kind]);
 
     // เปลี่ยนตัวกรอง → กลับหน้าแรกเสมอ
     useEffect(() => { setPage(1); }, [search, abcFilter, sortKey, sortAsc, data]);
 
     // ── derived ──
     const totals = data?.totals;
-    const drugs = useMemo(() => data?.drugs ?? [], [data]);
+    const items = useMemo(() => data?.items ?? [], [data]);
     const periodLabel = data ? toThaiDateLabel(data.start, data.end) : "—";
+    const kindMeta = KINDS.find((k) => k.key === kind) ?? KINDS[0];
 
-    /** ยาทุกรายการ + %สัดส่วน, %สะสม และ ABC class (เรียงตามมูลค่าจาก API อยู่แล้ว) */
+    /** ทุกรายการ + %สัดส่วน, %สะสม และ ABC class (เรียงตามมูลค่าจาก API อยู่แล้ว) */
     const ranked = useMemo(() => {
-        const total = drugs.reduce((s, r) => s + r.value, 0);
+        const total = items.reduce((s, r) => s + r.value, 0);
         let cum = 0;
-        return drugs.map((r, i) => {
+        return items.map((r, i) => {
             cum += r.value;
             const cumPct = total > 0 ? (cum / total) * 100 : 0;
             const abc: AbcClass = cumPct <= 80 ? "A" : cumPct <= 95 ? "B" : "C";
@@ -212,7 +228,7 @@ export default function DrugUsageDashboardPage() {
                 abc,
             };
         });
-    }, [drugs]);
+    }, [items]);
 
     type RankedRow = (typeof ranked)[number];
 
@@ -286,8 +302,8 @@ export default function DrugUsageDashboardPage() {
         exportToExcel(
             filtered.map((r) => ({
                 อันดับ: r.rank,
-                รหัสยา: r.icode,
-                ชื่อเวชภัณฑ์ยา: r.name,
+                รหัสเวชภัณฑ์: r.icode,
+                ชื่อเวชภัณฑ์: r.name,
                 ความแรง: r.strength,
                 หน่วย: r.units,
                 จำนวนที่จ่าย: r.qty,
@@ -301,7 +317,11 @@ export default function DrugUsageDashboardPage() {
                 สะสม_ร้อยละ: Number(r.cumPct.toFixed(2)),
                 กลุ่ม_ABC: r.abc,
             })),
-            { sheetName: "DrugUsage", filePrefix: "drug_usage", dateKeys: [] },
+            {
+                sheetName: kind === "drug" ? "DrugUsage" : "NonDrugUsage",
+                filePrefix: kind === "drug" ? "drug_usage" : "nondrug_usage",
+                dateKeys: [],
+            },
         );
     };
 
@@ -309,11 +329,12 @@ export default function DrugUsageDashboardPage() {
     const aiSummary = useMemo(() => {
         if (!data || !totals) return null;
         return {
+            ประเภทเวชภัณฑ์: kindMeta.label,
             ช่วงข้อมูล: periodLabel,
             มูลค่ายารวม_บาท: Math.round(totals.value),
             มูลค่า_OPD: Math.round(totals.opd_value),
             มูลค่า_IPD: Math.round(totals.ipd_value),
-            รายการยาที่มีการใช้: totals.drug_count,
+            รายการที่มีการใช้: totals.item_count,
             ครั้งที่สั่งใช้: totals.order_count,
             จำนวน_visit: totals.vn_count,
             ผู้ป่วยไม่ซ้ำ: totals.hn_count,
@@ -323,7 +344,7 @@ export default function DrugUsageDashboardPage() {
                 B: { รายการ: abcSummary.B.items, มูลค่า: Math.round(abcSummary.B.value) },
                 C: { รายการ: abcSummary.C.items, มูลค่า: Math.round(abcSummary.C.value) },
             },
-            ยา_20_อันดับแรกตามมูลค่า: ranked.slice(0, 20).map((r) => ({
+            รายการ_20_อันดับแรกตามมูลค่า: ranked.slice(0, 20).map((r) => ({
                 ชื่อ: r.name, ความแรง: r.strength, จำนวน: r.qty,
                 มูลค่า: Math.round(r.value), สัดส่วน_ร้อยละ: Number(r.share.toFixed(2)),
             })),
@@ -337,7 +358,7 @@ export default function DrugUsageDashboardPage() {
                 ผู้สั่ง: r.label, มูลค่า: Math.round(r.value),
             })),
         };
-    }, [data, totals, periodLabel, abcSummary, ranked]);
+    }, [data, totals, periodLabel, abcSummary, ranked, kindMeta]);
 
     const sortBy = (key: SortKey) => {
         if (sortKey === key) setSortAsc((p) => !p);
@@ -351,16 +372,34 @@ export default function DrugUsageDashboardPage() {
             <div className="bg-white border border-gray-200 rounded-2xl shadow-sm px-6 py-4 flex flex-wrap items-center justify-between gap-4">
                 <div>
                     <div className="flex items-center gap-2">
-                        <Pill size={18} style={{ color: MINT[800] }} />
+                        <kindMeta.icon size={18} style={{ color: MINT[800] }} />
                         <h1 className="text-lg font-bold text-gray-800">
-                            สรุปการใช้เวชภัณฑ์ยาตามมูลค่า
+                            สรุปการใช้{kindMeta.label}ตามมูลค่า
                         </h1>
                         <LiveBadge />
                     </div>
                     <p className="text-xs text-gray-400 mt-0.5">
-                        มูลค่าการใช้ยาทั้งหมดในสถานบริการ (HOSxP) · ช่วงข้อมูล{" "}
+                        มูลค่าการใช้{kindMeta.label}ทั้งหมดในสถานบริการ (HOSxP) · ช่วงข้อมูล{" "}
                         <span className="font-semibold" style={{ color: MINT[700] }}>{periodLabel}</span>
                     </p>
+                </div>
+
+                {/* สลับ ยา / ไม่ใช่ยา — โครงรายงานเดียวกัน */}
+                <div className="flex items-center gap-1 p-1 rounded-xl bg-gray-100 order-last w-full sm:order-none sm:w-auto">
+                    {KINDS.map((k) => {
+                        const active = k.key === kind;
+                        return (
+                            <button
+                                key={k.key}
+                                onClick={() => setKind(k.key)}
+                                className={`flex-1 sm:flex-none flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-semibold transition-all ${active ? "shadow-sm" : "text-gray-500 hover:text-gray-700"}`}
+                                style={active ? { backgroundColor: "#ffffff", color: MINT[700] } : undefined}
+                            >
+                                <k.icon size={14} />
+                                {k.label}
+                            </button>
+                        );
+                    })}
                 </div>
 
                 <div className="flex flex-wrap items-center gap-2">
@@ -422,25 +461,25 @@ export default function DrugUsageDashboardPage() {
                     ))}
                 </div>
             ) : !totals || totals.order_count === 0 ? (
-                <EmptyState variant="noData" message="ไม่พบรายการใช้เวชภัณฑ์ยาในช่วงเวลานี้" />
+                <EmptyState variant="noData" message={`ไม่พบรายการใช้${kindMeta.label}ในช่วงเวลานี้`} />
             ) : (
                 <>
                     {/* KPI */}
                     <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3">
                         <KpiCard
-                            icon={Coins} label="มูลค่าการใช้ยารวม"
+                            icon={Coins} label={`มูลค่าการใช้${kindMeta.short}รวม`}
                             value={`${fmtMoneyShort(totals.value)} ฿`}
                             sub={`${fmtB(totals.value)} บาท`}
                             accent="#1a5233" bg={MINT[50]}
                         />
                         <KpiCard
-                            icon={Pill} label="รายการยาที่มีการใช้"
-                            value={fmt(totals.drug_count)} sub="รายการ (icode)"
+                            icon={kindMeta.icon} label={`${kindMeta.unitWord}ที่มีการใช้`}
+                            value={fmt(totals.item_count)} sub="รายการ (icode)"
                             accent="#185FA5" bg="#eff6ff"
                         />
                         <KpiCard
                             icon={Receipt} label="ครั้งที่สั่งใช้"
-                            value={fmt(totals.order_count)} sub="บรรทัดรายการยา"
+                            value={fmt(totals.order_count)} sub="บรรทัดรายการเวชภัณฑ์"
                             accent="#6a1b9a" bg="#faf5ff"
                         />
                         <KpiCard
@@ -449,7 +488,7 @@ export default function DrugUsageDashboardPage() {
                             accent="#b45309" bg="#fffbeb"
                         />
                         <KpiCard
-                            icon={Users} label="ผู้ป่วยที่ได้รับยา"
+                            icon={Users} label={`ผู้ป่วยที่ได้รับ${kindMeta.short}`}
                             value={fmt(totals.hn_count)}
                             sub={`${fmt(totals.vn_count)} visit`}
                             accent="#00695c" bg="#ecfdf5"
@@ -518,7 +557,10 @@ export default function DrugUsageDashboardPage() {
 
                     {/* Trend + Top 10 */}
                     <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
-                        <SectionCard title="แนวโน้มมูลค่าการใช้ยารายวัน" icon={TrendingUp} titleColor={MINT[800]}>
+                        <SectionCard
+                            title={`แนวโน้มมูลค่าการใช้${kindMeta.short}รายวัน`}
+                            icon={TrendingUp} titleColor={MINT[800]}
+                        >
                             {trendData.length ? (
                                 <ResponsiveContainer width="100%" height={260}>
                                     <LineChart data={trendData} margin={{ top: 8, right: 12, bottom: 0, left: 0 }}>
@@ -541,7 +583,10 @@ export default function DrugUsageDashboardPage() {
                             )}
                         </SectionCard>
 
-                        <SectionCard title="10 อันดับเวชภัณฑ์ยาที่มีมูลค่าการใช้สูงสุด" icon={Pill} titleColor={MINT[800]}>
+                        <SectionCard
+                            title={`10 อันดับ${kindMeta.label}ที่มีมูลค่าการใช้สูงสุด`}
+                            icon={kindMeta.icon} titleColor={MINT[800]}
+                        >
                             <ResponsiveContainer width="100%" height={260}>
                                 <BarChart
                                     data={topDrugs} layout="vertical"
@@ -582,7 +627,10 @@ export default function DrugUsageDashboardPage() {
                             )}
                         </SectionCard>
 
-                        <SectionCard title="มูลค่ายาแยกตามสิทธิ์การรักษา" icon={ShieldCheck} titleColor={MINT[800]}>
+                        <SectionCard
+                            title={`มูลค่า${kindMeta.short}แยกตามสิทธิ์การรักษา`}
+                            icon={ShieldCheck} titleColor={MINT[800]}
+                        >
                             {rightPie.length ? (
                                 <ResponsiveContainer width="100%" height={240}>
                                     <PieChart>
@@ -601,7 +649,10 @@ export default function DrugUsageDashboardPage() {
                             )}
                         </SectionCard>
 
-                        <SectionCard title="มูลค่ายาแยกตามแผนกที่รับบริการ" icon={Building2} titleColor={MINT[800]}>
+                        <SectionCard
+                            title={`มูลค่า${kindMeta.short}แยกตามแผนกที่รับบริการ`}
+                            icon={Building2} titleColor={MINT[800]}
+                        >
                             {deptBars.length ? (
                                 <HBarList data={deptBars} colors={PALETTE} total={totals.value} labelWidth={120} />
                             ) : (
@@ -611,7 +662,10 @@ export default function DrugUsageDashboardPage() {
                     </div>
 
                     {/* ผู้สั่งใช้ */}
-                    <SectionCard title="10 อันดับผู้สั่งใช้ยาตามมูลค่า" icon={Stethoscope} titleColor={MINT[800]}>
+                    <SectionCard
+                        title={`10 อันดับผู้สั่งใช้${kindMeta.short}ตามมูลค่า`}
+                        icon={Stethoscope} titleColor={MINT[800]}
+                    >
                         {prescriberBars.length ? (
                             <HBarList data={prescriberBars} colors={PALETTE} total={totals.value} labelWidth={180} />
                         ) : (
@@ -621,7 +675,7 @@ export default function DrugUsageDashboardPage() {
 
                     {/* ตารางรายการยา */}
                     <SectionCard
-                        title="รายการเวชภัณฑ์ยาทั้งหมด เรียงตามมูลค่าการใช้"
+                        title={`รายการ${kindMeta.label}ทั้งหมด เรียงตามมูลค่าการใช้`}
                         icon={Table2}
                         titleColor={MINT[800]}
                     >
@@ -631,7 +685,7 @@ export default function DrugUsageDashboardPage() {
                                 <input
                                     value={search}
                                     onChange={(e) => setSearch(e.target.value)}
-                                    placeholder="ค้นหาชื่อยา / รหัสยา"
+                                    placeholder="ค้นหาชื่อเวชภัณฑ์ / รหัส"
                                     className="border border-gray-200 rounded-lg pl-8 pr-3 py-1.5 text-sm w-64"
                                 />
                             </div>
@@ -662,9 +716,9 @@ export default function DrugUsageDashboardPage() {
                                                 <Th className="text-right">#</Th>
                                                 <Th>รหัส</Th>
                                                 <Th onClick={() => sortBy("name")} active={sortKey === "name"} asc={sortAsc}>
-                                                    ชื่อเวชภัณฑ์ยา
+                                                    ชื่อเวชภัณฑ์
                                                 </Th>
-                                                <Th>ความแรง</Th>
+                                                <Th>{kind === "drug" ? "ความแรง / หน่วย" : "หน่วย"}</Th>
                                                 <Th className="text-right" onClick={() => sortBy("qty")} active={sortKey === "qty"} asc={sortAsc}>
                                                     จำนวนจ่าย
                                                 </Th>
@@ -737,7 +791,7 @@ export default function DrugUsageDashboardPage() {
 
                     <AiSummaryCard
                         summary={aiSummary}
-                        context="สรุปการใช้เวชภัณฑ์ยาตามมูลค่าการใช้ทั้งหมดในสถานบริการ (HOSxP)"
+                        context={`สรุปการใช้${kindMeta.label}ตามมูลค่าการใช้ทั้งหมดในสถานบริการ (HOSxP)`}
                         disabled={!aiSummary}
                     />
                 </>
