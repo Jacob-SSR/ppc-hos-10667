@@ -4,6 +4,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { createPortal } from "react-dom";
 import {
   BarChart, Bar, Cell, XAxis, YAxis, Tooltip, CartesianGrid,
   ResponsiveContainer, LineChart, Line,
@@ -16,6 +17,7 @@ import {
 import { exportToExcel } from "@/lib/exportExcel";
 import { usePagination } from "@/hooks/usePagination";
 import type { D506Row } from "@/lib/d506Sheets.service";
+import type { D506FormExtra } from "@/lib/d506Form.service";
 import Form506 from "./Form506";
 
 interface Payload {
@@ -134,6 +136,13 @@ export default function D506DashboardPage() {
   const [sortDir, setSortDir] = useState(-1);
   const [tab, setTab] = useState<"patient" | "lab">("patient");
   const [printRow, setPrintRow] = useState<D506Row | null>(null);
+  // ข้อมูลเสริมจาก HOSxP สำหรับ auto-fill แบบ รง.506 (ภาวะสมรส/สัญชาติ/อาชีพ/วันตาย…)
+  const [printExtra, setPrintExtra] = useState<D506FormExtra | null>(null);
+  const [extraLoading, setExtraLoading] = useState(false);
+  // modal พิมพ์ต้อง portal ออกไปนอก layout (main มี overflow-auto/h-screen ครอบอยู่
+  // ถ้าพิมพ์ทั้งที่ยังอยู่ในนั้น เบราว์เซอร์จะ clip เนื้อหาทิ้ง → ได้กระดาษเปล่า)
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
 
   async function loadData(force = false) {
     setLoading(true);
@@ -155,6 +164,22 @@ export default function D506DashboardPage() {
     }
   }
   useEffect(() => { loadData(); }, []);
+
+  // เปิดแบบฟอร์ม → ดึงข้อมูลผู้ป่วยจาก HOSxP มาเติมช่องที่ทะเบียนในชีตไม่มี
+  useEffect(() => {
+    const hn = printRow?.hn?.trim();
+    if (!hn) { setPrintExtra(null); return; }
+    let cancelled = false;
+    setExtraLoading(true);
+    setPrintExtra(null);
+    const qs = new URLSearchParams({ hn, reportDate: printRow?.reportDate ?? "" });
+    fetch(`/api/d506-form?${qs}`, { credentials: "include" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((j) => { if (!cancelled) setPrintExtra(j?.error ? null : j); })
+      .catch(() => { if (!cancelled) setPrintExtra(null); })
+      .finally(() => { if (!cancelled) setExtraLoading(false); });
+    return () => { cancelled = true; };
+  }, [printRow]);
 
   const rows = useMemo(() => data?.rows ?? [], [data]);
 
@@ -628,37 +653,70 @@ export default function D506DashboardPage() {
         </>
       )}
 
-      {/* Print modal */}
-      {printRow && (
+      {/* Print modal — portal ไปที่ <body> ตรง ๆ ไม่งั้นตอนพิมพ์จะโดน main ที่
+          overflow-auto/h-screen ครอบไว้ตัดเนื้อหาทิ้งจนได้กระดาษเปล่า */}
+      {mounted && printRow && createPortal(
         <div className="print-modal fixed inset-0 z-[1000] bg-black/55 overflow-y-auto p-4 flex items-start justify-center"
           onClick={(e) => { if (e.target === e.currentTarget) setPrintRow(null); }}>
-          <div className="bg-white rounded-xl w-full max-w-4xl shadow-2xl">
+          <div className="print-sheet bg-white rounded-xl w-full max-w-4xl shadow-2xl">
             <div className="no-print flex items-center justify-between px-5 py-3.5 border-b border-gray-200 bg-gray-50 rounded-t-xl">
-              <span className="flex items-center gap-2 font-bold text-gray-700"><Printer size={16} /> แบบรายงานโรค 506</span>
+              <span className="flex items-center gap-2 font-bold text-gray-700">
+                <Printer size={16} /> แบบรายงานโรค 506
+                <span className="text-xs font-normal text-gray-400">
+                  {extraLoading
+                    ? "· กำลังดึงข้อมูลจาก HOSxP…"
+                    : printExtra?.found
+                      ? "· เติมข้อมูลจาก HOSxP แล้ว"
+                      : "· ไม่พบ HN นี้ใน HOSxP (ใช้ข้อมูลจากทะเบียน)"}
+                </span>
+              </span>
               <div className="flex gap-2">
-                <button onClick={() => window.print()}
-                  className="flex items-center gap-1.5 px-4 py-1.5 rounded-lg text-white text-sm font-bold hover:brightness-110"
+                <button onClick={() => window.print()} disabled={extraLoading}
+                  className="flex items-center gap-1.5 px-4 py-1.5 rounded-lg text-white text-sm font-bold hover:brightness-110 disabled:opacity-50"
                   style={{ backgroundColor: MINT }}><Printer size={14} /> พิมพ์</button>
                 <button onClick={() => setPrintRow(null)}
                   className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-gray-200 text-gray-600 text-sm hover:bg-gray-50"><X size={14} /> ปิด</button>
               </div>
             </div>
             <div id="form506" className="p-5">
-              <Form506 row={printRow} />
+              <Form506 row={printRow} extra={printExtra} />
             </div>
           </div>
-        </div>
+        </div>,
+        document.body,
       )}
 
-      {/* print CSS: ซ่อนทุกอย่างยกเว้น modal ตอนสั่งพิมพ์ */}
+      {/* print CSS: ตอนสั่งพิมพ์ให้เหลือเฉพาะแบบฟอร์ม
+          ใช้ display:none กับพี่น้องของ modal (ไม่ใช่ visibility:hidden) เพราะ
+          visibility ยังกินเนื้อที่/ยังโดน ancestor ที่ overflow ซ่อนอยู่ตัดทิ้งได้ */}
       <style jsx global>{`
         @media print {
-          body * { visibility: hidden !important; }
-          .print-modal, .print-modal * { visibility: visible !important; }
-          .print-modal { position: static !important; background: none !important; padding: 0 !important; display: block !important; }
-          .print-modal > div { box-shadow: none !important; border-radius: 0 !important; max-width: 100% !important; }
+          html, body {
+            height: auto !important;
+            overflow: visible !important;
+            background: #fff !important;
+          }
+          body > *:not(.print-modal) { display: none !important; }
+          .print-modal {
+            position: static !important;
+            inset: auto !important;
+            display: block !important;
+            overflow: visible !important;
+            background: none !important;
+            padding: 0 !important;
+            z-index: auto !important;
+            -webkit-print-color-adjust: exact;
+            print-color-adjust: exact;
+          }
+          .print-sheet {
+            box-shadow: none !important;
+            border-radius: 0 !important;
+            max-width: 100% !important;
+            width: 100% !important;
+          }
+          #form506 { padding: 0 !important; }
           .no-print { display: none !important; }
-          @page { margin: 15mm; }
+          @page { size: A4 portrait; margin: 8mm; }
         }
       `}</style>
     </div>

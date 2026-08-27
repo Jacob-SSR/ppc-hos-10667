@@ -3,6 +3,7 @@
 "use client";
 
 import type { D506Row } from "@/lib/d506Sheets.service";
+import type { D506FormExtra } from "@/lib/d506Form.service";
 
 // checkbox: ☑ ถ้า code506 ตรงกับรหัสของโรคนั้น
 function useChk(code: string) {
@@ -15,20 +16,65 @@ const parts = (s: string) => {
   return { d, m, y };
 };
 
-export default function Form506({ row }: { row: D506Row }) {
-  const code = String(row.code506 || "").trim();
+/** เลือกค่าจากชีตก่อน ถ้าว่างค่อยใช้ค่าจาก HOSxP */
+const or = (sheet: string | undefined, hosxp: string | undefined) =>
+  (sheet || "").trim() || (hosxp || "").trim();
+
+/** อายุ ปี/เดือน จากวันเกิด "DD/MM/พ.ศ." */
+function ageParts(dobStr: string): { y: string; m: string } {
+  const { d, m, y } = parts(dobStr);
+  const yy = Number(y), mm = Number(m), dd = Number(d);
+  if (!yy || !mm || !dd) return { y: "", m: "" };
+  const born = new Date(yy > 2500 ? yy - 543 : yy, mm - 1, dd);
+  if (Number.isNaN(born.getTime())) return { y: "", m: "" };
+  const now = new Date();
+  let months =
+    (now.getFullYear() - born.getFullYear()) * 12 + (now.getMonth() - born.getMonth());
+  if (now.getDate() < born.getDate()) months--;
+  if (months < 0) return { y: "", m: "" };
+  return { y: String(Math.floor(months / 12)), m: String(months % 12) };
+}
+
+export default function Form506({
+  row,
+  extra,
+}: {
+  row: D506Row;
+  /** ข้อมูลจาก HOSxP (/api/d506-form) — ใช้เติมช่องที่ทะเบียนในชีตไม่มี */
+  extra?: D506FormExtra | null;
+}) {
+  const code = or(row.code506, extra?.code506);
   const chk = useChk(code);
   const sexM = row.sex === "ช";
   const sexF = row.sex === "ญ";
-  const ptype = (row.ptype || "").trim().toUpperCase();
-  const status = (row.status || "").trim();
+  const ptype = or(row.ptype, extra?.ptype).toUpperCase();
+  const status = or(row.status, extra?.status);
   const outcome = (row.outcome || "").trim();
 
-  const dob = parts(row.dob);
-  const ons = parts(row.onsetDate);
-  const rpt = parts(row.reportDate);
+  // ช่องวันที่: ชีตเป็นหลัก ว่างแล้วใช้ HOSxP (ทั้งคู่รูปแบบ DD/MM/ปี)
+  const dobStr = or(row.dob, extra?.dob);
+  const dob = parts(dobStr);
+  const ons = parts(or(row.onsetDate, extra?.onsetDate));
+  const rpt = parts(or(row.reportDate, extra?.reportDate));
+  const dth = parts(extra?.deathDate ?? "");
+  const age = ageParts(dobStr);
+
+  // ภาวะสมรส / สัญชาติ / เขตปกครอง — มีแต่ใน HOSxP
+  const marital = extra?.marital ?? "";
+  const mChk = (v: string) => (marital && marital === v ? "☑" : "☐");
+  const thai = extra?.thai ?? null;
+  const muni = extra?.municipality ?? "";
+  const dead =
+    status.includes("เสียชีวิต") || status.includes("ตาย") ||
+    row.death === "ใช่" || Boolean(extra?.deathDate);
 
   const fullName = `${row.prefix || ""}${row.fname || ""} ${row.lname || ""}`.trim();
+  const disease = (row.disease || "").trim();
+  const icd10 = or(row.icd10, extra?.icd10);
+  const addr = or(row.addr, [extra?.house, extra?.moo && `หมู่ ${extra.moo}`].filter(Boolean).join(" "));
+  const tambon = or(row.tambon, extra?.tambon);
+  const amphoe = or(row.amphoe, extra?.amphoe);
+  const province = or(row.province, extra?.province);
 
   const printedOn = new Date().toLocaleDateString("th-TH", {
     year: "numeric",
@@ -147,10 +193,10 @@ export default function Form506({ row }: { row: D506Row }) {
             □ โรคอื่น ๆ (ระบุ)……………………<br />
             <br />
             <div style={{ fontSize: 11, marginTop: 4 }}>
-              <b>โรคที่วินิจฉัย:</b> <u>{row.disease || ""}</u>
+              <b>โรคที่วินิจฉัย:</b> <u>{disease}</u>
             </div>
             <div style={{ fontSize: 11 }}>
-              <b>รหัส 506:</b> <u>{code || ""}</u> &nbsp; <b>ICD-10:</b> <u>{row.icd10 || ""}</u>
+              <b>รหัส 506:</b> <u>{code}</u> &nbsp; <b>ICD-10:</b> <u>{icd10}</u>
             </div>
           </div>
         </div>
@@ -181,23 +227,26 @@ export default function Form506({ row }: { row: D506Row }) {
               </td>
               <td style={cell}>
                 <b>อายุ</b><br />
-                ปี <u>{row.age || ""}</u> &nbsp; เดือน ……… &nbsp;
+                ปี <u>{row.age || age.y || ""}</u> &nbsp; เดือน <u>{age.m || "………"}</u> &nbsp;
                 วันที่ <u>{dob.d}</u> เดือน <u>{dob.m}</u> ปี <u>{dob.y}</u>
               </td>
               <td style={cell}>
                 <b>ภาวะสมรส</b><br />
-                □&nbsp;1 โสด &nbsp; □&nbsp;2 คู่<br />
-                □&nbsp;3 หย่าร้าง &nbsp; □&nbsp;4 หม้าย
+                {mChk("โสด")}&nbsp;1 โสด &nbsp; {mChk("คู่")}&nbsp;2 คู่<br />
+                {mChk("หย่าร้าง")}&nbsp;3 หย่าร้าง &nbsp; {mChk("หม้าย")}&nbsp;4 หม้าย
               </td>
               <td style={cell}>
                 <b>สัญชาติ</b><br />
-                □ คนไทย<br />
-                □ คนต่างชาติ ประเภท □1 □2
-                <div style={{ fontSize: 10 }}>ระบุสัญชาติ…………………</div>
+                {thai === true ? "☑" : "☐"} คนไทย<br />
+                {thai === false ? "☑" : "☐"} คนต่างชาติ ประเภท □1 □2
+                <div style={{ fontSize: 10 }}>
+                  ระบุสัญชาติ{" "}
+                  <u>{thai === false ? extra?.nationalityName || "…………………" : "…………………"}</u>
+                </div>
               </td>
               <td style={cell}>
                 <b>งานที่ทำ</b><br />
-                <u style={{ display: "block", minHeight: 30 }} />
+                <u style={{ display: "block", minHeight: 30 }}>{extra?.occupation || ""}</u>
                 (□□)
               </td>
             </tr>
@@ -207,14 +256,17 @@ export default function Form506({ row }: { row: D506Row }) {
         <div style={{ marginBottom: 3 }}><b>ที่อยู่ขณะเริ่มป่วย</b></div>
         <div style={{ display: "flex", gap: 6, marginBottom: 3, fontSize: 12 }}>
           <span>บ้านเลขที่/หมู่</span>
-          <span style={{ ...line, flex: 1, padding: "0 4px" }}>{row.addr || ""}</span>
+          <span style={{ ...line, flex: 1, padding: "0 4px" }}>{addr}</span>
           <span>ตำบล</span>
-          <span style={{ ...line, flex: 1, padding: "0 4px" }}>{row.tambon || ""}</span>
+          <span style={{ ...line, flex: 1, padding: "0 4px" }}>{tambon}</span>
           <span>อำเภอ</span>
-          <span style={{ ...line, flex: 1, padding: "0 4px" }}>{row.amphoe || ""}</span>
+          <span style={{ ...line, flex: 1, padding: "0 4px" }}>{amphoe}</span>
           <span>จังหวัด</span>
-          <span style={{ ...line, flex: 1, padding: "0 4px" }}>{row.province || ""}</span>
-          <span style={{ whiteSpace: "nowrap", fontSize: 10 }}>□1 ในเขตเทศบาล<br />□2 อบต.</span>
+          <span style={{ ...line, flex: 1, padding: "0 4px" }}>{province}</span>
+          <span style={{ whiteSpace: "nowrap", fontSize: 10 }}>
+            {muni === "1" ? "☑" : "□"}1 ในเขตเทศบาล<br />
+            {muni === "2" ? "☑" : "□"}2 อบต.
+          </span>
         </div>
       </div>
 
@@ -234,7 +286,7 @@ export default function Form506({ row }: { row: D506Row }) {
               <b>สถานที่รักษา</b><br />
               □1 รพ.ศูนย์ &nbsp; □4 คลินิกของราชการ &nbsp; □7 คลินิก รพ.เอกชน<br />
               □2 รพ.ทั่วไป &nbsp; □5 สอ. &nbsp; □8 บ้าน<br />
-              □3 รพ.ชุมชน &nbsp; □6 รพ.ราชการใน กทม.
+              ☑3 รพ.ชุมชน &nbsp; □6 รพ.ราชการใน กทม.
             </td>
             <td style={{ ...cell, width: 90, textAlign: "center" }}>
               <b>ประเภทผู้ป่วย</b><br />
@@ -251,16 +303,17 @@ export default function Form506({ row }: { row: D506Row }) {
           <tr>
             <td style={{ ...cell, width: 180 }}>
               <b>สภาพผู้ป่วย</b><br />
-              {outcome.includes("หาย") || outcome.includes("ดีขึ้น") ? "☑" : "☐"} หาย &nbsp; □ ไม่ทราบ<br />
-              {status.includes("เสียชีวิต") || row.death === "ใช่" ? "☑" : "☐"} ตาย &nbsp; □ ยังมีชีวิตอยู่<br />
-              {status.includes("รักษาอยู่") ? "☑" : "☐"} ยังรักษาอยู่
+              {outcome.includes("หาย") || outcome.includes("ดีขึ้น") || status.includes("หาย")
+                ? "☑" : "☐"} หาย &nbsp; {status.includes("ไม่ทราบ") ? "☑" : "☐"} ไม่ทราบ<br />
+              {dead ? "☑" : "☐"} ตาย &nbsp; {!dead && status.includes("มีชีวิต") ? "☑" : "☐"} ยังมีชีวิตอยู่<br />
+              {status.includes("รักษาอยู่") || status.includes("ยังรักษา") ? "☑" : "☐"} ยังรักษาอยู่
             </td>
             <td style={{ ...cell, width: 160 }}>
               <b>วันที่ตาย</b><br />
-              วันที่ ……… เดือน ……… พ.ศ. …………
+              วันที่ <u>{dth.d || "………"}</u> เดือน <u>{dth.m || "………"}</u> พ.ศ. <u>{dth.y || "…………"}</u>
             </td>
             <td style={cell}>
-              <b>ชื่อผู้รายงาน</b> ………………………………{" "}
+              <b>ชื่อผู้รายงาน</b> <u>{extra?.reporter || "………………………………"}</u>{" "}
               <b>สถานที่ทำงาน</b> โรงพยาบาลพลับพลาชัย
             </td>
             <td style={{ ...cell, width: 100 }}>
