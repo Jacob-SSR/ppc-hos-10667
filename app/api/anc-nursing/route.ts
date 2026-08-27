@@ -1,6 +1,6 @@
 // app/api/anc-nursing/route.ts
 import { NextResponse } from "next/server";
-import { cachedQuery } from "@/lib/cache";
+import { cachedJson } from "@/lib/cache";
 import {
   getAncSummary,
   getAncMissedAppts,
@@ -75,13 +75,12 @@ export async function GET(req: Request) {
     const start = url.searchParams.get("start") || def.start;
     const end = url.searchParams.get("end") || def.end;
 
-    const data = await cachedQuery(
+    return await cachedJson(
+      req,
       ["anc-nursing", start, end],
       () => buildAncData(start, end),
       TTL_SECONDS,
     );
-
-    return NextResponse.json(data);
   } catch (err) {
     console.error("ANC nursing dashboard error:", err);
     return NextResponse.json(

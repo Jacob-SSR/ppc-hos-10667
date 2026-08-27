@@ -15,6 +15,7 @@ import { SectionCard } from "@/app/components/dashboard/live";
 import { Shimmer } from "@/app/components/ui/Shimmer";
 import { KpiCard } from "@/app/components/dashboard/live";
 import AiSummaryCard from "@/app/components/ai/AiSummaryCard";
+import { visibleInterval } from "@/lib/visibleInterval";
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 type StaffType = "ทันตแพทย์" | "ทันตาภิบาล" | "อื่นๆ";
@@ -143,9 +144,9 @@ export default function DentalDashboardPage() {
     const loadRef = useRef(load);
     useEffect(() => { loadRef.current = load; }, [load]);
     useEffect(() => {
-        const f = setInterval(() => { loadRef.current(); setSecondsLeft(REFRESH_SEC); }, REFRESH_SEC * 1000);
+        const stopPoll = visibleInterval(() => { loadRef.current(); setSecondsLeft(REFRESH_SEC); }, REFRESH_SEC * 1000);
         const c = setInterval(() => setSecondsLeft((s) => (s > 1 ? s - 1 : REFRESH_SEC)), 1000);
-        return () => { clearInterval(f); clearInterval(c); };
+        return () => { stopPoll(); clearInterval(c); };
     }, []);
 
     const handleRefresh = () => { load(); setSecondsLeft(REFRESH_SEC); };

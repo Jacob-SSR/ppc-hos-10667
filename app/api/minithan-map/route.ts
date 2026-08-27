@@ -9,7 +9,7 @@ import {
   parseDate,
   sheetsError,
 } from "@/lib/sheets";
-import { cachedQuery } from "@/lib/cache";
+import { cachedQuery, cachedJson } from "@/lib/cache";
 
 // ─── Cache TTL ────────────────────────────────────────────────────────────────
 // ชีตมินิธัญญารักษ์อัปเดตเป็นรอบ → ผลรวม 15 นาที, พิกัดบ้าน 30 นาที
@@ -339,15 +339,14 @@ async function buildMiniThanMapData(): Promise<MiniThanMapData> {
 }
 
 // ─── GET ──────────────────────────────────────────────────────────────────────
-export async function GET() {
+export async function GET(req: Request) {
   try {
-    const data = await cachedQuery(
+    return await cachedJson(
+      req,
       ["minithan-map"],
       buildMiniThanMapData,
       TTL_RESULT,
     );
-
-    return NextResponse.json(data);
   } catch (err) {
     return sheetsError(err, "MiniThanMap");
   }

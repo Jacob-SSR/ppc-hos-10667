@@ -1,5 +1,9 @@
 import { NextResponse } from "next/server";
+import { cachedJson } from "@/lib/cache";
 import { getIpdWardSummary } from "@/lib/ipd.service";
+
+// สรุปรายวอร์ดใกล้ realtime — query จริงทุก 2 นาทีพอ
+const TTL_SECONDS = 120;
 
 export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);
@@ -11,8 +15,12 @@ export async function GET(req: Request) {
   }
 
   try {
-    const data = await getIpdWardSummary(start, end);
-    return NextResponse.json(data);
+    return await cachedJson(
+      req,
+      ["ipd-ward-summary", start, end],
+      () => getIpdWardSummary(start, end),
+      TTL_SECONDS,
+    );
   } catch (error) {
     console.error("Ward summary API error:", error);
     return NextResponse.json(

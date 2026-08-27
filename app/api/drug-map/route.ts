@@ -9,7 +9,7 @@ import {
   parseDate,
   sheetsError,
 } from "@/lib/sheets";
-import { cachedQuery } from "@/lib/cache";
+import { cachedQuery, cachedJson } from "@/lib/cache";
 
 // ─── Cache TTL ────────────────────────────────────────────────────────────────
 // ชีตผู้ป่วยยาเสพติดอัปเดตเป็นรอบ → ผลรวม 15 นาที, พิกัดบ้าน 30 นาที
@@ -328,7 +328,7 @@ async function buildDrugMapData(): Promise<DrugMapData> {
 }
 
 // ─── GET ──────────────────────────────────────────────────────────────────────
-export async function GET() {
+export async function GET(req: Request) {
   try {
     if (!DRUG_SPREADSHEET_ID) {
       return NextResponse.json(
@@ -337,9 +337,7 @@ export async function GET() {
       );
     }
 
-    const data = await cachedQuery(["drug-map"], buildDrugMapData, TTL_RESULT);
-
-    return NextResponse.json(data);
+    return await cachedJson(req, ["drug-map"], buildDrugMapData, TTL_RESULT);
   } catch (err) {
     return sheetsError(err, "DrugMap");
   }

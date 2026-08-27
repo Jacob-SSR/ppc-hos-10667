@@ -9,7 +9,7 @@ import {
   toStr,
   sheetsError,
 } from "@/lib/sheets";
-import { cachedQuery } from "@/lib/cache";
+import { cachedQuery, cachedJson } from "@/lib/cache";
 import {
   getAccidentSheetsCached,
   type AccidentRow,
@@ -209,7 +209,9 @@ interface HnPatientRow extends RowDataPacket {
 type PatientInfo = { cid: string; fullName: string };
 
 /** รับ HN ดิบจากชีต → Map<hnดิบ, {cid, fullName}> (ยิงทั้งค่าดิบและค่า pad-0) */
-async function getPatientByHn(hns: string[]): Promise<Map<string, PatientInfo>> {
+async function getPatientByHn(
+  hns: string[],
+): Promise<Map<string, PatientInfo>> {
   const result = new Map<string, PatientInfo>();
 
   const rawByNorm = new Map<string, string[]>();
@@ -383,7 +385,7 @@ async function buildAccidentMapData(): Promise<AccidentMapData> {
 }
 
 // ─── GET ──────────────────────────────────────────────────────────────────────
-export async function GET() {
+export async function GET(req: Request) {
   try {
     if (!process.env.ACCIDENT_SPREADSHEET_ID) {
       return NextResponse.json(
@@ -398,13 +400,12 @@ export async function GET() {
       );
     }
 
-    const data = await cachedQuery(
+    return await cachedJson(
+      req,
       ["accident-map"],
       buildAccidentMapData,
       TTL_RESULT,
     );
-
-    return NextResponse.json(data);
   } catch (err) {
     return sheetsError(err, "AccidentMap");
   }

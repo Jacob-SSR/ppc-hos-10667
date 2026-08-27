@@ -8,7 +8,7 @@ import {
   parseDate,
   sheetsError,
 } from "@/lib/sheets";
-import { cachedQuery } from "@/lib/cache";
+import { cachedJson } from "@/lib/cache";
 
 const SPREADSHEET_ID = process.env.DMTB_SPREADSHEET_ID!;
 
@@ -336,7 +336,8 @@ export async function GET(req: Request) {
       });
     }
 
-    const data = await cachedQuery(
+    return await cachedJson(
+      req,
       ["dmtb-dashboard"],
       async () => {
         const sheets = await getSheetClient();
@@ -350,8 +351,6 @@ export async function GET(req: Request) {
       },
       TTL_SECONDS,
     );
-
-    return NextResponse.json(data);
   } catch (err) {
     return sheetsError(err, "DmtbDashboard");
   }

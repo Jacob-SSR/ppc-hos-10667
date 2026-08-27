@@ -2,7 +2,8 @@
 import { NextResponse } from "next/server";
 import { getSheetClient, getFirstSheetTitle } from "@/lib/sheets/client";
 import { parseDate } from "@/lib/sheets/parseDate";
-import { cachedQuery, invalidate } from "@/lib/cache";
+import { cachedQuery, invalidate, defaultMaxAge } from "@/lib/cache";
+import { jsonCached } from "@/lib/httpCache";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -355,7 +356,9 @@ export async function GET(req: Request) {
         { status: 404 },
       );
     }
-    return NextResponse.json(buildDashboard(rows, seg));
+    return jsonCached(req, buildDashboard(rows, seg), {
+      maxAge: defaultMaxAge(TTL),
+    });
   } catch (err) {
     console.error("StmDashboard(sheets) error:", err);
     return NextResponse.json(

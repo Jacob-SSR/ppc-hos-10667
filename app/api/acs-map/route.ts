@@ -10,7 +10,7 @@ import {
   parseDate,
   sheetsError,
 } from "@/lib/sheets";
-import { cachedQuery } from "@/lib/cache";
+import { cachedQuery, cachedJson } from "@/lib/cache";
 import {
   getAcsAllRowsCached,
   type AcsPatientWithYear,
@@ -391,7 +391,7 @@ async function buildAcsMapData(): Promise<AcsMapData> {
 }
 
 // ─── GET ──────────────────────────────────────────────────────────────────────
-export async function GET() {
+export async function GET(req: Request) {
   try {
     if (!process.env.ACS_SPREADSHEET_ID) {
       return NextResponse.json(
@@ -406,9 +406,7 @@ export async function GET() {
       );
     }
 
-    const data = await cachedQuery(["acs-map"], buildAcsMapData, TTL_RESULT);
-
-    return NextResponse.json(data);
+    return await cachedJson(req, ["acs-map"], buildAcsMapData, TTL_RESULT);
   } catch (err) {
     return sheetsError(err, "AcsMap");
   }

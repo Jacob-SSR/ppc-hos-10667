@@ -19,6 +19,7 @@ import { EmptyState } from "@/app/components/ui/EmptyState";
 import { formatThaiDate } from "@/lib/dateUtils";
 import { THAI_MONTHS_SHORT, toThaiDateLong } from "@/lib/thaiDate";
 import AiSummaryCard from "@/app/components/ai/AiSummaryCard";
+import { visibleInterval } from "@/lib/visibleInterval";
 
 // ─── Types (ตรงกับ lib/ttm.service.ts) ────────────────────────────────────────
 interface Shift { visit_count: number; revenue: number; }
@@ -235,9 +236,9 @@ export default function TtmDashboardPage() {
     const fetchRef = useRef(fetchData);
     useEffect(() => { fetchRef.current = fetchData; }, [fetchData]);
     useEffect(() => {
-        const f = setInterval(() => { fetchRef.current(); setSecondsLeft(REFRESH_SEC); }, REFRESH_SEC * 1000);
+        const stopPoll = visibleInterval(() => { fetchRef.current(); setSecondsLeft(REFRESH_SEC); }, REFRESH_SEC * 1000);
         const c = setInterval(() => setSecondsLeft((s) => (s > 1 ? s - 1 : REFRESH_SEC)), 1000);
-        return () => { clearInterval(f); clearInterval(c); };
+        return () => { stopPoll(); clearInterval(c); };
     }, []);
 
     const handleRefresh = () => { fetchData(); setSecondsLeft(REFRESH_SEC); };

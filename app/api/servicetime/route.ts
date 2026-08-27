@@ -2,7 +2,7 @@
 // Service Time Dashboard (R9) — ระยะเวลารอคอย/ให้บริการ OPD จาก HOSxP (real-time)
 import { NextRequest, NextResponse } from "next/server";
 import { getServiceTime } from "@/lib/servicetime.queries";
-import { cachedQuery } from "@/lib/cache";
+import { cachedJson } from "@/lib/cache";
 import type {
   ServiceScope,
   VisitType,
@@ -54,7 +54,8 @@ export async function GET(req: NextRequest) {
     const targetRaw = searchParams.get("target");
     const target = targetRaw != null ? Number(targetRaw) : null;
 
-    const data = await cachedQuery(
+    return await cachedJson(
+      req,
       [
         "servicetime",
         start,
@@ -68,8 +69,6 @@ export async function GET(req: NextRequest) {
       () => getServiceTime(start, end, scope, visitType, shift, clinic, target),
       TTL_SECONDS,
     );
-
-    return NextResponse.json(data);
   } catch (err) {
     console.error("ServiceTime Dashboard error:", err);
     return NextResponse.json(

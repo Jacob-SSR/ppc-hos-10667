@@ -1,7 +1,7 @@
 // app/api/fall-report/route.ts
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { cachedQuery } from "@/lib/cache";
+import { cachedJson } from "@/lib/cache";
 
 // cache 5 นาที — รายงานพลัดตกหกล้ม (W00–W09) จาก HosXP มักดูช่วงที่รวมวันนี้
 // (hard TTL ใน lib/cache.ts = ttl * 4 → stale แจกต่อได้ ~20 นาทีถ้า DB มีปัญหา)
@@ -56,13 +56,12 @@ export async function GET(req: NextRequest) {
       );
     }
 
-    const rows = await cachedQuery(
+    return await cachedJson(
+      req,
       ["fall-report", start, end],
       () => buildFallReport(start, end),
       TTL_SECONDS,
     );
-
-    return NextResponse.json(rows);
   } catch (error) {
     console.error("FallReport API error:", error);
     return NextResponse.json(

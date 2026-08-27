@@ -1,7 +1,7 @@
 // app/api/patient-no-person/route.ts
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { cachedQuery } from "@/lib/cache";
+import { cachedJson } from "@/lib/cache";
 
 // cache สั้น 2 นาที — worklist ตามลงทะเบียน person ผู้ใช้แก้ใน HosXP แล้วรีเฟรชเช็ค
 // TTL ยาวไปจะเห็นรายชื่อที่ลงทะเบียนแล้วค้างอยู่ (hard TTL = ttl * 4 → stale ~8 นาที)
@@ -59,13 +59,12 @@ export async function GET(req: NextRequest) {
       );
     }
 
-    const rows = await cachedQuery(
+    return await cachedJson(
+      req,
       ["patient-no-person", start, end],
       () => buildPatientNoPerson(start, end),
       TTL_SECONDS,
     );
-
-    return NextResponse.json(rows);
   } catch (error) {
     console.error("PatientNoPerson API error:", error);
     return NextResponse.json(

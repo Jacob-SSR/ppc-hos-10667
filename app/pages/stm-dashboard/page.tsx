@@ -2,6 +2,7 @@
 
 import React, { useEffect, useState, useCallback, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
+import { visibleInterval } from "@/lib/visibleInterval";
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid, ResponsiveContainer,
 } from "recharts";
@@ -602,8 +603,8 @@ export default function StmDashboardPage() {
   // โหลดครั้งแรก + รีเฟรชอัตโนมัติทุก 60 วินาที (เรียลไทม์จาก Google Sheet)
   useEffect(() => {
     fetchData();
-    const id = setInterval(() => fetchData(), 60_000);
-    return () => clearInterval(id);
+    // poll เฉพาะตอนแท็บเปิดอยู่จริง (จอทีวีที่เปิดค้างไม่ยิงทั้งคืนอีกต่อไป)
+    return visibleInterval(() => fetchData(), 60_000);
   }, [fetchData]);
 
   const segLabel = SEG_LABEL[seg];

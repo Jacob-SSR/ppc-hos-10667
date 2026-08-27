@@ -7,7 +7,7 @@ import {
   parseDate,
   sheetsError,
 } from "@/lib/sheets";
-import { cachedQuery, invalidate } from "@/lib/cache";
+import { invalidate, cachedJson } from "@/lib/cache";
 import type {
   BillingUnitSummary,
   BillingItemSummary,
@@ -237,8 +237,7 @@ export async function GET(req: NextRequest) {
       await invalidate(CACHE_KEY);
     }
 
-    const data = await cachedQuery([CACHE_KEY], buildBillingData, TTL);
-    return NextResponse.json(data);
+    return await cachedJson(req, [CACHE_KEY], buildBillingData, TTL);
   } catch (err) {
     return sheetsError(err, "BillingDashboard");
   }

@@ -1,7 +1,7 @@
 // app/api/medical-coding/route.ts
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { cachedQuery } from "@/lib/cache";
+import { cachedJson } from "@/lib/cache";
 
 // cache 5 นาที — รายงาน Medical Coding (งานประกัน) ดึงผู้ป่วยในตามช่วงวันที่จำหน่าย
 // (hard TTL ใน lib/cache.ts = ttl * 4 → stale แจกต่อได้ ~20 นาทีถ้า DB มีปัญหา)
@@ -47,13 +47,12 @@ export async function GET(req: NextRequest) {
       );
     }
 
-    const rows = await cachedQuery(
+    return await cachedJson(
+      req,
       ["medical-coding", start, end],
       () => buildMedicalCodingReport(start, end),
       TTL_SECONDS,
     );
-
-    return NextResponse.json(rows);
   } catch (error) {
     console.error("MedicalCoding API error:", error);
     return NextResponse.json(

@@ -1,6 +1,7 @@
 // app/api/tb-sheets/route.ts
 import { NextResponse } from "next/server";
-import { cachedQuery } from "@/lib/cache";
+import { cachedQuery, defaultMaxAge } from "@/lib/cache";
+import { jsonCached } from "@/lib/httpCache";
 import {
   getSheetClient,
   getAllSheetTitles,
@@ -636,7 +637,9 @@ export async function GET(req: Request) {
     }
 
     const { headers: _h, sampleRow: _s, ...publicData } = data;
-    return NextResponse.json(publicData satisfies TBDashboardData);
+    return jsonCached(req, publicData satisfies TBDashboardData, {
+      maxAge: defaultMaxAge(TTL_SECONDS),
+    });
   } catch (err) {
     return sheetsError(err, "TBSheets");
   }

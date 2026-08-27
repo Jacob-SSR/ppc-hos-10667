@@ -8,7 +8,7 @@ import {
   toStr,
   sheetsError,
 } from "@/lib/sheets";
-import { cachedQuery } from "@/lib/cache";
+import { cachedQuery, cachedJson } from "@/lib/cache";
 
 // ─── Cache TTL ────────────────────────────────────────────────────────────────
 // ทะเบียน TB อัปเดตเป็นรอบ → ผลรวม 15 นาที, พิกัดบ้าน 30 นาที
@@ -369,13 +369,10 @@ async function buildTBMapData(): Promise<TBMapData> {
 }
 
 // ─── GET ──────────────────────────────────────────────────────────────────────
-export async function GET() {
+export async function GET(req: Request) {
   try {
-    const data = await cachedQuery(["tb-map"], buildTBMapData, TTL_RESULT);
-
-    return NextResponse.json(data);
+    return await cachedJson(req, ["tb-map"], buildTBMapData, TTL_RESULT);
   } catch (err) {
     return sheetsError(err, "TBMap");
   }
 }
-  

@@ -1,7 +1,7 @@
 // app/api/patients/route.ts
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { cachedQuery } from "@/lib/cache";
+import { cachedQuery, cachedJson } from "@/lib/cache";
 import { RowDataPacket } from "mysql2";
 
 // cache สั้น 3 นาที — drill-down มักดูช่วงที่รวม "วันนี้" ข้อมูลเปลี่ยนตลอด
@@ -377,60 +377,60 @@ export async function GET(req: Request) {
   try {
     // ── History ──
     if (hn) {
-      const data = await cachedQuery(
+      return await cachedJson(
+        req,
         ["patients", "history", hn],
         () => buildHistory(hn),
         TTL_SECONDS,
       );
-      return NextResponse.json(data);
     }
 
     // ── Branch ตาม cardType (key แยกกัน จะได้ไม่ต้อง query ทุก branch พร้อมกัน) ──
     const key = ["patients", cardType, start, end];
 
     if (cardType === "admitToday") {
-      const data = await cachedQuery(
+      return await cachedJson(
+        req,
         key,
         () => buildAdmit(start, end),
         TTL_SECONDS,
       );
-      return NextResponse.json(data);
     }
 
     if (cardType === "erEmergency") {
-      const data = await cachedQuery(
+      return await cachedJson(
+        req,
         key,
         () => buildErEmergency(start, end),
         TTL_SECONDS,
       );
-      return NextResponse.json(data);
     }
 
     if (cardType === "erTransport") {
-      const data = await cachedQuery(
+      return await cachedJson(
+        req,
         key,
         () => buildErTransport(start, end),
         TTL_SECONDS,
       );
-      return NextResponse.json(data);
     }
 
     if (cardType === "erOtherAccident") {
-      const data = await cachedQuery(
+      return await cachedJson(
+        req,
         key,
         () => buildErOtherAccident(start, end),
         TTL_SECONDS,
       );
-      return NextResponse.json(data);
     }
 
     // ── OPD Standard ──
-    const data = await cachedQuery(
+    return await cachedJson(
+      req,
       key,
       () => buildOpdStandard(cardType, start, end),
       TTL_SECONDS,
     );
-    return NextResponse.json(data);
   } catch (error) {
     console.error("Patients API error:", error);
     return NextResponse.json(

@@ -1,7 +1,7 @@
 // app/api/ipd/ward-census/route.ts
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { cachedQuery } from "@/lib/cache";
+import { cachedJson } from "@/lib/cache";
 import { RowDataPacket } from "mysql2";
 
 interface CensusRow extends RowDataPacket {
@@ -71,13 +71,12 @@ export async function GET(req: NextRequest) {
     const { searchParams } = new URL(req.url);
     const wardCode = searchParams.get("ward");
 
-    const data = await cachedQuery(
+    return await cachedJson(
+      req,
       ["ipd-ward-census", wardCode ?? "all"],
       () => queryWardCensus(wardCode),
       TTL_SECONDS,
     );
-
-    return NextResponse.json(data);
   } catch (error) {
     console.error("Ward census error:", error);
     return NextResponse.json(

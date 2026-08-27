@@ -9,6 +9,7 @@
 //                summary — ยอดรวมของทั้ง 3 ชนิดในช่วงเดียวกัน (ไม่สนใจ ?kind)
 //                ไม่ระบุ = ทั้งหมด (ใช้กับงานที่อยากได้ครบทีเดียว)
 import { NextResponse } from "next/server";
+import { jsonCached } from "@/lib/httpCache";
 import {
   getDrugUsageCore,
   getDrugUsageDashboard,
@@ -55,7 +56,10 @@ function currentFiscalYear(today: Date): number {
  * ช่วงวันของปีงบประมาณ พ.ศ. ที่ระบุ — 1 ต.ค. ปีก่อนหน้า ถึง 30 ก.ย.
  * ปีงบปัจจุบันตัดปลายที่ "วันนี้" (ยังไม่จบปีงบ)
  */
-function fiscalRange(fyBE: number, today: Date): { start: string; end: string } {
+function fiscalRange(
+  fyBE: number,
+  today: Date,
+): { start: string; end: string } {
   const ceEnd = fyBE - 543; // ปี ค.ศ. ที่ปีงบสิ้นสุด
   const fyEnd = new Date(ceEnd, 8, 30); // 30 ก.ย.
   return {
@@ -73,7 +77,10 @@ function rangeFromPreset(
   const end = fmt(today);
 
   if (preset === "thismonth")
-    return { start: fmt(new Date(today.getFullYear(), today.getMonth(), 1)), end };
+    return {
+      start: fmt(new Date(today.getFullYear(), today.getMonth(), 1)),
+      end,
+    };
   if (preset === "fiscal")
     return fiscalRange(fy ?? currentFiscalYear(today), today);
   if (preset === "back") {
@@ -95,11 +102,14 @@ export async function GET(req: Request) {
 
     // ปีงบประมาณ พ.ศ. — รับเฉพาะค่าที่สมเหตุสมผล (2500–2699)
     const fyRaw = Number(searchParams.get("fy"));
-    const fy = Number.isInteger(fyRaw) && fyRaw >= 2500 && fyRaw <= 2699 ? fyRaw : null;
+    const fy =
+      Number.isInteger(fyRaw) && fyRaw >= 2500 && fyRaw <= 2699 ? fyRaw : null;
 
     // จำนวนปีงบย้อนหลัง — จำกัด 1–10 กันเผลอลากช่วงยาวจน query หนักเกิน
     const yearsRaw = Math.trunc(Number(searchParams.get("years")));
-    const years = Number.isFinite(yearsRaw) ? Math.min(10, Math.max(1, yearsRaw)) : 3;
+    const years = Number.isFinite(yearsRaw)
+      ? Math.min(10, Math.max(1, yearsRaw))
+      : 3;
 
     const useCustom =
       !!startParam &&
@@ -125,31 +135,32 @@ export async function GET(req: Request) {
             ttl,
           )
         : section === "core"
-        ? await cachedQuery(
-            ["drug-usage-core", CACHE_VERSION, kind, start, end],
-            () => getDrugUsageCore(start, end, kind),
-            ttl,
-          )
-        : section === "dims"
           ? await cachedQuery(
-              ["drug-usage-dims", CACHE_VERSION, kind, start, end],
-              () => getDrugUsageDims(start, end, kind),
+              ["drug-usage-core", CACHE_VERSION, kind, start, end],
+              () => getDrugUsageCore(start, end, kind),
               ttl,
             )
-          : await cachedQuery(
-              ["drug-usage", CACHE_VERSION, kind, start, end],
-              () => getDrugUsageDashboard(start, end, kind),
-              ttl,
-            );
+          : section === "dims"
+            ? await cachedQuery(
+                ["drug-usage-dims", CACHE_VERSION, kind, start, end],
+                () => getDrugUsageDims(start, end, kind),
+                ttl,
+              )
+            : await cachedQuery(
+                ["drug-usage", CACHE_VERSION, kind, start, end],
+                () => getDrugUsageDashboard(start, end, kind),
+                ttl,
+              );
 
-    return NextResponse.json(data, {
-      headers: {
-        // ให้เบราว์เซอร์เก็บไว้เองด้วย — สลับแท็บกลับไปมาในช่วงสั้น ๆ ไม่ต้องยิงซ้ำ
-        "Cache-Control": closed
-          ? "private, max-age=3600"
-          : "private, max-age=60, stale-while-revalidate=600",
-      },
-    });
+    // ETag + Cache-Control: สลับแท็บ/กด refresh ในช่วงสั้น ๆ ได้ 304 ตัวเปล่า
+    // ช่วงที่จบแล้ว (ข้อมูลไม่เปลี่ยนอีก) เก็บได้ยาว 1 ชั่วโมง
+    return jsonCached(
+      req,
+      data,
+      closed
+        ? { maxAge: 3600, staleWhileRevalidate: 86400 }
+        : { maxAge: 60, staleWhileRevalidate: 600 },
+    );
   } catch (error) {
     console.error("Medical supply usage dashboard error:", error);
     return NextResponse.json(

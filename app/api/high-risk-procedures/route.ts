@@ -1,7 +1,8 @@
 // app/api/high-risk-procedures/route.ts
 import { NextResponse } from "next/server";
 import { getHighRiskProcedures } from "@/lib/highRiskProcedures.service";
-import { cachedQuery } from "@/lib/cache";
+import { cachedQuery, defaultMaxAge } from "@/lib/cache";
+import { jsonCached } from "@/lib/httpCache";
 import { db } from "@/lib/db";
 import { RowDataPacket } from "mysql2";
 
@@ -135,7 +136,7 @@ export async function GET(req: Request) {
       });
     }
 
-    return NextResponse.json(data);
+    return jsonCached(req, data, { maxAge: defaultMaxAge(TTL_SECONDS) });
   } catch (error) {
     console.error("HighRiskProcedures API error:", error);
     return NextResponse.json(

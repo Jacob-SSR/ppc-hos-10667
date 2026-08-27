@@ -1,6 +1,7 @@
 // app/api/ip-homeward-sheets/route.ts
 import { NextResponse } from "next/server";
-import { cachedQuery } from "@/lib/cache";
+import { cachedQuery, defaultMaxAge } from "@/lib/cache";
+import { jsonCached } from "@/lib/httpCache";
 import {
   getSheetClient,
   getAllSheetTitles,
@@ -586,7 +587,7 @@ export async function GET(req: Request) {
       });
     }
 
-    return NextResponse.json(cached.data);
+    return jsonCached(req, cached.data, { maxAge: defaultMaxAge(TTL_SECONDS) });
   } catch (err) {
     return sheetsError(err, "IpHomeWardSheets");
   }

@@ -4,6 +4,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from "react";
+import { visibleInterval } from "@/lib/visibleInterval";
 
 interface AutoRefreshState<T> {
   data: T | null;
@@ -24,7 +25,6 @@ export function useAutoRefresh<T>(
   const [connected, setConnected] = useState(true);
   const [secondsLeft, setSecondsLeft] = useState(intervalMs / 1000);
 
-  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const countRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const fetchData = useCallback(
@@ -52,13 +52,14 @@ export function useAutoRefresh<T>(
 
   useEffect(() => {
     fetchData();
-    timerRef.current = setInterval(() => fetchData(true), intervalMs);
+    // poll เฉพาะตอนแท็บเปิดอยู่จริง — ซ่อนอยู่ = ไม่ยิง, กลับมาดู = ยิงชดเชยทันที
+    const stopPoll = visibleInterval(() => fetchData(true), intervalMs);
     countRef.current = setInterval(
       () => setSecondsLeft((s) => (s <= 1 ? intervalMs / 1000 : s - 1)),
       1000,
     );
     return () => {
-      if (timerRef.current) clearInterval(timerRef.current);
+      stopPoll();
       if (countRef.current) clearInterval(countRef.current);
     };
   }, [fetchData, intervalMs]);

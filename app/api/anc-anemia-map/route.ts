@@ -8,7 +8,7 @@ import {
   sheetsError,
 } from "@/lib/sheets";
 import { getAncAnemiaMapRows } from "@/lib/anc.service";
-import { cachedQuery } from "@/lib/cache";
+import { cachedQuery, cachedJson } from "@/lib/cache";
 
 export const dynamic = "force-dynamic";
 
@@ -284,13 +284,12 @@ export async function GET(req: Request) {
     const start = url.searchParams.get("start") || def.start;
     const end = url.searchParams.get("end") || def.end;
 
-    const data = await cachedQuery(
+    return await cachedJson(
+      req,
       ["anc-anemia-map", start, end],
       () => buildAnemiaMapData(start, end),
       TTL_RESULT,
     );
-
-    return NextResponse.json(data);
   } catch (err) {
     return sheetsError(err, "AncAnemiaMap");
   }

@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useState, useCallback, useMemo, useRef } from "react";
+import { useEffect, useState, useCallback, useMemo } from "react";
 import { motion } from "framer-motion";
+import { visibleInterval } from "@/lib/visibleInterval";
 import {
     BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid, ResponsiveContainer,
     PieChart, Pie, Cell, AreaChart, Area, Line,
@@ -530,7 +531,6 @@ export default function TBDashboardOverview() {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [selectedYear, setSelectedYear] = useState("all");
-    const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
     // silent = ดึงเบื้องหลัง (auto-refresh) ไม่ล้างหน้าจอ/ไม่โชว์ spinner เต็ม
     const fetchData = useCallback(async (silent = false) => {
@@ -553,10 +553,7 @@ export default function TBDashboardOverview() {
 
     useEffect(() => {
         fetchData();
-        timerRef.current = setInterval(() => fetchData(true), REFRESH_MS);
-        return () => {
-            if (timerRef.current) clearInterval(timerRef.current);
-        };
+        return visibleInterval(() => fetchData(true), REFRESH_MS);
     }, [fetchData]);
 
     const years = useMemo(() => data?.summary.byYear.map((y) => y.year) ?? [], [data]);

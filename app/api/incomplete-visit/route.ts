@@ -1,7 +1,7 @@
 // app/api/incomplete-visit/route.ts
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { cachedQuery } from "@/lib/cache";
+import { cachedJson } from "@/lib/cache";
 import { RowDataPacket } from "mysql2";
 
 // cache สั้น 2 นาที — รายงานนี้เป็น worklist ตามแก้ข้อมูล ผู้ใช้แก้ใน HosXP แล้วรีเฟรชเช็ค
@@ -63,13 +63,12 @@ export async function GET(req: NextRequest) {
   }
 
   try {
-    const rows = await cachedQuery(
+    return await cachedJson(
+      req,
       ["incomplete-visit", start, end],
       () => buildIncompleteVisits(start, end),
       TTL_SECONDS,
     );
-
-    return NextResponse.json(rows);
   } catch (error) {
     console.error("IncompleteVisit API error:", error);
     return NextResponse.json(

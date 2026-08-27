@@ -9,7 +9,7 @@ import {
   toStr,
   sheetsError,
 } from "@/lib/sheets";
-import { cachedQuery } from "@/lib/cache";
+import { cachedQuery, cachedJson } from "@/lib/cache";
 import {
   getSepsisSheetsCached,
   type SepsisSheetRow,
@@ -361,7 +361,7 @@ async function buildSepsisMapData(): Promise<SepsisMapData> {
 }
 
 // ─── GET ──────────────────────────────────────────────────────────────────────
-export async function GET() {
+export async function GET(req: Request) {
   try {
     if (!process.env.Sepsis_SPREADSHEET_ID) {
       return NextResponse.json(
@@ -376,13 +376,12 @@ export async function GET() {
       );
     }
 
-    const data = await cachedQuery(
+    return await cachedJson(
+      req,
       ["sepsis-map"],
       buildSepsisMapData,
       TTL_RESULT,
     );
-
-    return NextResponse.json(data);
   } catch (err) {
     return sheetsError(err, "SepsisMap");
   }

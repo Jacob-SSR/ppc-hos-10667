@@ -12,7 +12,7 @@ import {
   parseDate,
   sheetsError,
 } from "@/lib/sheets";
-import { cachedQuery } from "@/lib/cache";
+import { cachedQuery, cachedJson } from "@/lib/cache";
 
 // ─── Cache TTL ────────────────────────────────────────────────────────────────
 // ทะเบียน IMC คีย์มือลง Sheets ไม่ realtime → ผลรวม 15 นาที, พิกัดบ้าน 30 นาที
@@ -307,8 +307,7 @@ async function readImcRows(): Promise<ImcSheetRow[]> {
   }
 
   const header = raw[0].map((h) => toStr(h));
-  const find = (pred: (h: string) => boolean): number =>
-    header.findIndex(pred);
+  const find = (pred: (h: string) => boolean): number => header.findIndex(pred);
 
   const cHN = find((h) => h.trim() === "HN");
   const cAN = find((h) => h.trim() === "AN");
@@ -460,7 +459,7 @@ async function buildImcMapData(): Promise<ImcMapData> {
 }
 
 // ─── GET ──────────────────────────────────────────────────────────────────────
-export async function GET() {
+export async function GET(req: Request) {
   try {
     if (!IMC_SPREADSHEET_ID) {
       return NextResponse.json(
@@ -475,9 +474,7 @@ export async function GET() {
       );
     }
 
-    const data = await cachedQuery(["imc-map"], buildImcMapData, TTL_RESULT);
-
-    return NextResponse.json(data);
+    return await cachedJson(req, ["imc-map"], buildImcMapData, TTL_RESULT);
   } catch (err) {
     return sheetsError(err, "ImcMap");
   }

@@ -9,7 +9,7 @@ import {
   toNumOrNull,
   sheetsError,
 } from "@/lib/sheets";
-import { cachedQuery } from "@/lib/cache";
+import { cachedQuery, cachedJson } from "@/lib/cache";
 
 // ─── Cache TTL ────────────────────────────────────────────────────────────────
 // ชีต Home Ward อัปเดตเป็นรอบเดือน → ผลรวม 15 นาที, พิกัดบ้าน 30 นาที
@@ -362,7 +362,7 @@ async function buildHomeWardMapData(): Promise<HomeWardMapData> {
 }
 
 // ─── GET ──────────────────────────────────────────────────────────────────────
-export async function GET() {
+export async function GET(req: Request) {
   try {
     if (!HOMEWARD_SPREADSHEET_ID) {
       return NextResponse.json(
@@ -371,13 +371,12 @@ export async function GET() {
       );
     }
 
-    const data = await cachedQuery(
+    return await cachedJson(
+      req,
       ["homeward-map"],
       buildHomeWardMapData,
       TTL_RESULT,
     );
-
-    return NextResponse.json(data);
   } catch (err) {
     return sheetsError(err, "HomeWardMap");
   }

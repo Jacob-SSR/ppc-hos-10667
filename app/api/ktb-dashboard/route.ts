@@ -7,7 +7,7 @@ import {
   parseDate,
   sheetsError,
 } from "@/lib/sheets";
-import { cachedQuery, invalidate } from "@/lib/cache";
+import { invalidate, cachedJson } from "@/lib/cache";
 
 // ─── แหล่งข้อมูล + Cache ──────────────────────────────────────────────────────
 const SPREADSHEET_ID = process.env.KTB_SPREADSHEET_ID!;
@@ -305,8 +305,7 @@ export async function GET(req: NextRequest) {
       await invalidate(CACHE_KEY);
     }
 
-    const data = await cachedQuery([CACHE_KEY], buildKtbData, TTL);
-    return NextResponse.json(data);
+    return await cachedJson(req, [CACHE_KEY], buildKtbData, TTL);
   } catch (err) {
     return sheetsError(err, "KtbDashboard");
   }

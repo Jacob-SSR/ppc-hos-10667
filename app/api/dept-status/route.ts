@@ -1,5 +1,7 @@
 // app/api/dept-status/route.ts
 import { NextRequest, NextResponse } from "next/server";
+import { cachedQuery } from "@/lib/cache";
+import { jsonCached } from "@/lib/httpCache";
 import { getDeptStatus } from "@/lib/deptStatus.service";
 import { fmtDate, getBangkokToday } from "@/lib/thaiDate";
 
@@ -12,7 +14,13 @@ export async function GET(req: NextRequest) {
     const date = searchParams.get("date") || fmtDate(getBangkokToday());
     const debug = searchParams.get("debug");
 
-    const data = await getDeptStatus(date);
+    // สถานะแผนกใกล้ realtime — cache สั้น 60 วิ พอกันคนเปิดหน้าเดียวกันหลายคน
+    // ยิง query ซ้อนกัน (เดิมทุก request = query จริงทุกครั้ง)
+    const data = await cachedQuery(
+      ["dept-status", date],
+      () => getDeptStatus(date),
+      60,
+    );
 
     if (debug) {
       // โหมด debug: ดูชื่อสถานะทั้งหมด + ตัวอย่างผู้ป่วย ไว้ปรับ keyword
@@ -27,7 +35,7 @@ export async function GET(req: NextRequest) {
       });
     }
 
-    return NextResponse.json(data);
+    return jsonCached(req, data, { maxAge: 30, staleWhileRevalidate: 300 });
   } catch (err) {
     console.error("[dept-status] error:", err);
     return NextResponse.json(

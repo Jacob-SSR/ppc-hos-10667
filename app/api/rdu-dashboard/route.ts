@@ -7,7 +7,8 @@ import {
   queryTopAtb,
   queryAtbByDisease,
 } from "@/lib/rdu.queries";
-import { cachedQuery } from "@/lib/cache";
+import { cachedQuery, defaultMaxAge } from "@/lib/cache";
+import { jsonCached } from "@/lib/httpCache";
 import type { RduDashboardData } from "@/lib/rdu.types";
 import { THAI_MONTHS_SHORT } from "@/lib/rdu.constants";
 
@@ -69,7 +70,7 @@ export async function GET(req: NextRequest) {
       atbByDisease: common.atbByDisease as RduDashboardData["atbByDisease"],
     };
 
-    return NextResponse.json(data);
+    return jsonCached(req, data, { maxAge: defaultMaxAge(TTL_SECONDS) });
   } catch (err) {
     console.error("RDU Dashboard error:", err);
     return NextResponse.json(

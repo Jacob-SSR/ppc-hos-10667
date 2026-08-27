@@ -1,7 +1,7 @@
 // app/api/it-worklog-sheets/route.ts
 import { NextResponse } from "next/server";
 import { google } from "googleapis";
-import { cachedQuery } from "@/lib/cache";
+import { cachedJson } from "@/lib/cache";
 
 const TTL_SECONDS = 300;
 const CACHE_KEY_PARTS = ["it-worklog-form", "dashboard"];
@@ -192,15 +192,14 @@ async function buildWorklogDashboard(): Promise<WorkRow[]> {
   return parseSheetRows(raw);
 }
 
-export async function GET() {
+export async function GET(req: Request) {
   try {
-    const rows = await cachedQuery(
+    return await cachedJson(
+      req,
       CACHE_KEY_PARTS,
       buildWorklogDashboard,
       TTL_SECONDS,
     );
-
-    return NextResponse.json(rows);
   } catch (err: unknown) {
     console.error("it-worklog-sheets:", err);
     return NextResponse.json(

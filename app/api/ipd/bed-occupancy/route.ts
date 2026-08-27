@@ -1,5 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
+import { cachedJson } from "@/lib/cache";
 import { getBedOccupancy } from "@/lib/ipd.service";
+
+// อัตราครองเตียงใกล้ realtime — query จริงทุก 2 นาทีพอ
+const TTL_SECONDS = 120;
 
 export async function GET(req: NextRequest) {
   try {
@@ -7,8 +11,12 @@ export async function GET(req: NextRequest) {
     const start = searchParams.get("start");
     const end = searchParams.get("end");
 
-    const data = await getBedOccupancy(start ?? undefined, end ?? undefined);
-    return NextResponse.json(data);
+    return await cachedJson(
+      req,
+      ["ipd-bed-occupancy", start ?? "-", end ?? "-"],
+      () => getBedOccupancy(start ?? undefined, end ?? undefined),
+      TTL_SECONDS,
+    );
   } catch (error) {
     console.error("Bed occupancy error:", error);
     return NextResponse.json(

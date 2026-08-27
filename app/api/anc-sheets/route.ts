@@ -1,6 +1,7 @@
 // app/api/anc-sheets/route.ts
 import { NextResponse } from "next/server";
-import { cachedQuery } from "@/lib/cache";
+import { cachedQuery, defaultMaxAge } from "@/lib/cache";
+import { jsonCached } from "@/lib/httpCache";
 import {
   getSheetClient,
   getAllSheetTitles,
@@ -318,7 +319,7 @@ export async function GET(req: Request) {
     }
 
     const { headers: _h, ...publicData } = data;
-    return NextResponse.json(publicData);
+    return jsonCached(req, publicData, { maxAge: defaultMaxAge(TTL_SECONDS) });
   } catch (err) {
     return sheetsError(err, "AncSheets");
   }
