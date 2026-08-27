@@ -20,6 +20,11 @@ import { cachedQuery } from "@/lib/cache";
 
 export const dynamic = "force-dynamic";
 
+// เวอร์ชันของรูปแบบข้อมูลที่ตอบกลับ — ต้องขยับทุกครั้งที่โครง JSON เปลี่ยน
+// (เพิ่ม/ลบ field, เปลี่ยนชุดหมวด ฯลฯ) เพราะ key จะเปลี่ยนตาม ทำให้ Redis
+// ไม่จ่ายของเก่าที่โครงไม่ตรงกับหน้าเว็บเวอร์ชันใหม่
+const CACHE_VERSION = "v2";
+
 // ช่วงที่ยังไม่จบ (มีวันนี้อยู่ด้วย) ข้อมูลยังเพิ่มได้ → 10 นาที
 const TTL_ONGOING = 600;
 // ช่วงที่จบไปแล้ว (ปีงบเก่า/เดือนที่ผ่านมา) ข้อมูลนิ่งแล้ว → 24 ชม.
@@ -115,24 +120,24 @@ export async function GET(req: Request) {
     const data =
       section === "summary"
         ? await cachedQuery(
-            ["drug-usage-summary", start, end],
+            ["drug-usage-summary", CACHE_VERSION, start, end],
             () => getDrugUsageSummary(start, end),
             ttl,
           )
         : section === "core"
         ? await cachedQuery(
-            ["drug-usage-core", kind, start, end],
+            ["drug-usage-core", CACHE_VERSION, kind, start, end],
             () => getDrugUsageCore(start, end, kind),
             ttl,
           )
         : section === "dims"
           ? await cachedQuery(
-              ["drug-usage-dims", kind, start, end],
+              ["drug-usage-dims", CACHE_VERSION, kind, start, end],
               () => getDrugUsageDims(start, end, kind),
               ttl,
             )
           : await cachedQuery(
-              ["drug-usage", kind, start, end],
+              ["drug-usage", CACHE_VERSION, kind, start, end],
               () => getDrugUsageDashboard(start, end, kind),
               ttl,
             );
