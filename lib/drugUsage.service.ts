@@ -639,6 +639,8 @@ export async function getDrugUsageDims(
 ): Promise<DrugUsageDimsData> {
   const c = await buildCtx(start, end, kind);
 
+  // '-' คือคีย์แทน "ไม่มีค่า" ที่ SQL ใส่ให้ — อย่าปล่อยหลุดไปเป็นป้ายชื่อบนกราฟ
+  const UNKNOWN_KEYS = new Set(["", "-"]);
   const toDim = (r: DimDbRow): DrugUsageDimRow => ({
     key: str(r.key),
     label: str(r.label) || "ไม่ระบุ",
@@ -715,26 +717,36 @@ export async function getDrugUsageDims(
 
   // เติมชื่อผู้สั่งใช้จากรหัสที่ได้ (query เล็ก คิดเป็นภาระแทบเป็นศูนย์)
   const prescribers = prescriberRows.map(toDim);
-  const codes = prescribers.map((r) => r.key).filter((k) => k && k !== "-");
+  const codes = prescribers.map((r) => r.key).filter((k) => !UNKNOWN_KEYS.has(k));
+  let nameOf = new Map<string, string>();
   if (codes.length) {
     try {
       const [names] = await db.query<RowDataPacket[]>(
         `SELECT code, name FROM doctor WHERE code IN (${codes.map(() => "?").join(",")})`,
         codes,
       );
-      const nameOf = new Map(names.map((n) => [str(n.code), str(n.name)]));
-      for (const r of prescribers) r.label = nameOf.get(r.key) || r.key || "ไม่ระบุผู้สั่ง";
+      nameOf = new Map(names.map((n) => [str(n.code), str(n.name)]));
     } catch {
-      for (const r of prescribers) r.label = r.key || "ไม่ระบุผู้สั่ง";
+      // ดึงชื่อไม่ได้ → ใช้รหัสผู้สั่งเป็นป้ายแทน
     }
-  } else {
-    for (const r of prescribers) r.label = "ไม่ระบุผู้สั่ง";
+  }
+  for (const r of prescribers) {
+    r.label = UNKNOWN_KEYS.has(r.key)
+      ? "ไม่ระบุผู้สั่ง"
+      : nameOf.get(r.key) || r.key;
   }
 
+  const fixLabel = (rows: DrugUsageDimRow[], unknown: string) =>
+    rows.map((r) =>
+      UNKNOWN_KEYS.has(r.label) || UNKNOWN_KEYS.has(r.key) && r.label === r.key
+        ? { ...r, label: unknown }
+        : r,
+    );
+
   return {
-    departments: deptRows.map(toDim),
+    departments: fixLabel(deptRows.map(toDim), "ไม่ระบุแผนก"),
     prescribers,
-    rights: rightRows.map(toDim),
+    rights: fixLabel(rightRows.map(toDim), "ไม่ระบุสิทธิ์"),
   };
 }
 
