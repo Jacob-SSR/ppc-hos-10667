@@ -130,7 +130,8 @@ export default function D506DashboardPage() {
 
   // sort + tab + print
   const [sortKey, setSortKey] = useState<"seq" | "date" | "sex" | "age" | "disease" | null>("seq");
-  const [sortDir, setSortDir] = useState(1);
+  // เริ่มที่ ลำดับ มาก→น้อย = คนที่เพิ่งลงทะเบียนล่าสุดอยู่บนสุด (ไม่ต้องกดหัวคอลัมน์เอง)
+  const [sortDir, setSortDir] = useState(-1);
   const [tab, setTab] = useState<"patient" | "lab">("patient");
   const [printRow, setPrintRow] = useState<D506Row | null>(null);
 
@@ -280,12 +281,15 @@ export default function D506DashboardPage() {
   }
   function toggleSort(k: typeof sortKey) {
     if (sortKey === k) setSortDir((d) => -d);
-    else { setSortKey(k); setSortDir(1); }
+    // คอลัมน์ตัวเลข/วันที่ กดครั้งแรกให้เริ่มจากมาก→น้อย (ล่าสุด/มากสุดก่อน)
+    // ส่วนคอลัมน์ตัวอักษรเริ่มจาก ก→ฮ ตามที่คนอ่านคาด
+    else { setSortKey(k); setSortDir(k === "sex" || k === "disease" ? 1 : -1); }
   }
 
   function exportPatients() {
+    // ใช้ลำดับจากทะเบียนจริง (r.seq) ไม่ใช่ลำดับแถวบนหน้า — ไม่งั้นสลับ sort แล้วเลขเพี้ยน
     const out = sorted.map((r, i) => ({
-      "ลำดับที่": i + 1, "วันที่รับรายงาน": r.reportDate, HN: r.hn,
+      "ลำดับที่": r.seq || i + 1, "วันที่รับรายงาน": r.reportDate, HN: r.hn,
       "เลขบัตรประชาชน": r.pid, "คำนำหน้า": r.prefix, "ชื่อ": r.fname, "สกุล": r.lname,
       "เพศ": r.sex, "วัน/เดือน/ปีเกิด": r.dob, "อายุ(ปี)": r.age, "บ้านเลขที่/หมู่": r.addr,
       "ตำบล": r.tambon, "อำเภอ": r.amphoe, "จังหวัด": r.province, "วันที่เริ่มป่วย": r.onsetDate,
