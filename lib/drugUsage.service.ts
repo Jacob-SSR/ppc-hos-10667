@@ -29,7 +29,13 @@
 import { db } from "@/lib/db";
 import { RowDataPacket } from "mysql2";
 
-export type ItemKind = "drug" | "nondrug" | "lab";
+export type ItemKind =
+  | "drug"      // เวชภัณฑ์ยาทั้งหมด
+  | "herbal"    // ยาสมุนไพร (ชุดย่อยของยา)
+  | "lab"       // ตรวจทางห้องปฏิบัติการ
+  | "supply"    // วัสดุสิ้นเปลือง (nondrugitems หมวด 05)
+  | "service"   // ค่าบริการ/หัตถการ (nondrugitems หมวดอื่น)
+  | "nondrug";  // ชื่อเดิมของ supply — คงไว้ให้ลิงก์เก่าใช้ได้
 
 const envList = (v: string | undefined): string[] =>
   (v ?? "")
@@ -53,8 +59,12 @@ const KIND_CONFIG: Record<
     label: string;
     /** ชื่อคอลัมน์ชื่อรายการ — ไล่ตามลำดับ ใช้ตัวแรกที่มีอยู่จริง */
     nameCols: string[];
-    /** กรองด้วย d.income บนตารางทะเบียนเวชภัณฑ์ */
+    /** กรองด้วย d.income บนตารางทะเบียนเวชภัณฑ์ (เอาเฉพาะรหัสเหล่านี้) */
     itemIncome: string[];
+    /** กรองด้วย d.income แบบตัดออก (เอาทุกอย่าง ยกเว้นรหัสเหล่านี้) */
+    itemIncomeNot?: string[];
+    /** true = เพิ่มเงื่อนไข "เป็นยาสมุนไพร" */
+    herbalOnly?: boolean;
     /** กรองด้วย o.income บน opitemrece */
     income: string[];
   }
@@ -66,13 +76,13 @@ const KIND_CONFIG: Record<
     itemIncome: envList(process.env.DRUG_USAGE_DRUG_ITEM_INCOME),
     income: envList(process.env.DRUG_USAGE_DRUG_INCOME),
   },
-  nondrug: {
-    table: "nondrugitems",
-    label: "เวชภัณฑ์ที่ไม่ใช่ยา",
+  herbal: {
+    table: "drugitems",
+    label: "ยาสมุนไพร",
     nameCols: ["name"],
-    // ตามรายงานหน้างาน: nondrugitems.income = '05' คือเวชภัณฑ์ที่มิใช่ยา
-    itemIncome: envList(process.env.DRUG_USAGE_NONDRUG_ITEM_INCOME ?? "05"),
-    income: envList(process.env.DRUG_USAGE_NONDRUG_INCOME),
+    itemIncome: envList(process.env.DRUG_USAGE_HERBAL_ITEM_INCOME),
+    herbalOnly: true,
+    income: envList(process.env.DRUG_USAGE_HERBAL_INCOME),
   },
   lab: {
     table: "lab_items",
@@ -81,11 +91,74 @@ const KIND_CONFIG: Record<
     itemIncome: envList(process.env.DRUG_USAGE_LAB_ITEM_INCOME),
     income: envList(process.env.DRUG_USAGE_LAB_INCOME),
   },
+  // วัสดุสิ้นเปลือง = nondrugitems หมวด 05 (ตามรายงานหน้างาน)
+  supply: {
+    table: "nondrugitems",
+    label: "วัสดุสิ้นเปลือง",
+    nameCols: ["name"],
+    itemIncome: envList(process.env.DRUG_USAGE_SUPPLY_ITEM_INCOME ?? "05"),
+    income: envList(process.env.DRUG_USAGE_SUPPLY_INCOME),
+  },
+  // ค่าบริการ/หัตถการ = nondrugitems หมวดอื่นที่ไม่ใช่ 05
+  service: {
+    table: "nondrugitems",
+    label: "ค่าบริการ/หัตถการ",
+    nameCols: ["name"],
+    itemIncome: [],
+    itemIncomeNot: envList(process.env.DRUG_USAGE_SERVICE_ITEM_INCOME_NOT ?? "05"),
+    income: envList(process.env.DRUG_USAGE_SERVICE_INCOME),
+  },
+  // alias เดิม (ก่อนแยก supply/service) — ชี้ไปที่วัสดุสิ้นเปลืองเหมือนเดิม
+  nondrug: {
+    table: "nondrugitems",
+    label: "เวชภัณฑ์ที่ไม่ใช่ยา",
+    nameCols: ["name"],
+    itemIncome: envList(process.env.DRUG_USAGE_NONDRUG_ITEM_INCOME ?? "05"),
+    income: envList(process.env.DRUG_USAGE_NONDRUG_INCOME),
+  },
 };
 
+const ITEM_KINDS = [
+  "drug",
+  "herbal",
+  "lab",
+  "supply",
+  "service",
+  "nondrug",
+] as const;
+
 export function isItemKind(v: unknown): v is ItemKind {
-  return v === "drug" || v === "nondrug" || v === "lab";
+  return (ITEM_KINDS as readonly unknown[]).includes(v);
 }
+
+/** หมวดที่แสดงบนหน้า dashboard (ไม่รวม alias เดิม) */
+export const VISIBLE_KINDS: ItemKind[] = [
+  "drug",
+  "herbal",
+  "lab",
+  "supply",
+  "service",
+];
+
+// ── เกณฑ์ "เป็นยาสมุนไพร" บน drugitems ─────────────────────────────────────────
+// โครงสร้าง drugitems ต่างกันตามเวอร์ชัน HOSxP → ใช้เท่าที่มีจริง
+//   DRUG_USAGE_HERBAL_TYPES    ค่าคอลัมน์ประเภทยาที่ถือเป็นสมุนไพร (default 10)
+//   DRUG_USAGE_HERBAL_KEYWORDS คำในชื่อยา (LIKE %คำ%)
+const HERBAL_TYPES = envList(process.env.DRUG_USAGE_HERBAL_TYPES ?? "10");
+const HERBAL_KEYWORDS = envList(
+  process.env.DRUG_USAGE_HERBAL_KEYWORDS ??
+    [
+      "ฟ้าทะลายโจร", "ขมิ้นชัน", "เพชรสังฆาต", "มะขามแขก", "ชุมเห็ดเทศ",
+      "เถาวัลย์เปรียง", "สหัศธารา", "สหัสธารา", "ประสะไพล", "เบญจกูล",
+      "ธาตุอบเชย", "ไพล", "ยาหอม", "ตรีผลา", "หญ้าดอกขาว", "บัวบก",
+      "ว่านหางจระเข้", "กระชาย", "ขิง", "มะระขี้นก", "สมุนไพร", "รางจืด",
+      "มะแว้ง", "พญายอ", "ประคบ", "ศุขไสยาศน์", "ทำลายพระสุเมรุ",
+      "แก้ลมแก้เส้น", "แก้ลมเส้น", "ประสะมะแว้ง", "ประสะน้ำนม", "กะเม็ง",
+      "พอกเข่า", "มะขามป้อม", "บำรุงน้ำนม", "อบสมุนไพร", "กัญชา",
+    ].join(","),
+);
+const HERBAL_FLAG_COLS = ["is_herb", "is_herbal", "herbal", "herb", "thai_herb"];
+const HERBAL_TYPE_COLS = ["drugtype", "drug_type", "drugitem_type", "drug_group"];
 
 // ปีงบประมาณไทย (พ.ศ.) — เริ่ม 1 ต.ค. เช่น 1 ต.ค. 2025 (2568) = ปีงบ 2569
 const FY_EXPR = `(YEAR(o.vstdate) + 543 + IF(MONTH(o.vstdate) >= 10, 1, 0))`;
@@ -338,6 +411,32 @@ async function buildCtx(
     incomeSql += ` AND d.income IN (${cfg.itemIncome.map(() => "?").join(",")})`;
     params.push(...cfg.itemIncome);
   }
+  // ตัดหมวดออก (ใช้กับค่าบริการ/หัตถการ = ทุกหมวดยกเว้น 05)
+  if (cfg.itemIncomeNot?.length && itemCols.has("income")) {
+    incomeSql += ` AND COALESCE(d.income, '') NOT IN (${cfg.itemIncomeNot
+      .map(() => "?")
+      .join(",")})`;
+    params.push(...cfg.itemIncomeNot);
+  }
+
+  // เฉพาะยาสมุนไพร — ใช้คอลัมน์ flag/ประเภทเท่าที่ตารางนั้นมีจริง + คำในชื่อยา
+  if (cfg.herbalOnly) {
+    const parts: string[] = [];
+    for (const col of HERBAL_FLAG_COLS) {
+      if (itemCols.has(col)) parts.push(`(d.${col} = 'Y' OR d.${col} = 1)`);
+    }
+    const typeCol = HERBAL_TYPE_COLS.find((cName) => itemCols.has(cName));
+    if (typeCol && HERBAL_TYPES.length) {
+      parts.push(`d.${typeCol} IN (${HERBAL_TYPES.map(() => "?").join(",")})`);
+      params.push(...HERBAL_TYPES);
+    }
+    if (HERBAL_KEYWORDS.length) {
+      parts.push(`(${HERBAL_KEYWORDS.map(() => "d.name LIKE ?").join(" OR ")})`);
+      params.push(...HERBAL_KEYWORDS.map((k) => `%${k}%`));
+    }
+    incomeSql += parts.length ? ` AND (${parts.join(" OR ")})` : " AND 1=0";
+  }
+
   // ชั้นที่ 2: o.income บน opitemrece (ปิดไว้เป็นค่าเริ่มต้น)
   if (cfg.income.length > 0 && opCols.has("income")) {
     incomeSql += ` AND o.income IN (${cfg.income.map(() => "?").join(",")})`;
@@ -647,6 +746,8 @@ export interface DrugUsageKindTotal {
   qty: number;
   order_count: number;
   item_count: number;
+  opd_value: number;
+  ipd_value: number;
 }
 export interface DrugUsageSummaryData {
   start: string;
@@ -659,13 +760,15 @@ interface KindTotalRow extends RowDataPacket {
   qty: number;
   order_count: number;
   item_count: number;
+  opd_value: number;
+  ipd_value: number;
 }
 
 export async function getDrugUsageSummary(
   start: string,
   end: string,
 ): Promise<DrugUsageSummaryData> {
-  const kinds: ItemKind[] = ["drug", "nondrug", "lab"];
+  const kinds = VISIBLE_KINDS;
   const results = await Promise.all(
     kinds.map(async (kind): Promise<DrugUsageKindTotal> => {
       const label = KIND_CONFIG[kind].label;
@@ -677,7 +780,9 @@ export async function getDrugUsageSummary(
             SUM(COALESCE(o.sum_price, 0)) AS value,
             SUM(COALESCE(o.qty, 0))       AS qty,
             COUNT(*)                      AS order_count,
-            COUNT(DISTINCT o.icode)       AS item_count
+            COUNT(DISTINCT o.icode)       AS item_count,
+            ${c.opdValue}                 AS opd_value,
+            ${c.ipdValue}                 AS ipd_value
           ${c.from}
           `,
           c.params,
@@ -690,10 +795,15 @@ export async function getDrugUsageSummary(
           qty: num(r?.qty),
           order_count: num(r?.order_count),
           item_count: num(r?.item_count),
+          opd_value: num(r?.opd_value),
+          ipd_value: num(r?.ipd_value),
         };
       } catch {
         // บางโรงพยาบาลอาจไม่มีตาราง lab_items — อย่าให้ทั้งการ์ดพัง
-        return { kind, label, value: 0, qty: 0, order_count: 0, item_count: 0 };
+        return {
+          kind, label, value: 0, qty: 0, order_count: 0,
+          item_count: 0, opd_value: 0, ipd_value: 0,
+        };
       }
     }),
   );
