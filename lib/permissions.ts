@@ -164,8 +164,6 @@ export const FEATURE_PATHS = {
     "/api/stm-dashboard",
     "/pages/medical-coding",
     "/api/medical-coding",
-    "/pages/planfin",
-    "/api/planfin",
   ],
 
   // รายงานเวชระเบียน / สิทธิ์การรักษา
