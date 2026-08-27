@@ -42,6 +42,18 @@ function parseThaiDate(str: string): Date | null {
   if (!d || !m || !y) return null;
   return new Date(y > 2500 ? y - 543 : y, m - 1, d);
 }
+/** "YYYY-MM-DD" จาก <input type="date"> → Date เวลาท้องถิ่น (00:00 น.)
+ *  ห้ามใช้ new Date("YYYY-MM-DD") ตรง ๆ เพราะ JS ตีเป็น UTC เที่ยงคืน
+ *  พอเทียบกับวันที่ในชีต (ที่ parse เป็นเวลาท้องถิ่น) เขต +07:00 จะเลื่อนไป 1 วัน
+ *  ทำให้แถวของ "วันเริ่มช่วง" หลุดตัวกรองทั้งหมด */
+function parseInputDate(str: string, endOfDay = false): Date | null {
+  if (!str) return null;
+  const [y, m, d] = str.split("-").map(Number);
+  if (!y || !m || !d) return null;
+  return endOfDay
+    ? new Date(y, m - 1, d, 23, 59, 59, 999)
+    : new Date(y, m - 1, d, 0, 0, 0, 0);
+}
 const uniqSorted = (vals: string[]) =>
   [...new Set(vals.map((v) => (v || "").trim()).filter(Boolean))].sort((a, b) =>
     a.localeCompare(b, "th", { numeric: true }),
@@ -122,11 +134,14 @@ export default function D506DashboardPage() {
   const [tab, setTab] = useState<"patient" | "lab">("patient");
   const [printRow, setPrintRow] = useState<D506Row | null>(null);
 
-  async function loadData() {
+  async function loadData(force = false) {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch("/api/d506-sheets", { credentials: "include" });
+      const res = await fetch(`/api/d506-sheets${force ? "?refresh=1" : ""}`, {
+        credentials: "include",
+        cache: "no-store",
+      });
       if (!res.ok) {
         const j = await res.json().catch(() => ({}));
         throw new Error(j.error ?? `HTTP ${res.status}`);
@@ -149,8 +164,8 @@ export default function D506DashboardPage() {
 
   // ── filter ──
   const filtered = useMemo(() => {
-    const start = fStart ? new Date(fStart) : null;
-    const end = fEnd ? new Date(fEnd + "T23:59:59") : null;
+    const start = parseInputDate(fStart);
+    const end = parseInputDate(fEnd, true);
     const q = fSearch.trim().toLowerCase();
     return rows.filter((r) => {
       if (start || end) {
@@ -228,13 +243,13 @@ export default function D506DashboardPage() {
       const day = d.getDay();
       const mon = new Date(d);
       mon.setDate(d.getDate() - (day === 0 ? 6 : day - 1));
-      const key = mon.toISOString().slice(0, 10);
+      const key = `${mon.getFullYear()}-${String(mon.getMonth() + 1).padStart(2, "0")}-${String(mon.getDate()).padStart(2, "0")}`;
       weeks[key] = (weeks[key] || 0) + 1;
     });
     return Object.entries(weeks).sort((a, b) => a[0].localeCompare(b[0]))
       .map(([k, count]) => {
-        const d = new Date(k);
-        return { name: `${d.getDate()}/${d.getMonth() + 1}`, count };
+        const [, m, d] = k.split("-");
+        return { name: `${Number(d)}/${Number(m)}`, count };
       });
   }, [filtered]);
 
@@ -304,7 +319,7 @@ export default function D506DashboardPage() {
           <span className="text-xs text-gray-500">
             {loading ? "กำลังโหลด..." : error ? "โหลดไม่ได้" : `${data?.rowCount ?? 0} ราย`}
           </span>
-          <button onClick={loadData}
+          <button onClick={() => loadData(true)}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-white text-sm font-semibold hover:brightness-110"
             style={{ backgroundColor: MINT }}>
             <RefreshCw size={14} className={loading ? "animate-spin" : ""} /> รีโหลด

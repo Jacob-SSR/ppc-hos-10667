@@ -9,7 +9,7 @@ import {
   getValues,
   toStr,
 } from "@/lib/sheets";
-import { cachedQuery } from "./cache";
+import { cachedQuery, invalidate } from "./cache";
 
 // ทะเบียน 506 อัปเดตเป็นรอบ (เจ้าหน้าที่กรอกมือ) → cache 5 นาทีพอ
 const TTL = 300;
@@ -230,6 +230,13 @@ async function fetchD506(): Promise<D506Payload> {
   };
 }
 
+const CACHE_KEY = "d506-sheets";
+
 export function getD506SheetsCached(): Promise<D506Payload> {
-  return cachedQuery(["d506-sheets", SPREADSHEET_ID], fetchD506, TTL);
+  return cachedQuery([CACHE_KEY, SPREADSHEET_ID], fetchD506, TTL);
+}
+
+/** ล้าง cache ทะเบียน 506 — ใช้ตอนกดรีโหลดเพื่อบังคับอ่าน Sheet ใหม่ */
+export function invalidateD506Sheets(): Promise<void> {
+  return invalidate(CACHE_KEY);
 }
