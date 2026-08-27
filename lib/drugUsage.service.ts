@@ -37,12 +37,15 @@ const envList = (v: string | undefined): string[] =>
     .map((x) => x.trim())
     .filter(Boolean);
 
-// รหัสหมวดค่าใช้จ่าย (opitemrece.income) ที่จะกรองเพิ่มจากการ join ตารางทะเบียน
-// ค่าเริ่มต้น "ไม่กรอง" ทุกชนิด — การ join ตารางทะเบียนเวชภัณฑ์คัดรายการให้แล้ว
-// การกรอง income ซ้ำจะทำให้ยอดหายไปจากที่ query ตรง ๆ บน HOSxP ได้
-// ถ้าโรงพยาบาลไหนอยากกรองหมวดด้วย ตั้ง env ได้:
-//   DRUG_USAGE_DRUG_INCOME / DRUG_USAGE_NONDRUG_INCOME / DRUG_USAGE_LAB_INCOME
-//   (ใส่หลายค่าคั่นด้วย , เช่น "05" หรือ "05,06")
+// ── การกรองหมวดค่าใช้จ่าย มี 2 ชั้น คนละคอลัมน์กัน อย่าสับสน ──────────────────
+//   itemIncome → d.income  บน "ตารางทะเบียนเวชภัณฑ์" (drugitems/nondrugitems/lab_items)
+//                = หมวดที่ตั้งไว้ให้ตัวเวชภัณฑ์นั้น ๆ  ← ตัวที่รายงานจริงใช้
+//                nondrug default '05' = เวชภัณฑ์ที่มิใช่ยา
+//                env: DRUG_USAGE_NONDRUG_ITEM_INCOME (และ _DRUG_ / _LAB_ ตามชนิด)
+//   income     → o.income  บน opitemrece = หมวดที่บันทึกลงรายการค่าใช้จ่ายรายบรรทัด
+//                default ไม่กรอง เพราะจะซ้ำกับ itemIncome และทำให้ยอดหาย
+//                env: DRUG_USAGE_NONDRUG_INCOME (และ _DRUG_ / _LAB_ ตามชนิด)
+// ทั้งคู่ใส่หลายค่าคั่นด้วย , ได้ เช่น "05,06" · ปล่อยว่าง = ไม่กรองชั้นนั้น
 const KIND_CONFIG: Record<
   ItemKind,
   {
@@ -50,6 +53,9 @@ const KIND_CONFIG: Record<
     label: string;
     /** ชื่อคอลัมน์ชื่อรายการ — ไล่ตามลำดับ ใช้ตัวแรกที่มีอยู่จริง */
     nameCols: string[];
+    /** กรองด้วย d.income บนตารางทะเบียนเวชภัณฑ์ */
+    itemIncome: string[];
+    /** กรองด้วย o.income บน opitemrece */
     income: string[];
   }
 > = {
@@ -57,18 +63,22 @@ const KIND_CONFIG: Record<
     table: "drugitems",
     label: "เวชภัณฑ์ยา",
     nameCols: ["name"],
+    itemIncome: envList(process.env.DRUG_USAGE_DRUG_ITEM_INCOME),
     income: envList(process.env.DRUG_USAGE_DRUG_INCOME),
   },
   nondrug: {
     table: "nondrugitems",
     label: "เวชภัณฑ์ที่ไม่ใช่ยา",
     nameCols: ["name"],
+    // ตามรายงานหน้างาน: nondrugitems.income = '05' คือเวชภัณฑ์ที่มิใช่ยา
+    itemIncome: envList(process.env.DRUG_USAGE_NONDRUG_ITEM_INCOME ?? "05"),
     income: envList(process.env.DRUG_USAGE_NONDRUG_INCOME),
   },
   lab: {
     table: "lab_items",
     label: "ตรวจทางห้องปฏิบัติการ",
     nameCols: ["lab_items_name", "name"],
+    itemIncome: envList(process.env.DRUG_USAGE_LAB_ITEM_INCOME),
     income: envList(process.env.DRUG_USAGE_LAB_INCOME),
   },
 };
@@ -311,12 +321,20 @@ async function buildCtx(
     ? `SUM(CASE WHEN COALESCE(o.an, '') = '' THEN COALESCE(o.sum_price, 0) ELSE 0 END)`
     : `SUM(COALESCE(o.sum_price, 0))`;
 
-  // กรองหมวดค่าใช้จ่าย (เฉพาะเมื่อมีคอลัมน์ income จริงและตั้งค่าไว้)
-  const useIncome = cfg.income.length > 0 && opCols.has("income");
-  const incomeSql = useIncome
-    ? ` AND o.income IN (${cfg.income.map(() => "?").join(",")})`
-    : "";
-  const params = useIncome ? [start, end, ...cfg.income] : [start, end];
+  // กรองหมวดค่าใช้จ่าย — ใช้เฉพาะชั้นที่ตั้งค่าไว้ และคอลัมน์มีอยู่จริงเท่านั้น
+  const params: (string | number)[] = [start, end];
+  let incomeSql = "";
+
+  // ชั้นที่ 1: d.income บนตารางทะเบียนเวชภัณฑ์ (ตัวหลักของรายงาน)
+  if (cfg.itemIncome.length > 0 && itemCols.has("income")) {
+    incomeSql += ` AND d.income IN (${cfg.itemIncome.map(() => "?").join(",")})`;
+    params.push(...cfg.itemIncome);
+  }
+  // ชั้นที่ 2: o.income บน opitemrece (ปิดไว้เป็นค่าเริ่มต้น)
+  if (cfg.income.length > 0 && opCols.has("income")) {
+    incomeSql += ` AND o.income IN (${cfg.income.map(() => "?").join(",")})`;
+    params.push(...cfg.income);
+  }
 
   const where = `WHERE o.vstdate BETWEEN ? AND ?${incomeSql}`;
   return {
