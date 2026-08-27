@@ -16,9 +16,23 @@ const parts = (s: string) => {
   return { d, m, y };
 };
 
-/** เลือกค่าจากชีตก่อน ถ้าว่างค่อยใช้ค่าจาก HOSxP */
-const or = (sheet: string | undefined, hosxp: string | undefined) =>
-  (sheet || "").trim() || (hosxp || "").trim();
+/** ช่องที่ HOSxP เป็นเจ้าของข้อมูล (ที่อยู่ วันเกิด รหัสโรค ฯลฯ) — เอา HOSxP ก่อน
+ *  เพราะทะเบียนในชีตกรอกมือ สลับคอลัมน์/พิมพ์ตกได้ ส่วนชีตเป็นตัวสำรอง */
+const hos = (hosxp: string | undefined, sheet: string | undefined) =>
+  (hosxp || "").trim() || (sheet || "").trim();
+
+/** เดาเพศจากคำนำหน้าชื่อ — ทะเบียนบางแถวเว้นช่องเพศไว้ แต่คำนำหน้าบอกอยู่แล้ว
+ *  ลำดับสำคัญ: "นางสาว"/"น.ส." ต้องตรวจก่อน "นาง" ไม่งั้นจับเป็นหญิงมีสามีหมด
+ *  (ทั้งคู่เป็นหญิงเหมือนกัน แต่ยังจับก่อนไว้กันพลาดตอนเพิ่มเงื่อนไขทีหลัง) */
+function sexFromPrefix(prefix: string): "" | "ชาย" | "หญิง" {
+  const p = (prefix || "").replace(/[.\s]/g, "");
+  if (!p) return "";
+  // หญิง
+  if (/^(นางสาว|นส|ดญ|เด็กหญิง|นาง|แม่ชี|ชี)/.test(p)) return "หญิง";
+  // ชาย (พระ/สามเณร นับเป็นชายตามแบบ รง.506)
+  if (/^(นาย|ดช|เด็กชาย|พระ|พระภิกษุ|ภิกษุ|สามเณร|เณร|ว่าที่)/.test(p)) return "ชาย";
+  return "";
+}
 
 /** อายุ ปี/เดือน จากวันเกิด "DD/MM/พ.ศ." */
 function ageParts(dobStr: string): { y: string; m: string } {
@@ -43,19 +57,27 @@ export default function Form506({
   /** ข้อมูลจาก HOSxP (/api/d506-form) — ใช้เติมช่องที่ทะเบียนในชีตไม่มี */
   extra?: D506FormExtra | null;
 }) {
-  const code = or(row.code506, extra?.code506);
+  const code = hos(extra?.code506, row.code506);
   const chk = useChk(code);
-  const sexM = row.sex === "ช";
-  const sexF = row.sex === "ญ";
-  const ptype = or(row.ptype, extra?.ptype).toUpperCase();
-  const status = or(row.status, extra?.status);
+  // เพศ: ใช้ช่องในชีตก่อน → ไม่มีค่อยเดาจากคำนำหน้า → ท้ายสุดใช้ patient.sex ของ HOSxP
+  const sexRaw = (row.sex || "").trim();
+  const sex =
+    /^(ช|ชาย|M|1)$/i.test(sexRaw) ? "ชาย" :
+    /^(ญ|หญิง|F|2)$/i.test(sexRaw) ? "หญิง" :
+    (extra?.sex ?? "") ||
+    sexFromPrefix(row.prefix) ||
+    sexFromPrefix(extra?.prefix ?? "");
+  const sexM = sex === "ชาย";
+  const sexF = sex === "หญิง";
+  const ptype = hos(extra?.ptype, row.ptype).toUpperCase();
+  const status = hos(extra?.status, row.status);
   const outcome = (row.outcome || "").trim();
 
   // ช่องวันที่: ชีตเป็นหลัก ว่างแล้วใช้ HOSxP (ทั้งคู่รูปแบบ DD/MM/ปี)
-  const dobStr = or(row.dob, extra?.dob);
+  const dobStr = hos(extra?.dob, row.dob);
   const dob = parts(dobStr);
-  const ons = parts(or(row.onsetDate, extra?.onsetDate));
-  const rpt = parts(or(row.reportDate, extra?.reportDate));
+  const ons = parts(hos(extra?.onsetDate, row.onsetDate));
+  const rpt = parts(hos(extra?.reportDate, row.reportDate));
   const dth = parts(extra?.deathDate ?? "");
   const age = ageParts(dobStr);
 
@@ -70,11 +92,14 @@ export default function Form506({
 
   const fullName = `${row.prefix || ""}${row.fname || ""} ${row.lname || ""}`.trim();
   const disease = (row.disease || "").trim();
-  const icd10 = or(row.icd10, extra?.icd10);
-  const addr = or(row.addr, [extra?.house, extra?.moo && `หมู่ ${extra.moo}`].filter(Boolean).join(" "));
-  const tambon = or(row.tambon, extra?.tambon);
-  const amphoe = or(row.amphoe, extra?.amphoe);
-  const province = or(row.province, extra?.province);
+  const icd10 = hos(extra?.icd10, row.icd10);
+  const addr = hos(
+    [extra?.house, extra?.moo && `หมู่ ${extra.moo}`].filter(Boolean).join(" "),
+    row.addr,
+  );
+  const tambon = hos(extra?.tambon, row.tambon);
+  const amphoe = hos(extra?.amphoe, row.amphoe);
+  const province = hos(extra?.province, row.province);
 
   const printedOn = new Date().toLocaleDateString("th-TH", {
     year: "numeric",
@@ -227,7 +252,7 @@ export default function Form506({
               </td>
               <td style={cell}>
                 <b>อายุ</b><br />
-                ปี <u>{row.age || age.y || ""}</u> &nbsp; เดือน <u>{age.m || "………"}</u> &nbsp;
+                ปี <u>{age.y || row.age || ""}</u> &nbsp; เดือน <u>{age.m || "………"}</u> &nbsp;
                 วันที่ <u>{dob.d}</u> เดือน <u>{dob.m}</u> ปี <u>{dob.y}</u>
               </td>
               <td style={cell}>

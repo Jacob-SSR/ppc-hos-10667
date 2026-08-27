@@ -17,6 +17,10 @@ export interface D506FormExtra {
   hn: string;
   found: boolean;
   cid: string;
+  /** "ชาย" | "หญิง" | "" (patient.sex: 1 = ชาย, 2 = หญิง) */
+  sex: "" | "ชาย" | "หญิง";
+  /** คำนำหน้าชื่อจากทะเบียน HOSxP — ใช้เดาเพศได้เมื่อชีตไม่ได้กรอก */
+  prefix: string;
   /** "โสด" | "คู่" | "หย่าร้าง" | "หม้าย" | "" (ตามที่จับคำได้จากทะเบียน HOSxP) */
   marital: "" | "โสด" | "คู่" | "หย่าร้าง" | "หม้าย";
   /** true = คนไทย, false = คนต่างชาติ, null = ไม่ทราบ */
@@ -65,8 +69,18 @@ function pick(row: Row | null, ...candidates: string[]): string {
 
 /** ค่าวันที่จาก MySQL → "DD/MM/พ.ศ." ให้ตรงรูปแบบที่ Form506 ใช้ตัด split("/") */
 function toThai(v: unknown): string {
-  if (v == null || s(v) === "" || s(v).startsWith("0000")) return "";
-  const d = v instanceof Date ? v : new Date(s(v).slice(0, 10));
+  const raw = s(v);
+  if (v == null || raw === "" || raw === "NULL" || raw.startsWith("0000")) return "";
+  let d: Date;
+  if (v instanceof Date) {
+    d = v;
+  } else if (/^\d{1,2}\/\d{1,2}\/\d{4}$/.test(raw)) {
+    // บาง driver/บาง export คืนมาเป็น DD/MM/YYYY (และอาจเป็น พ.ศ.)
+    const [dd, mm, yy] = raw.split("/").map(Number);
+    d = new Date(yy > 2500 ? yy - 543 : yy, mm - 1, dd);
+  } else {
+    d = new Date(raw.slice(0, 10));
+  }
   if (Number.isNaN(d.getTime())) return "";
   return [
     String(d.getDate()).padStart(2, "0"),
@@ -116,10 +130,21 @@ function toMarital(name: string, code: string): D506FormExtra["marital"] {
   return "";
 }
 
+/** surveil_member.department เก็บได้ทั้ง "OPD"/"IPD"/"ผู้ป่วยนอก"/รหัสแผนก
+ *  → ตัดสินจากคำก่อน ถ้าไม่ชัดค่อยดูว่ามี AN (นอน รพ.) หรือมีแค่ VN */
+function toPtype(dept: string, an: string, vn: string): string {
+  const t = dept.toLowerCase();
+  if (/opd|นอก/.test(t)) return "OPD";
+  if (/ipd|ใน|admit/.test(t)) return "IPD";
+  if (an) return "IPD";
+  if (vn) return "OPD";
+  return dept.toUpperCase();
+}
+
 // ─── query ──────────────────────────────────────────────────────────────────
 async function fetchFormExtra(hn: string, reportDate: string): Promise<D506FormExtra> {
   const empty: D506FormExtra = {
-    hn, found: false, cid: "", marital: "", thai: null, nationalityName: "",
+    hn, found: false, cid: "", sex: "", prefix: "", marital: "", thai: null, nationalityName: "",
     occupation: "", municipality: "", phone: "", dob: "", house: "", moo: "",
     tambon: "", amphoe: "", province: "", onsetDate: "", dxDate: "",
     reportDate: "", deathDate: "", ptype: "", code506: "", icd10: "",
@@ -176,13 +201,16 @@ async function fetchFormExtra(hn: string, reportDate: string): Promise<D506FormE
   let tambon = "", amphoe = "", province = "";
   if (chw) {
     try {
+      // thaiaddress เก็บรหัสแบบ 2 หลักเสมอ ('05') แต่ patient/surveil_member
+      // บางเรคคอร์ดเก็บ '5' → ต้อง LPAD ทั้งสองฝั่งไม่งั้น join ไม่ติด (ตำบลว่าง)
+      const pad2 = (v: string) => v.padStart(2, "0");
       const [rows] = await db.query<RowDataPacket[]>(
         `SELECT
-           MAX(IF(amppart = '00' AND tmbpart = '00', name, NULL)) AS province,
-           MAX(IF(amppart = ?    AND tmbpart = '00', name, NULL)) AS amphoe,
-           MAX(IF(amppart = ?    AND tmbpart = ?,    name, NULL)) AS tambon
-         FROM thaiaddress WHERE chwpart = ?`,
-        [amp || "00", amp || "00", tmb || "00", chw],
+           MAX(IF(LPAD(amppart,2,'0') = '00' AND LPAD(tmbpart,2,'0') = '00', name, NULL)) AS province,
+           MAX(IF(LPAD(amppart,2,'0') = ?    AND LPAD(tmbpart,2,'0') = '00', name, NULL)) AS amphoe,
+           MAX(IF(LPAD(amppart,2,'0') = ?    AND LPAD(tmbpart,2,'0') = ?,    name, NULL)) AS tambon
+         FROM thaiaddress WHERE LPAD(chwpart,2,'0') = ?`,
+        [pad2(amp || "00"), pad2(amp || "00"), pad2(tmb || "00"), pad2(chw)],
       );
       province = s(rows[0]?.province);
       amphoe = s(rows[0]?.amphoe);
@@ -215,14 +243,16 @@ async function fetchFormExtra(hn: string, reportDate: string): Promise<D506FormE
   const municipality: D506FormExtra["municipality"] =
     muniRaw === "1" || muniRaw === "Y" ? "1" : muniRaw === "2" || muniRaw === "N" ? "2" : "";
 
+  // ตาราง patient ของ HOSxP ใช้คอลัมน์ "deathday" (ไม่ใช่ death_date)
   const deathRaw =
-    pick(sv, "death_date") || pick(pt, "death_date") ||
-    (pick(pt, "death") === "Y" ? pick(pt, "death_date") : "");
+    pick(sv, "death_date", "deathday") || pick(pt, "deathday", "death_date");
 
   return {
     hn,
     found: true,
     cid: pick(pt, "cid", "citizenship_id"),
+    sex: pick(pt, "sex") === "1" ? "ชาย" : pick(pt, "sex") === "2" ? "หญิง" : "",
+    prefix: pick(pt, "pname", "prename"),
     marital: toMarital(marryName, marryCode),
     thai,
     nationalityName: natName || natCode,
@@ -239,7 +269,7 @@ async function fetchFormExtra(hn: string, reportDate: string): Promise<D506FormE
     dxDate: toThai(pick(sv, "diagnosis_date")),
     reportDate: toThai(pick(sv, "report_date")),
     deathDate: toThai(deathRaw),
-    ptype: pick(sv, "department").toUpperCase(),
+    ptype: toPtype(pick(sv, "department", "ptype"), pick(sv, "an"), pick(sv, "vn")),
     code506: pick(sv, "code506"),
     icd10: pick(sv, "pdx", "icd10"),
     status: pick(sv, "status_name"),

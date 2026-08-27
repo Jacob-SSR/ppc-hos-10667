@@ -57,44 +57,34 @@ export interface D506Payload {
   sheetName: string;
   rowCount: number;
   rows: D506Row[];
+  /** หัวคอลัมน์ที่อ่านได้ + คอลัมน์ที่จับคู่ได้ (ไว้ตรวจเวลาชีตสลับคอลัมน์) */
+  header: string[];
+  columns: Record<string, number>;
 }
 
 // ─── ตรวจจับคอลัมน์จาก header ─────────────────────────────────────────────────
-// ชีตจริงสลับลำดับคอลัมน์ได้ (เช่น ชนิดแลป มาก่อน/หลัง ผล Lab) → ตรวจจากชื่อหัวคอลัมน์
-// พอร์ตตรรกะมาจาก autoDetectColumns() ใน D506_Dashboard.html
-interface ColMap {
-  seq: number;
-  date: number;
-  hn: number;
-  pid: number;
-  prefix: number;
-  fname: number;
-  lname: number;
-  sex: number;
-  dob: number;
-  age: number;
-  addr: number;
-  tambon: number;
-  amphoe: number;
-  province: number;
-  onsetDate: number;
-  disease: number;
-  code506: number;
-  icd10: number;
-  ptype: number;
-  labType: number;
-  lab: number;
-  labSendDate: number;
-  labResultDate: number;
-  organism: number;
-  status: number;
-  dischargeDate: number;
-  outcome: number;
-  d506Date: number;
-  remark: number;
-  death: number;
-}
+// ชีตจริงสลับ/เพิ่ม/ลดคอลัมน์ได้ และหัวตารางมักเป็น 2 บรรทัด (merge cell) →
+// ห้ามพึ่งลำดับคอลัมน์ ต้องอ่านจากชื่อหัวคอลัมน์เท่านั้น
+// (ของเดิมใช้ regex แบบ ^ตำบล$ ซึ่งพลาดง่าย แล้ว fallback ไปใช้ลำดับ default
+//  ผลคือช่อง "บ้านเลขที่" ได้วันเกิดมาแสดง / "จังหวัด" ได้ชื่ออำเภอ ฯลฯ)
+type ColKey =
+  | "seq" | "date" | "hn" | "pid" | "prefix" | "fname" | "lname" | "sex"
+  | "dob" | "age" | "addr" | "tambon" | "amphoe" | "province" | "onsetDate"
+  | "disease" | "code506" | "icd10" | "ptype" | "labType" | "lab"
+  | "labSendDate" | "labResultDate" | "organism" | "status" | "dischargeDate"
+  | "outcome" | "d506Date" | "remark" | "death";
 
+type ColMap = Record<ColKey, number>;
+
+const COL_KEYS: ColKey[] = [
+  "seq", "date", "hn", "pid", "prefix", "fname", "lname", "sex", "dob", "age",
+  "addr", "tambon", "amphoe", "province", "onsetDate", "disease", "code506",
+  "icd10", "ptype", "labType", "lab", "labSendDate", "labResultDate",
+  "organism", "status", "dischargeDate", "outcome", "d506Date", "remark",
+  "death",
+];
+
+/** ลำดับคอลัมน์ตามฟอร์มทะเบียนมาตรฐาน — ใช้เฉพาะกรณีหา header ไม่เจอเลย */
 function defaultCol(): ColMap {
   return {
     seq: 0, date: 1, hn: 2, pid: 3, prefix: 4, fname: 5, lname: 6, sex: 7,
@@ -106,58 +96,74 @@ function defaultCol(): ColMap {
   };
 }
 
-function detectColumns(header: string[]): ColMap {
-  const col = defaultCol();
-  const norm = (raw: string) =>
-    raw.replace(/\n/g, " ").replace(/\s+/g, " ").trim();
+function emptyCol(): ColMap {
+  return Object.fromEntries(COL_KEYS.map((k) => [k, -1])) as ColMap;
+}
 
-  header.forEach((raw, idx) => {
-    const c = norm(raw);
-    if (!c) return;
-    if (/ชนิด\s*lab|ชนิดแลป/i.test(c)) return void (col.labType = idx);
-    if (/ชนิดเชื้อ|ผลเพาะ/i.test(c)) return void (col.organism = idx);
-    if (/^HN$/i.test(c)) return void (col.hn = idx);
-    if (/เลขบัตร|บัตรประชาชน/i.test(c)) return void (col.pid = idx);
-    if (/คำนำหน้า/i.test(c)) return void (col.prefix = idx);
-    if (/^ชื่อ$/.test(c)) return void (col.fname = idx);
-    if (/^สกุล$/.test(c)) return void (col.lname = idx);
-    if (/^เพศ$/.test(c)) return void (col.sex = idx);
-    if (/เกิด/i.test(c)) return void (col.dob = idx);
-    if (/อายุ/i.test(c)) return void (col.age = idx);
-    if (/บ้านเลขที่|ที่อยู่/i.test(c)) return void (col.addr = idx);
-    if (/^ตำบล$/.test(c)) return void (col.tambon = idx);
-    if (/^อำเภอ$/.test(c)) return void (col.amphoe = idx);
-    if (/^จังหวัด$/.test(c)) return void (col.province = idx);
-    if (/โรค.*วินิจฉัย|วินิจฉัย.*โรค/i.test(c)) return void (col.disease = idx);
-    if (/รหัส.*506/i.test(c) && !/ICD/i.test(c)) return void (col.code506 = idx);
-    if (/ICD/i.test(c)) return void (col.icd10 = idx);
-    if (/ประเภท.*ผู้ป่วย/i.test(c)) return void (col.ptype = idx);
-    if (/สถานะ.*ผู้ป่วย/i.test(c)) return void (col.status = idx);
-    if (/จำหน่าย/i.test(c) && /วันที่/i.test(c))
-      return void (col.dischargeDate = idx);
-    if (/ผล.*การรักษา|การรักษา/i.test(c)) return void (col.outcome = idx);
-    if (/D506/i.test(c) && /ส่ง|วันที่/i.test(c))
-      return void (col.d506Date = idx);
-    if (/หมายเหตุ/i.test(c)) return void (col.remark = idx);
-    if (/เสียชีวิต/i.test(c)) return void (col.death = idx);
-    // วันที่ได้ผล Lab ต้องตรวจก่อน "ผล Lab" ไม่งั้น regex ผล Lab จับผิด
-    if (/วันที่.*ได้ผล|ได้ผล.*lab/i.test(c))
-      return void (col.labResultDate = idx);
-    if (/ส่งตัวอย่าง|ส่ง.*ตัวอย่าง/i.test(c))
-      return void (col.labSendDate = idx);
-    if (/^ผล.*lab/i.test(c) && !/วันที่/i.test(c) && !/ชนิด/i.test(c))
-      return void (col.lab = idx);
-    if (/ลำดับ/i.test(c)) return void (col.seq = idx);
-  });
+/** เลข ๐-๙ (ชีตบางคอลัมน์ format เป็นเลขไทย) → 0-9 ไม่งั้น parse วันที่/ลำดับไม่ได้ */
+export function thaiDigits(v: string): string {
+  return v.replace(/[๐-๙]/g, (d) => String("๐๑๒๓๔๕๖๗๘๙".indexOf(d)));
+}
 
-  // วันที่รับรายงาน / วันที่เริ่มป่วย — จับแยกรอบเพราะลำดับเงื่อนไขสำคัญ
-  header.forEach((raw, idx) => {
-    const c = norm(raw);
-    if (/วันที่.*รับรายงาน|รับรายงาน/i.test(c)) col.date = idx;
-    else if (/วันที่.*เริ่มป่วย|เริ่มป่วย/i.test(c)) col.onsetDate = idx;
-  });
+const normHeader = (raw: string) =>
+  thaiDigits(String(raw ?? ""))
+    .replace(/[\n\r]/g, " ")
+    .replace(/\s+/g, "")
+    .toLowerCase();
 
-  return col;
+/** กติกาจับคอลัมน์ — เรียงจาก "เฉพาะเจาะจงที่สุด" ลงมา อันแรกที่เข้าเงื่อนไขชนะ
+ *  not = คำที่ถ้าเจอแล้วห้ามจับ (กันคอลัมน์ที่ชื่อคล้ายกันแย่งกัน) */
+const RULES: { key: ColKey; re: RegExp; not?: RegExp }[] = [
+  { key: "labResultDate", re: /(วันที่.*ได้ผล|ได้ผล.*(lab|แลป))/ },
+  { key: "labSendDate", re: /ส่ง.*ตัวอย่าง|ตัวอย่าง.*ส่ง/ },
+  { key: "labType", re: /ชนิด.*(lab|แลป)/ },
+  { key: "organism", re: /ชนิดเชื้อ|ผลเพาะ|เพาะเลี้ยง/ },
+  { key: "lab", re: /ผล.*(lab|แลป)/, not: /วันที่|ชนิด/ },
+  { key: "d506Date", re: /d506/, not: /^รหัส/ },
+  { key: "date", re: /รับรายงาน/ },
+  { key: "onsetDate", re: /เริ่มป่วย/ },
+  { key: "dischargeDate", re: /จำหน่าย/ },
+  { key: "dob", re: /เกิด/ },
+  { key: "age", re: /อายุ/ },
+  { key: "seq", re: /ลำดับ|^#$|^ที่$/ },
+  { key: "hn", re: /\bhn\b|^hn/ },
+  { key: "pid", re: /บัตรประชาชน|เลขบัตร|ประชาชน|\bcid\b/ },
+  { key: "prefix", re: /คำนำหน้า/ },
+  { key: "lname", re: /สกุล/ },
+  { key: "sex", re: /เพศ/ },
+  { key: "addr", re: /บ้านเลขที่|ที่อยู่|เลขที่.*หมู่|^หมู่/ },
+  { key: "tambon", re: /ตำบล/ },
+  { key: "amphoe", re: /อำเภอ/ },
+  { key: "province", re: /จังหวัด/ },
+  { key: "code506", re: /506/, not: /icd|d506|วันที่/ },
+  { key: "icd10", re: /icd/ },
+  { key: "disease", re: /โรค/, not: /รหัส|icd|506/ },
+  { key: "ptype", re: /ประเภท/ },
+  { key: "status", re: /สถานะ/ },
+  { key: "outcome", re: /ผลการรักษา|การรักษา/ },
+  { key: "remark", re: /หมายเหตุ/ },
+  { key: "death", re: /เสียชีวิต|ตาย/ },
+  // "ชื่อ" กว้างสุด — ไว้ท้ายสุดกันไปแย่ง "ชื่อโรค" / "ชื่อผู้รายงาน"
+  { key: "fname", re: /ชื่อ/, not: /โรค|ผู้รายงาน|สกุล|คำนำหน้า|เชื้อ/ },
+];
+
+function detectColumns(header: string[]): { col: ColMap; hits: number } {
+  const col = emptyCol();
+  const used = new Set<number>();
+  const cells = header.map(normHeader);
+
+  for (const rule of RULES) {
+    if (col[rule.key] >= 0) continue;
+    const idx = cells.findIndex(
+      (c, i) =>
+        c !== "" && !used.has(i) && rule.re.test(c) && !(rule.not?.test(c) ?? false),
+    );
+    if (idx >= 0) {
+      col[rule.key] = idx;
+      used.add(idx);
+    }
+  }
+  return { col, hits: used.size };
 }
 
 // ─── โหลด + normalize ─────────────────────────────────────────────────────────
@@ -182,12 +188,25 @@ async function fetchD506(): Promise<D506Payload> {
   );
   if (headerIdx === -1) headerIdx = 0;
 
-  const col = detectColumns(raw[headerIdx] ?? []);
-  const at = (r: string[], i: number) => toStr(i >= 0 ? r[i] : "");
+  // หัวตารางมักถูก merge เป็น 2 บรรทัด (เช่น "ที่อยู่ขณะเริ่มป่วย" คร่อม
+  // ตำบล/อำเภอ/จังหวัด ที่อยู่บรรทัดล่าง) → รวมข้อความ 2 แถวเป็นหัวเดียวก่อนตรวจ
+  const width = Math.max(...raw.slice(headerIdx, headerIdx + 3).map((r) => r.length), 0);
+  const header = Array.from({ length: width }, (_, i) =>
+    [raw[headerIdx]?.[i], raw[headerIdx + 1]?.[i]]
+      .map((c) => toStr(c))
+      .filter(Boolean)
+      .join(" "),
+  );
+
+  // จับหัวคอลัมน์ได้น้อยเกินไป = แถวนั้นไม่ใช่หัวตารางจริง → ค่อยใช้ลำดับมาตรฐาน
+  const detected = detectColumns(header);
+  const col = detected.hits >= 6 ? detected.col : defaultCol();
+
+  const at = (r: string[], i: number) => thaiDigits(toStr(i >= 0 ? r[i] : ""));
 
   const rows: D506Row[] = raw
     .slice(headerIdx + 1)
-    .filter((r) => /^\d+$/.test(toStr(r[col.seq])))
+    .filter((r) => /^\d+$/.test(thaiDigits(toStr(r[col.seq]))))
     .map((r) => ({
       seq: at(r, col.seq),
       reportDate: at(r, col.date),
@@ -227,6 +246,8 @@ async function fetchD506(): Promise<D506Payload> {
     sheetName,
     rowCount: rows.length,
     rows,
+    header,
+    columns: col as unknown as Record<string, number>,
   };
 }
 

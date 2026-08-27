@@ -1,0 +1,1130 @@
+From 3104433e4704ced102c70de2b53d0e5616596eb9 Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Thu, 27 Aug 2026 06:30:16 +0000
+Subject: [PATCH] =?UTF-8?q?fix(d506-dashboard):=20=E0=B9=81=E0=B8=81?=
+ =?UTF-8?q?=E0=B9=89=E0=B8=95=E0=B8=B1=E0=B8=A7=E0=B8=81=E0=B8=A3=E0=B8=AD?=
+ =?UTF-8?q?=E0=B8=87=E0=B8=A7=E0=B8=B1=E0=B8=99=E0=B8=97=E0=B8=B5=E0=B9=88?=
+ =?UTF-8?q?/=E0=B8=81=E0=B8=B2=E0=B8=A3=E0=B9=80=E0=B8=A3=E0=B8=B5?=
+ =?UTF-8?q?=E0=B8=A2=E0=B8=87/=E0=B8=81=E0=B8=B2=E0=B8=A3=E0=B8=9E?=
+ =?UTF-8?q?=E0=B8=B4=E0=B8=A1=E0=B8=9E=E0=B9=8C=20+=20auto-fill=20?=
+ =?UTF-8?q?=E0=B9=81=E0=B8=9A=E0=B8=9A=20=E0=B8=A3=E0=B8=87.506=20?=
+ =?UTF-8?q?=E0=B8=88=E0=B8=B2=E0=B8=81=20HOSxP?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+รวม 5 การแก้ไขของหน้า d506-dashboard ไว้ใน commit เดียว
+
+1. ตัวกรองวันที่ตัดแถวของ "วันเริ่มช่วง" ทิ้ง
+   new Date("YYYY-MM-DD") ถูกตีเป็น UTC เที่ยงคืน แต่วันที่ในชีต parse เป็น
+   เวลาท้องถิ่น เขต +07:00 จึงเลื่อนไปก่อน start 7 ชม. เลือก 24–25 ส.ค. แล้วได้
+   0 ราย ทั้งที่มี 19 ราย ลงวันที่ 24/8 → เพิ่ม parseInputDate() ให้ฐานเวลาตรงกัน
+   และกราฟรายสัปดาห์เลิกใช้ toISOString() ทำ key (เลื่อนวันด้วยเหตุเดียวกัน)
+
+2. /api/d506-sheets รองรับ ?refresh=1 (invalidate cache) และปุ่มรีโหลดเรียกแบบ
+   force — เดิม cache 5 นาที + stale grace ทำให้เพิ่งกรอกชีตแล้วยังเห็นของเก่า
+
+3. ตารางเริ่มเรียงจากคนล่าสุด (sortDir -1) ไม่ต้องกดหัวคอลัมน์เอง และ Excel ที่
+   export ใช้ "ลำดับที่" จากทะเบียนจริง (r.seq) ไม่ใช่ลำดับแถวบนหน้า
+
+4. พิมพ์แบบ รง.506 แล้วได้กระดาษเปล่า
+   print CSS เดิมใช้ body * { visibility:hidden } + position:static ทำให้ modal
+   ไหลกลับเข้า <main> ที่ overflow-auto ใน h-screen แล้วอยู่ท้ายเนื้อหาที่สูงมาก
+   จึงหลุดนอกพื้นที่พิมพ์ → ย้าย modal ไป createPortal(document.body) และใช้
+   body > *:not(.print-modal) { display:none } แทน + @page A4 portrait 8mm
+
+5. auto-fill แบบ รง.506 จาก HOSxP (/api/d506-form?hn=&reportDate=)
+   - lib/d506Form.service.ts: patient + surveil_member + report506status +
+     thaiaddress + lookup marrystatus/nationality/occupation (cache 1 ชม.)
+     ใช้ SELECT * แล้วเลือกคอลัมน์ฝั่ง TS เพราะ HOSxP แต่ละเวอร์ชันคอลัมน์ไม่เท่ากัน
+   - ติ๊กให้เอง: เพศ (จากคำนำหน้า พระ/ด.ช./นาย = ชาย, ด.ญ./นาง/นางสาว = หญิง
+     หรือ patient.sex 1/2), ภาวะสมรส, สัญชาติ (nationality 99 = ไทย),
+     ในเขตเทศบาล/อบต., รพ.ชุมชน, ประเภทผู้ป่วย, สภาพผู้ป่วย
+   - กรอกให้เอง: อาชีพ อายุปี-เดือน วันที่ตาย ชื่อผู้รายงาน ที่อยู่ ตำบล อำเภอ จังหวัด
+   - LPAD รหัส chwpart/amppart/tmbpart ทั้งสองฝั่ง (patient เก็บ '5' แต่
+     thaiaddress เก็บ '05' ของเดิม join ไม่ติด ตำบลจึงว่าง)
+   - วันตายใช้ patient.deathday, ประเภทผู้ป่วย normalize จาก department/AN/VN
+
+6. อ่านคอลัมน์ชีตจากชื่อหัวตารางจริง
+   regex เดิมแบบ ^ตำบล$ ไม่ตรงหัวตาราง (หัว 2 บรรทัด merge cell + ชีตไม่มี
+   คอลัมน์บ้านเลขที่) พอจับไม่ได้ก็ fallback ไปใช้ลำดับมาตรฐานทั้งชุด ค่าจึงเลื่อน
+   ทั้งแถว (บ้านเลขที่ได้วันเกิด จังหวัดได้ชื่ออำเภอ) → รวมหัว 2 แถวก่อนตรวจ,
+   ใช้ชุดกติกาเรียงจากเฉพาะเจาะจง→กว้าง จองคอลัมน์ครั้งเดียว, คอลัมน์ที่หาไม่เจอ
+   ปล่อยว่างแทนการเดา, แปลงเลขไทย ๐-๙ → 0-9 และแนบ header/columns มากับ payload
+---
+ app/api/d506-form/route.ts           |  33 ++++
+ app/api/d506-sheets/route.ts         |  16 +-
+ app/pages/d506-dashboard/Form506.tsx | 136 ++++++++++---
+ app/pages/d506-dashboard/page.tsx    | 129 +++++++++---
+ lib/d506Form.service.ts              | 282 +++++++++++++++++++++++++++
+ lib/d506Sheets.service.ts            | 210 +++++++++++---------
+ 6 files changed, 657 insertions(+), 149 deletions(-)
+ create mode 100644 app/api/d506-form/route.ts
+ create mode 100644 lib/d506Form.service.ts
+
+diff --git a/app/api/d506-form/route.ts b/app/api/d506-form/route.ts
+new file mode 100644
+index 0000000..8181e9f
+--- /dev/null
++++ b/app/api/d506-form/route.ts
+@@ -0,0 +1,33 @@
++// app/api/d506-form/route.ts
++// ข้อมูลเสริมจาก HOSxP สำหรับเติม "บัตรรายงานผู้ป่วย แบบ รง.506" อัตโนมัติ
++// (ทะเบียนในชีตไม่มีช่องภาวะสมรส/สัญชาติ/อาชีพ/วันตาย ฯลฯ → ดึงจาก HOSxP มาติ๊กให้)
++import { NextRequest, NextResponse } from "next/server";
++import { getD506FormExtra } from "@/lib/d506Form.service";
++
++/** "24/8/2026" หรือ "24/8/2569" หรือ "2026-08-24" → "2026-08-24" */
++function normalizeDate(raw: string): string {
++  const v = (raw || "").trim();
++  if (!v) return "";
++  if (/^\d{4}-\d{2}-\d{2}$/.test(v)) return v;
++  const [d, m, y] = v.split("/").map(Number);
++  if (!d || !m || !y) return "";
++  const year = y > 2500 ? y - 543 : y;
++  return `${year}-${String(m).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
++}
++
++export async function GET(req: NextRequest) {
++  try {
++    const { searchParams } = new URL(req.url);
++    // HN เป็น parameter เดียวที่ลงไปถึง SQL — บังคับรูปแบบก่อน (ใช้ prepared stmt อยู่แล้ว)
++    const hn = (searchParams.get("hn") ?? "").trim();
++    if (!hn || !/^[A-Za-z0-9-]{1,20}$/.test(hn)) {
++      return NextResponse.json({ error: "Invalid or missing hn" }, { status: 400 });
++    }
++    const reportDate = normalizeDate(searchParams.get("reportDate") ?? "");
++
++    return NextResponse.json(await getD506FormExtra(hn, reportDate));
++  } catch (error) {
++    console.error("D506Form API error:", error);
++    return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
++  }
++}
+diff --git a/app/api/d506-sheets/route.ts b/app/api/d506-sheets/route.ts
+index 20d9214..4165903 100644
+--- a/app/api/d506-sheets/route.ts
++++ b/app/api/d506-sheets/route.ts
+@@ -1,13 +1,23 @@
+ // app/api/d506-sheets/route.ts
+ // ทะเบียนคุมผู้ป่วยโรค 506 จาก Google Sheet → หน้า /pages/d506-dashboard
+-import { NextResponse } from "next/server";
++import { NextRequest, NextResponse } from "next/server";
+ import { sheetsError } from "@/lib/sheets";
+-import { getD506SheetsCached, type D506Row } from "@/lib/d506Sheets.service";
++import {
++  getD506SheetsCached,
++  invalidateD506Sheets,
++  type D506Row,
++} from "@/lib/d506Sheets.service";
+ 
+ export type { D506Row };
+ 
+-export async function GET() {
++export async function GET(req: NextRequest) {
+   try {
++    // ?refresh=1 → ล้าง cache แล้วอ่าน Sheet ใหม่ (ปุ่มรีโหลดในหน้า dashboard)
++    // ไม่งั้นเจ้าหน้าที่เพิ่งกรอกทะเบียนเสร็จ จะยังเห็นของเก่าได้ถึง 5–20 นาที
++    if (req.nextUrl.searchParams.get("refresh") === "1") {
++      await invalidateD506Sheets();
++    }
++
+     const payload = await getD506SheetsCached();
+     return NextResponse.json(payload);
+   } catch (err) {
+diff --git a/app/pages/d506-dashboard/Form506.tsx b/app/pages/d506-dashboard/Form506.tsx
+index e4b9ab0..031b604 100644
+--- a/app/pages/d506-dashboard/Form506.tsx
++++ b/app/pages/d506-dashboard/Form506.tsx
+@@ -3,6 +3,7 @@
+ "use client";
+ 
+ import type { D506Row } from "@/lib/d506Sheets.service";
++import type { D506FormExtra } from "@/lib/d506Form.service";
+ 
+ // checkbox: ☑ ถ้า code506 ตรงกับรหัสของโรคนั้น
+ function useChk(code: string) {
+@@ -15,20 +16,90 @@ const parts = (s: string) => {
+   return { d, m, y };
+ };
+ 
+-export default function Form506({ row }: { row: D506Row }) {
+-  const code = String(row.code506 || "").trim();
++/** ช่องที่ HOSxP เป็นเจ้าของข้อมูล (ที่อยู่ วันเกิด รหัสโรค ฯลฯ) — เอา HOSxP ก่อน
++ *  เพราะทะเบียนในชีตกรอกมือ สลับคอลัมน์/พิมพ์ตกได้ ส่วนชีตเป็นตัวสำรอง */
++const hos = (hosxp: string | undefined, sheet: string | undefined) =>
++  (hosxp || "").trim() || (sheet || "").trim();
++
++/** เดาเพศจากคำนำหน้าชื่อ — ทะเบียนบางแถวเว้นช่องเพศไว้ แต่คำนำหน้าบอกอยู่แล้ว
++ *  ลำดับสำคัญ: "นางสาว"/"น.ส." ต้องตรวจก่อน "นาง" ไม่งั้นจับเป็นหญิงมีสามีหมด
++ *  (ทั้งคู่เป็นหญิงเหมือนกัน แต่ยังจับก่อนไว้กันพลาดตอนเพิ่มเงื่อนไขทีหลัง) */
++function sexFromPrefix(prefix: string): "" | "ชาย" | "หญิง" {
++  const p = (prefix || "").replace(/[.\s]/g, "");
++  if (!p) return "";
++  // หญิง
++  if (/^(นางสาว|นส|ดญ|เด็กหญิง|นาง|แม่ชี|ชี)/.test(p)) return "หญิง";
++  // ชาย (พระ/สามเณร นับเป็นชายตามแบบ รง.506)
++  if (/^(นาย|ดช|เด็กชาย|พระ|พระภิกษุ|ภิกษุ|สามเณร|เณร|ว่าที่)/.test(p)) return "ชาย";
++  return "";
++}
++
++/** อายุ ปี/เดือน จากวันเกิด "DD/MM/พ.ศ." */
++function ageParts(dobStr: string): { y: string; m: string } {
++  const { d, m, y } = parts(dobStr);
++  const yy = Number(y), mm = Number(m), dd = Number(d);
++  if (!yy || !mm || !dd) return { y: "", m: "" };
++  const born = new Date(yy > 2500 ? yy - 543 : yy, mm - 1, dd);
++  if (Number.isNaN(born.getTime())) return { y: "", m: "" };
++  const now = new Date();
++  let months =
++    (now.getFullYear() - born.getFullYear()) * 12 + (now.getMonth() - born.getMonth());
++  if (now.getDate() < born.getDate()) months--;
++  if (months < 0) return { y: "", m: "" };
++  return { y: String(Math.floor(months / 12)), m: String(months % 12) };
++}
++
++export default function Form506({
++  row,
++  extra,
++}: {
++  row: D506Row;
++  /** ข้อมูลจาก HOSxP (/api/d506-form) — ใช้เติมช่องที่ทะเบียนในชีตไม่มี */
++  extra?: D506FormExtra | null;
++}) {
++  const code = hos(extra?.code506, row.code506);
+   const chk = useChk(code);
+-  const sexM = row.sex === "ช";
+-  const sexF = row.sex === "ญ";
+-  const ptype = (row.ptype || "").trim().toUpperCase();
+-  const status = (row.status || "").trim();
++  // เพศ: ใช้ช่องในชีตก่อน → ไม่มีค่อยเดาจากคำนำหน้า → ท้ายสุดใช้ patient.sex ของ HOSxP
++  const sexRaw = (row.sex || "").trim();
++  const sex =
++    /^(ช|ชาย|M|1)$/i.test(sexRaw) ? "ชาย" :
++    /^(ญ|หญิง|F|2)$/i.test(sexRaw) ? "หญิง" :
++    (extra?.sex ?? "") ||
++    sexFromPrefix(row.prefix) ||
++    sexFromPrefix(extra?.prefix ?? "");
++  const sexM = sex === "ชาย";
++  const sexF = sex === "หญิง";
++  const ptype = hos(extra?.ptype, row.ptype).toUpperCase();
++  const status = hos(extra?.status, row.status);
+   const outcome = (row.outcome || "").trim();
+ 
+-  const dob = parts(row.dob);
+-  const ons = parts(row.onsetDate);
+-  const rpt = parts(row.reportDate);
++  // ช่องวันที่: ชีตเป็นหลัก ว่างแล้วใช้ HOSxP (ทั้งคู่รูปแบบ DD/MM/ปี)
++  const dobStr = hos(extra?.dob, row.dob);
++  const dob = parts(dobStr);
++  const ons = parts(hos(extra?.onsetDate, row.onsetDate));
++  const rpt = parts(hos(extra?.reportDate, row.reportDate));
++  const dth = parts(extra?.deathDate ?? "");
++  const age = ageParts(dobStr);
++
++  // ภาวะสมรส / สัญชาติ / เขตปกครอง — มีแต่ใน HOSxP
++  const marital = extra?.marital ?? "";
++  const mChk = (v: string) => (marital && marital === v ? "☑" : "☐");
++  const thai = extra?.thai ?? null;
++  const muni = extra?.municipality ?? "";
++  const dead =
++    status.includes("เสียชีวิต") || status.includes("ตาย") ||
++    row.death === "ใช่" || Boolean(extra?.deathDate);
+ 
+   const fullName = `${row.prefix || ""}${row.fname || ""} ${row.lname || ""}`.trim();
++  const disease = (row.disease || "").trim();
++  const icd10 = hos(extra?.icd10, row.icd10);
++  const addr = hos(
++    [extra?.house, extra?.moo && `หมู่ ${extra.moo}`].filter(Boolean).join(" "),
++    row.addr,
++  );
++  const tambon = hos(extra?.tambon, row.tambon);
++  const amphoe = hos(extra?.amphoe, row.amphoe);
++  const province = hos(extra?.province, row.province);
+ 
+   const printedOn = new Date().toLocaleDateString("th-TH", {
+     year: "numeric",
+@@ -147,10 +218,10 @@ export default function Form506({ row }: { row: D506Row }) {
+             □ โรคอื่น ๆ (ระบุ)……………………<br />
+             <br />
+             <div style={{ fontSize: 11, marginTop: 4 }}>
+-              <b>โรคที่วินิจฉัย:</b> <u>{row.disease || ""}</u>
++              <b>โรคที่วินิจฉัย:</b> <u>{disease}</u>
+             </div>
+             <div style={{ fontSize: 11 }}>
+-              <b>รหัส 506:</b> <u>{code || ""}</u> &nbsp; <b>ICD-10:</b> <u>{row.icd10 || ""}</u>
++              <b>รหัส 506:</b> <u>{code}</u> &nbsp; <b>ICD-10:</b> <u>{icd10}</u>
+             </div>
+           </div>
+         </div>
+@@ -181,23 +252,26 @@ export default function Form506({ row }: { row: D506Row }) {
+               </td>
+               <td style={cell}>
+                 <b>อายุ</b><br />
+-                ปี <u>{row.age || ""}</u> &nbsp; เดือน ……… &nbsp;
++                ปี <u>{age.y || row.age || ""}</u> &nbsp; เดือน <u>{age.m || "………"}</u> &nbsp;
+                 วันที่ <u>{dob.d}</u> เดือน <u>{dob.m}</u> ปี <u>{dob.y}</u>
+               </td>
+               <td style={cell}>
+                 <b>ภาวะสมรส</b><br />
+-                □&nbsp;1 โสด &nbsp; □&nbsp;2 คู่<br />
+-                □&nbsp;3 หย่าร้าง &nbsp; □&nbsp;4 หม้าย
++                {mChk("โสด")}&nbsp;1 โสด &nbsp; {mChk("คู่")}&nbsp;2 คู่<br />
++                {mChk("หย่าร้าง")}&nbsp;3 หย่าร้าง &nbsp; {mChk("หม้าย")}&nbsp;4 หม้าย
+               </td>
+               <td style={cell}>
+                 <b>สัญชาติ</b><br />
+-                □ คนไทย<br />
+-                □ คนต่างชาติ ประเภท □1 □2
+-                <div style={{ fontSize: 10 }}>ระบุสัญชาติ…………………</div>
++                {thai === true ? "☑" : "☐"} คนไทย<br />
++                {thai === false ? "☑" : "☐"} คนต่างชาติ ประเภท □1 □2
++                <div style={{ fontSize: 10 }}>
++                  ระบุสัญชาติ{" "}
++                  <u>{thai === false ? extra?.nationalityName || "…………………" : "…………………"}</u>
++                </div>
+               </td>
+               <td style={cell}>
+                 <b>งานที่ทำ</b><br />
+-                <u style={{ display: "block", minHeight: 30 }} />
++                <u style={{ display: "block", minHeight: 30 }}>{extra?.occupation || ""}</u>
+                 (□□)
+               </td>
+             </tr>
+@@ -207,14 +281,17 @@ export default function Form506({ row }: { row: D506Row }) {
+         <div style={{ marginBottom: 3 }}><b>ที่อยู่ขณะเริ่มป่วย</b></div>
+         <div style={{ display: "flex", gap: 6, marginBottom: 3, fontSize: 12 }}>
+           <span>บ้านเลขที่/หมู่</span>
+-          <span style={{ ...line, flex: 1, padding: "0 4px" }}>{row.addr || ""}</span>
++          <span style={{ ...line, flex: 1, padding: "0 4px" }}>{addr}</span>
+           <span>ตำบล</span>
+-          <span style={{ ...line, flex: 1, padding: "0 4px" }}>{row.tambon || ""}</span>
++          <span style={{ ...line, flex: 1, padding: "0 4px" }}>{tambon}</span>
+           <span>อำเภอ</span>
+-          <span style={{ ...line, flex: 1, padding: "0 4px" }}>{row.amphoe || ""}</span>
++          <span style={{ ...line, flex: 1, padding: "0 4px" }}>{amphoe}</span>
+           <span>จังหวัด</span>
+-          <span style={{ ...line, flex: 1, padding: "0 4px" }}>{row.province || ""}</span>
+-          <span style={{ whiteSpace: "nowrap", fontSize: 10 }}>□1 ในเขตเทศบาล<br />□2 อบต.</span>
++          <span style={{ ...line, flex: 1, padding: "0 4px" }}>{province}</span>
++          <span style={{ whiteSpace: "nowrap", fontSize: 10 }}>
++            {muni === "1" ? "☑" : "□"}1 ในเขตเทศบาล<br />
++            {muni === "2" ? "☑" : "□"}2 อบต.
++          </span>
+         </div>
+       </div>
+ 
+@@ -234,7 +311,7 @@ export default function Form506({ row }: { row: D506Row }) {
+               <b>สถานที่รักษา</b><br />
+               □1 รพ.ศูนย์ &nbsp; □4 คลินิกของราชการ &nbsp; □7 คลินิก รพ.เอกชน<br />
+               □2 รพ.ทั่วไป &nbsp; □5 สอ. &nbsp; □8 บ้าน<br />
+-              □3 รพ.ชุมชน &nbsp; □6 รพ.ราชการใน กทม.
++              ☑3 รพ.ชุมชน &nbsp; □6 รพ.ราชการใน กทม.
+             </td>
+             <td style={{ ...cell, width: 90, textAlign: "center" }}>
+               <b>ประเภทผู้ป่วย</b><br />
+@@ -251,16 +328,17 @@ export default function Form506({ row }: { row: D506Row }) {
+           <tr>
+             <td style={{ ...cell, width: 180 }}>
+               <b>สภาพผู้ป่วย</b><br />
+-              {outcome.includes("หาย") || outcome.includes("ดีขึ้น") ? "☑" : "☐"} หาย &nbsp; □ ไม่ทราบ<br />
+-              {status.includes("เสียชีวิต") || row.death === "ใช่" ? "☑" : "☐"} ตาย &nbsp; □ ยังมีชีวิตอยู่<br />
+-              {status.includes("รักษาอยู่") ? "☑" : "☐"} ยังรักษาอยู่
++              {outcome.includes("หาย") || outcome.includes("ดีขึ้น") || status.includes("หาย")
++                ? "☑" : "☐"} หาย &nbsp; {status.includes("ไม่ทราบ") ? "☑" : "☐"} ไม่ทราบ<br />
++              {dead ? "☑" : "☐"} ตาย &nbsp; {!dead && status.includes("มีชีวิต") ? "☑" : "☐"} ยังมีชีวิตอยู่<br />
++              {status.includes("รักษาอยู่") || status.includes("ยังรักษา") ? "☑" : "☐"} ยังรักษาอยู่
+             </td>
+             <td style={{ ...cell, width: 160 }}>
+               <b>วันที่ตาย</b><br />
+-              วันที่ ……… เดือน ……… พ.ศ. …………
++              วันที่ <u>{dth.d || "………"}</u> เดือน <u>{dth.m || "………"}</u> พ.ศ. <u>{dth.y || "…………"}</u>
+             </td>
+             <td style={cell}>
+-              <b>ชื่อผู้รายงาน</b> ………………………………{" "}
++              <b>ชื่อผู้รายงาน</b> <u>{extra?.reporter || "………………………………"}</u>{" "}
+               <b>สถานที่ทำงาน</b> โรงพยาบาลพลับพลาชัย
+             </td>
+             <td style={{ ...cell, width: 100 }}>
+diff --git a/app/pages/d506-dashboard/page.tsx b/app/pages/d506-dashboard/page.tsx
+index 39d5621..8960750 100644
+--- a/app/pages/d506-dashboard/page.tsx
++++ b/app/pages/d506-dashboard/page.tsx
+@@ -4,6 +4,7 @@
+ "use client";
+ 
+ import { useEffect, useMemo, useState } from "react";
++import { createPortal } from "react-dom";
+ import {
+   BarChart, Bar, Cell, XAxis, YAxis, Tooltip, CartesianGrid,
+   ResponsiveContainer, LineChart, Line,
+@@ -16,6 +17,7 @@ import {
+ import { exportToExcel } from "@/lib/exportExcel";
+ import { usePagination } from "@/hooks/usePagination";
+ import type { D506Row } from "@/lib/d506Sheets.service";
++import type { D506FormExtra } from "@/lib/d506Form.service";
+ import Form506 from "./Form506";
+ 
+ interface Payload {
+@@ -42,6 +44,18 @@ function parseThaiDate(str: string): Date | null {
+   if (!d || !m || !y) return null;
+   return new Date(y > 2500 ? y - 543 : y, m - 1, d);
+ }
++/** "YYYY-MM-DD" จาก <input type="date"> → Date เวลาท้องถิ่น (00:00 น.)
++ *  ห้ามใช้ new Date("YYYY-MM-DD") ตรง ๆ เพราะ JS ตีเป็น UTC เที่ยงคืน
++ *  พอเทียบกับวันที่ในชีต (ที่ parse เป็นเวลาท้องถิ่น) เขต +07:00 จะเลื่อนไป 1 วัน
++ *  ทำให้แถวของ "วันเริ่มช่วง" หลุดตัวกรองทั้งหมด */
++function parseInputDate(str: string, endOfDay = false): Date | null {
++  if (!str) return null;
++  const [y, m, d] = str.split("-").map(Number);
++  if (!y || !m || !d) return null;
++  return endOfDay
++    ? new Date(y, m - 1, d, 23, 59, 59, 999)
++    : new Date(y, m - 1, d, 0, 0, 0, 0);
++}
+ const uniqSorted = (vals: string[]) =>
+   [...new Set(vals.map((v) => (v || "").trim()).filter(Boolean))].sort((a, b) =>
+     a.localeCompare(b, "th", { numeric: true }),
+@@ -118,15 +132,26 @@ export default function D506DashboardPage() {
+ 
+   // sort + tab + print
+   const [sortKey, setSortKey] = useState<"seq" | "date" | "sex" | "age" | "disease" | null>("seq");
+-  const [sortDir, setSortDir] = useState(1);
++  // เริ่มที่ ลำดับ มาก→น้อย = คนที่เพิ่งลงทะเบียนล่าสุดอยู่บนสุด (ไม่ต้องกดหัวคอลัมน์เอง)
++  const [sortDir, setSortDir] = useState(-1);
+   const [tab, setTab] = useState<"patient" | "lab">("patient");
+   const [printRow, setPrintRow] = useState<D506Row | null>(null);
+-
+-  async function loadData() {
++  // ข้อมูลเสริมจาก HOSxP สำหรับ auto-fill แบบ รง.506 (ภาวะสมรส/สัญชาติ/อาชีพ/วันตาย…)
++  const [printExtra, setPrintExtra] = useState<D506FormExtra | null>(null);
++  const [extraLoading, setExtraLoading] = useState(false);
++  // modal พิมพ์ต้อง portal ออกไปนอก layout (main มี overflow-auto/h-screen ครอบอยู่
++  // ถ้าพิมพ์ทั้งที่ยังอยู่ในนั้น เบราว์เซอร์จะ clip เนื้อหาทิ้ง → ได้กระดาษเปล่า)
++  const [mounted, setMounted] = useState(false);
++  useEffect(() => setMounted(true), []);
++
++  async function loadData(force = false) {
+     setLoading(true);
+     setError(null);
+     try {
+-      const res = await fetch("/api/d506-sheets", { credentials: "include" });
++      const res = await fetch(`/api/d506-sheets${force ? "?refresh=1" : ""}`, {
++        credentials: "include",
++        cache: "no-store",
++      });
+       if (!res.ok) {
+         const j = await res.json().catch(() => ({}));
+         throw new Error(j.error ?? `HTTP ${res.status}`);
+@@ -140,6 +165,22 @@ export default function D506DashboardPage() {
+   }
+   useEffect(() => { loadData(); }, []);
+ 
++  // เปิดแบบฟอร์ม → ดึงข้อมูลผู้ป่วยจาก HOSxP มาเติมช่องที่ทะเบียนในชีตไม่มี
++  useEffect(() => {
++    const hn = printRow?.hn?.trim();
++    if (!hn) { setPrintExtra(null); return; }
++    let cancelled = false;
++    setExtraLoading(true);
++    setPrintExtra(null);
++    const qs = new URLSearchParams({ hn, reportDate: printRow?.reportDate ?? "" });
++    fetch(`/api/d506-form?${qs}`, { credentials: "include" })
++      .then((r) => (r.ok ? r.json() : null))
++      .then((j) => { if (!cancelled) setPrintExtra(j?.error ? null : j); })
++      .catch(() => { if (!cancelled) setPrintExtra(null); })
++      .finally(() => { if (!cancelled) setExtraLoading(false); });
++    return () => { cancelled = true; };
++  }, [printRow]);
++
+   const rows = useMemo(() => data?.rows ?? [], [data]);
+ 
+   const diseaseOpts = useMemo(() => uniqSorted(rows.map((r) => r.disease)), [rows]);
+@@ -149,8 +190,8 @@ export default function D506DashboardPage() {
+ 
+   // ── filter ──
+   const filtered = useMemo(() => {
+-    const start = fStart ? new Date(fStart) : null;
+-    const end = fEnd ? new Date(fEnd + "T23:59:59") : null;
++    const start = parseInputDate(fStart);
++    const end = parseInputDate(fEnd, true);
+     const q = fSearch.trim().toLowerCase();
+     return rows.filter((r) => {
+       if (start || end) {
+@@ -228,13 +269,13 @@ export default function D506DashboardPage() {
+       const day = d.getDay();
+       const mon = new Date(d);
+       mon.setDate(d.getDate() - (day === 0 ? 6 : day - 1));
+-      const key = mon.toISOString().slice(0, 10);
++      const key = `${mon.getFullYear()}-${String(mon.getMonth() + 1).padStart(2, "0")}-${String(mon.getDate()).padStart(2, "0")}`;
+       weeks[key] = (weeks[key] || 0) + 1;
+     });
+     return Object.entries(weeks).sort((a, b) => a[0].localeCompare(b[0]))
+       .map(([k, count]) => {
+-        const d = new Date(k);
+-        return { name: `${d.getDate()}/${d.getMonth() + 1}`, count };
++        const [, m, d] = k.split("-");
++        return { name: `${Number(d)}/${Number(m)}`, count };
+       });
+   }, [filtered]);
+ 
+@@ -265,12 +306,15 @@ export default function D506DashboardPage() {
+   }
+   function toggleSort(k: typeof sortKey) {
+     if (sortKey === k) setSortDir((d) => -d);
+-    else { setSortKey(k); setSortDir(1); }
++    // คอลัมน์ตัวเลข/วันที่ กดครั้งแรกให้เริ่มจากมาก→น้อย (ล่าสุด/มากสุดก่อน)
++    // ส่วนคอลัมน์ตัวอักษรเริ่มจาก ก→ฮ ตามที่คนอ่านคาด
++    else { setSortKey(k); setSortDir(k === "sex" || k === "disease" ? 1 : -1); }
+   }
+ 
+   function exportPatients() {
++    // ใช้ลำดับจากทะเบียนจริง (r.seq) ไม่ใช่ลำดับแถวบนหน้า — ไม่งั้นสลับ sort แล้วเลขเพี้ยน
+     const out = sorted.map((r, i) => ({
+-      "ลำดับที่": i + 1, "วันที่รับรายงาน": r.reportDate, HN: r.hn,
++      "ลำดับที่": r.seq || i + 1, "วันที่รับรายงาน": r.reportDate, HN: r.hn,
+       "เลขบัตรประชาชน": r.pid, "คำนำหน้า": r.prefix, "ชื่อ": r.fname, "สกุล": r.lname,
+       "เพศ": r.sex, "วัน/เดือน/ปีเกิด": r.dob, "อายุ(ปี)": r.age, "บ้านเลขที่/หมู่": r.addr,
+       "ตำบล": r.tambon, "อำเภอ": r.amphoe, "จังหวัด": r.province, "วันที่เริ่มป่วย": r.onsetDate,
+@@ -304,7 +348,7 @@ export default function D506DashboardPage() {
+           <span className="text-xs text-gray-500">
+             {loading ? "กำลังโหลด..." : error ? "โหลดไม่ได้" : `${data?.rowCount ?? 0} ราย`}
+           </span>
+-          <button onClick={loadData}
++          <button onClick={() => loadData(true)}
+             className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-white text-sm font-semibold hover:brightness-110"
+             style={{ backgroundColor: MINT }}>
+             <RefreshCw size={14} className={loading ? "animate-spin" : ""} /> รีโหลด
+@@ -609,37 +653,70 @@ export default function D506DashboardPage() {
+         </>
+       )}
+ 
+-      {/* Print modal */}
+-      {printRow && (
++      {/* Print modal — portal ไปที่ <body> ตรง ๆ ไม่งั้นตอนพิมพ์จะโดน main ที่
++          overflow-auto/h-screen ครอบไว้ตัดเนื้อหาทิ้งจนได้กระดาษเปล่า */}
++      {mounted && printRow && createPortal(
+         <div className="print-modal fixed inset-0 z-[1000] bg-black/55 overflow-y-auto p-4 flex items-start justify-center"
+           onClick={(e) => { if (e.target === e.currentTarget) setPrintRow(null); }}>
+-          <div className="bg-white rounded-xl w-full max-w-4xl shadow-2xl">
++          <div className="print-sheet bg-white rounded-xl w-full max-w-4xl shadow-2xl">
+             <div className="no-print flex items-center justify-between px-5 py-3.5 border-b border-gray-200 bg-gray-50 rounded-t-xl">
+-              <span className="flex items-center gap-2 font-bold text-gray-700"><Printer size={16} /> แบบรายงานโรค 506</span>
++              <span className="flex items-center gap-2 font-bold text-gray-700">
++                <Printer size={16} /> แบบรายงานโรค 506
++                <span className="text-xs font-normal text-gray-400">
++                  {extraLoading
++                    ? "· กำลังดึงข้อมูลจาก HOSxP…"
++                    : printExtra?.found
++                      ? "· เติมข้อมูลจาก HOSxP แล้ว"
++                      : "· ไม่พบ HN นี้ใน HOSxP (ใช้ข้อมูลจากทะเบียน)"}
++                </span>
++              </span>
+               <div className="flex gap-2">
+-                <button onClick={() => window.print()}
+-                  className="flex items-center gap-1.5 px-4 py-1.5 rounded-lg text-white text-sm font-bold hover:brightness-110"
++                <button onClick={() => window.print()} disabled={extraLoading}
++                  className="flex items-center gap-1.5 px-4 py-1.5 rounded-lg text-white text-sm font-bold hover:brightness-110 disabled:opacity-50"
+                   style={{ backgroundColor: MINT }}><Printer size={14} /> พิมพ์</button>
+                 <button onClick={() => setPrintRow(null)}
+                   className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-gray-200 text-gray-600 text-sm hover:bg-gray-50"><X size={14} /> ปิด</button>
+               </div>
+             </div>
+             <div id="form506" className="p-5">
+-              <Form506 row={printRow} />
++              <Form506 row={printRow} extra={printExtra} />
+             </div>
+           </div>
+-        </div>
++        </div>,
++        document.body,
+       )}
+ 
+-      {/* print CSS: ซ่อนทุกอย่างยกเว้น modal ตอนสั่งพิมพ์ */}
++      {/* print CSS: ตอนสั่งพิมพ์ให้เหลือเฉพาะแบบฟอร์ม
++          ใช้ display:none กับพี่น้องของ modal (ไม่ใช่ visibility:hidden) เพราะ
++          visibility ยังกินเนื้อที่/ยังโดน ancestor ที่ overflow ซ่อนอยู่ตัดทิ้งได้ */}
+       <style jsx global>{`
+         @media print {
+-          body * { visibility: hidden !important; }
+-          .print-modal, .print-modal * { visibility: visible !important; }
+-          .print-modal { position: static !important; background: none !important; padding: 0 !important; display: block !important; }
+-          .print-modal > div { box-shadow: none !important; border-radius: 0 !important; max-width: 100% !important; }
++          html, body {
++            height: auto !important;
++            overflow: visible !important;
++            background: #fff !important;
++          }
++          body > *:not(.print-modal) { display: none !important; }
++          .print-modal {
++            position: static !important;
++            inset: auto !important;
++            display: block !important;
++            overflow: visible !important;
++            background: none !important;
++            padding: 0 !important;
++            z-index: auto !important;
++            -webkit-print-color-adjust: exact;
++            print-color-adjust: exact;
++          }
++          .print-sheet {
++            box-shadow: none !important;
++            border-radius: 0 !important;
++            max-width: 100% !important;
++            width: 100% !important;
++          }
++          #form506 { padding: 0 !important; }
+           .no-print { display: none !important; }
+-          @page { margin: 15mm; }
++          @page { size: A4 portrait; margin: 8mm; }
+         }
+       `}</style>
+     </div>
+diff --git a/lib/d506Form.service.ts b/lib/d506Form.service.ts
+new file mode 100644
+index 0000000..fbef6da
+--- /dev/null
++++ b/lib/d506Form.service.ts
+@@ -0,0 +1,282 @@
++// lib/d506Form.service.ts
++// เติมข้อมูลลง "บัตรรายงานผู้ป่วย (แบบ รง.506)" อัตโนมัติจาก HOSxP
++// ทะเบียนในชีต (D506_SPREADSHEET_ID) มีแค่ข้อมูลหลัก ๆ — ช่องอย่างภาวะสมรส สัญชาติ
++// อาชีพ วันตาย ฯลฯ เจ้าหน้าที่ต้องเขียนมือทุกใบ. ตัวนี้ดึงจาก HOSxP มาให้ระบบติ๊ก/กรอกเอง
++//
++// หมายเหตุเรื่อง schema: HOSxP แต่ละเวอร์ชันมีคอลัมน์ไม่เท่ากัน จึงใช้ SELECT * แล้ว
++// เลือกคอลัมน์ฝั่ง TS (pick()) แทนการอ้างชื่อคอลัมน์ตรง ๆ ใน SQL — เวอร์ชันที่ไม่มี
++// คอลัมน์นั้นจะได้ค่าว่างแทนที่จะพัง query ทั้งใบ
++import { db } from "@/lib/db";
++import { RowDataPacket } from "mysql2";
++import { cachedQuery } from "./cache";
++
++const TTL = 3600; // ข้อมูลทะเบียนผู้ป่วยแทบไม่เปลี่ยน → cache 1 ชม.
++
++// ─── Types ──────────────────────────────────────────────────────────────────
++export interface D506FormExtra {
++  hn: string;
++  found: boolean;
++  cid: string;
++  /** "ชาย" | "หญิง" | "" (patient.sex: 1 = ชาย, 2 = หญิง) */
++  sex: "" | "ชาย" | "หญิง";
++  /** คำนำหน้าชื่อจากทะเบียน HOSxP — ใช้เดาเพศได้เมื่อชีตไม่ได้กรอก */
++  prefix: string;
++  /** "โสด" | "คู่" | "หย่าร้าง" | "หม้าย" | "" (ตามที่จับคำได้จากทะเบียน HOSxP) */
++  marital: "" | "โสด" | "คู่" | "หย่าร้าง" | "หม้าย";
++  /** true = คนไทย, false = คนต่างชาติ, null = ไม่ทราบ */
++  thai: boolean | null;
++  nationalityName: string;
++  occupation: string;
++  /** "1" = ในเขตเทศบาล, "2" = อบต./นอกเขต, "" = ไม่ทราบ */
++  municipality: "" | "1" | "2";
++  phone: string;
++  /** วันเกิด/ที่อยู่ จาก HOSxP — ใช้เป็นตัวสำรองเมื่อช่องในชีตว่าง */
++  dob: string; // DD/MM/YYYY (พ.ศ.)
++  house: string;
++  moo: string;
++  tambon: string;
++  amphoe: string;
++  province: string;
++  /** จาก surveil_member ของ HN นี้ (ใบที่ใกล้วันรับรายงานที่สุด) */
++  onsetDate: string; // DD/MM/YYYY (พ.ศ.)
++  dxDate: string;
++  reportDate: string;
++  deathDate: string;
++  ptype: string; // OPD / IPD
++  code506: string;
++  icd10: string;
++  /** สถานะจาก report506status (หาย / ตาย / ยังรักษา / …) */
++  status: string;
++  reporter: string;
++}
++
++// ─── helpers ────────────────────────────────────────────────────────────────
++type Row = Record<string, unknown>;
++
++const s = (v: unknown): string => (v == null ? "" : String(v).trim());
++
++/** เลือกค่าจากคอลัมน์แรกที่มีจริงในแถว (ชื่อคอลัมน์ HOSxP ต่างกันตามเวอร์ชัน) */
++function pick(row: Row | null, ...candidates: string[]): string {
++  if (!row) return "";
++  const lower: Record<string, unknown> = {};
++  for (const k of Object.keys(row)) lower[k.toLowerCase()] = row[k];
++  for (const c of candidates) {
++    const v = lower[c.toLowerCase()];
++    if (v != null && s(v) !== "") return s(v);
++  }
++  return "";
++}
++
++/** ค่าวันที่จาก MySQL → "DD/MM/พ.ศ." ให้ตรงรูปแบบที่ Form506 ใช้ตัด split("/") */
++function toThai(v: unknown): string {
++  const raw = s(v);
++  if (v == null || raw === "" || raw === "NULL" || raw.startsWith("0000")) return "";
++  let d: Date;
++  if (v instanceof Date) {
++    d = v;
++  } else if (/^\d{1,2}\/\d{1,2}\/\d{4}$/.test(raw)) {
++    // บาง driver/บาง export คืนมาเป็น DD/MM/YYYY (และอาจเป็น พ.ศ.)
++    const [dd, mm, yy] = raw.split("/").map(Number);
++    d = new Date(yy > 2500 ? yy - 543 : yy, mm - 1, dd);
++  } else {
++    d = new Date(raw.slice(0, 10));
++  }
++  if (Number.isNaN(d.getTime())) return "";
++  return [
++    String(d.getDate()).padStart(2, "0"),
++    String(d.getMonth() + 1).padStart(2, "0"),
++    d.getFullYear() + 543,
++  ].join("/");
++}
++
++/** อ่านชื่อจากตาราง lookup ของ HOSxP (occupation / nationality / marrystatus …)
++ *  ตารางไม่มี/คอลัมน์ไม่ตรง → คืนค่าว่าง ไม่ให้ทั้งฟอร์มพัง */
++async function lookupName(table: string, code: string): Promise<string> {
++  if (!code) return "";
++  // ชื่อตาราง/คอลัมน์เป็น literal ในซอร์สนี้เท่านั้น ไม่รับจาก input ผู้ใช้
++  const ALLOWED: Record<string, string> = {
++    marrystatus: "marrystatus",
++    occupation: "occupation",
++    nationality: "nationality",
++    citizenship: "citizenship",
++  };
++  const keyCol = ALLOWED[table];
++  if (!keyCol) return "";
++  try {
++    const [rows] = await db.query<RowDataPacket[]>(
++      `SELECT name FROM ${table} WHERE ${keyCol} = ? LIMIT 1`,
++      [code],
++    );
++    return s(rows[0]?.name);
++  } catch {
++    return "";
++  }
++}
++
++/** ชื่อภาวะสมรสจาก HOSxP → ตัวเลือกบนแบบ รง.506 (โสด / คู่ / หย่าร้าง / หม้าย) */
++function toMarital(name: string, code: string): D506FormExtra["marital"] {
++  const t = name;
++  if (/โสด/.test(t)) return "โสด";
++  if (/หย่า|แยก/.test(t)) return "หย่าร้าง";
++  if (/หม้าย|หมั้าย/.test(t)) return "หม้าย";
++  if (/คู่|สมรส/.test(t)) return "คู่";
++  // ไม่มีตาราง lookup → เดาจากรหัสมาตรฐาน HOSxP (1 โสด 2 คู่ 3 หม้าย 4 หย่า)
++  if (!t) {
++    if (code === "1") return "โสด";
++    if (code === "2") return "คู่";
++    if (code === "3") return "หม้าย";
++    if (code === "4") return "หย่าร้าง";
++  }
++  return "";
++}
++
++/** surveil_member.department เก็บได้ทั้ง "OPD"/"IPD"/"ผู้ป่วยนอก"/รหัสแผนก
++ *  → ตัดสินจากคำก่อน ถ้าไม่ชัดค่อยดูว่ามี AN (นอน รพ.) หรือมีแค่ VN */
++function toPtype(dept: string, an: string, vn: string): string {
++  const t = dept.toLowerCase();
++  if (/opd|นอก/.test(t)) return "OPD";
++  if (/ipd|ใน|admit/.test(t)) return "IPD";
++  if (an) return "IPD";
++  if (vn) return "OPD";
++  return dept.toUpperCase();
++}
++
++// ─── query ──────────────────────────────────────────────────────────────────
++async function fetchFormExtra(hn: string, reportDate: string): Promise<D506FormExtra> {
++  const empty: D506FormExtra = {
++    hn, found: false, cid: "", sex: "", prefix: "", marital: "", thai: null, nationalityName: "",
++    occupation: "", municipality: "", phone: "", dob: "", house: "", moo: "",
++    tambon: "", amphoe: "", province: "", onsetDate: "", dxDate: "",
++    reportDate: "", deathDate: "", ptype: "", code506: "", icd10: "",
++    status: "", reporter: "",
++  };
++  if (!hn) return empty;
++
++  // 1) ทะเบียนผู้ป่วย — SELECT * เพราะชุดคอลัมน์ต่างกันตามเวอร์ชัน HOSxP
++  let pt: Row | null = null;
++  try {
++    const [rows] = await db.query<RowDataPacket[]>(
++      `SELECT * FROM patient WHERE hn = ? LIMIT 1`,
++      [hn],
++    );
++    pt = (rows[0] as Row) ?? null;
++  } catch {
++    pt = null;
++  }
++
++  // 2) ใบ 506 ของ HN นี้ — เลือกใบที่ใกล้ "วันที่รับรายงาน" ในชีตที่สุด
++  //    (ผู้ป่วยคนเดียวอาจมีหลายใบ เช่นป่วยซ้ำต่างปี)
++  let sv: Row | null = null;
++  try {
++    const [rows] = reportDate
++      ? await db.query<RowDataPacket[]>(
++          `SELECT s.*, rs.name AS status_name
++             FROM surveil_member s
++             LEFT JOIN report506status rs ON rs.code = s.ptstat
++            WHERE s.hn = ?
++            ORDER BY ABS(DATEDIFF(s.report_date, ?)) ASC, s.report_date DESC
++            LIMIT 1`,
++          [hn, reportDate],
++        )
++      : await db.query<RowDataPacket[]>(
++          `SELECT s.*, rs.name AS status_name
++             FROM surveil_member s
++             LEFT JOIN report506status rs ON rs.code = s.ptstat
++            WHERE s.hn = ?
++            ORDER BY s.report_date DESC
++            LIMIT 1`,
++          [hn],
++        );
++    sv = (rows[0] as Row) ?? null;
++  } catch {
++    sv = null;
++  }
++
++  if (!pt && !sv) return empty;
++
++  // ที่อยู่ (ชื่อตำบล/อำเภอ/จังหวัด) — แปลงรหัสผ่าน thaiaddress เหมือน d506.service
++  const chw = pick(sv, "chwpart") || pick(pt, "chwpart");
++  const amp = pick(sv, "amppart") || pick(pt, "amppart");
++  const tmb = pick(sv, "tmbpart") || pick(pt, "tmbpart");
++  let tambon = "", amphoe = "", province = "";
++  if (chw) {
++    try {
++      // thaiaddress เก็บรหัสแบบ 2 หลักเสมอ ('05') แต่ patient/surveil_member
++      // บางเรคคอร์ดเก็บ '5' → ต้อง LPAD ทั้งสองฝั่งไม่งั้น join ไม่ติด (ตำบลว่าง)
++      const pad2 = (v: string) => v.padStart(2, "0");
++      const [rows] = await db.query<RowDataPacket[]>(
++        `SELECT
++           MAX(IF(LPAD(amppart,2,'0') = '00' AND LPAD(tmbpart,2,'0') = '00', name, NULL)) AS province,
++           MAX(IF(LPAD(amppart,2,'0') = ?    AND LPAD(tmbpart,2,'0') = '00', name, NULL)) AS amphoe,
++           MAX(IF(LPAD(amppart,2,'0') = ?    AND LPAD(tmbpart,2,'0') = ?,    name, NULL)) AS tambon
++         FROM thaiaddress WHERE LPAD(chwpart,2,'0') = ?`,
++        [pad2(amp || "00"), pad2(amp || "00"), pad2(tmb || "00"), pad2(chw)],
++      );
++      province = s(rows[0]?.province);
++      amphoe = s(rows[0]?.amphoe);
++      tambon = s(rows[0]?.tambon);
++    } catch {
++      // ไม่มีตาราง thaiaddress → ปล่อยว่าง ให้ค่าจากชีตทำงานต่อ
++    }
++  }
++
++  const marryCode = pick(pt, "marrystatus", "marystatus", "marital_status");
++  const natCode = pick(pt, "nationality");
++  const occCode = pick(pt, "occupation");
++
++  const [marryName, natName, occName] = await Promise.all([
++    lookupName("marrystatus", marryCode),
++    lookupName("nationality", natCode),
++    lookupName("occupation", occCode),
++  ]);
++
++  // สัญชาติ: HOSxP ใช้ '99' = ไทย (ตรงกับที่ report.service.ts ใช้อยู่)
++  const thai =
++    natCode === "99" || /ไทย/.test(natName)
++      ? true
++      : natCode
++        ? false
++        : null;
++
++  // ในเขตเทศบาล/อบต. — คอลัมน์นี้มีเฉพาะบางเวอร์ชัน ไม่มีก็ปล่อยไม่ติ๊ก
++  const muniRaw = pick(pt, "in_muni", "municipality", "in_municipality");
++  const municipality: D506FormExtra["municipality"] =
++    muniRaw === "1" || muniRaw === "Y" ? "1" : muniRaw === "2" || muniRaw === "N" ? "2" : "";
++
++  // ตาราง patient ของ HOSxP ใช้คอลัมน์ "deathday" (ไม่ใช่ death_date)
++  const deathRaw =
++    pick(sv, "death_date", "deathday") || pick(pt, "deathday", "death_date");
++
++  return {
++    hn,
++    found: true,
++    cid: pick(pt, "cid", "citizenship_id"),
++    sex: pick(pt, "sex") === "1" ? "ชาย" : pick(pt, "sex") === "2" ? "หญิง" : "",
++    prefix: pick(pt, "pname", "prename"),
++    marital: toMarital(marryName, marryCode),
++    thai,
++    nationalityName: natName || natCode,
++    occupation: occName,
++    municipality,
++    phone: pick(pt, "hometel", "informtel", "mobile_phone_number"),
++    dob: toThai(pick(pt, "birthday")),
++    house: pick(sv, "addr") || pick(pt, "addrpart"),
++    moo: pick(sv, "moo") || pick(pt, "moopart"),
++    tambon,
++    amphoe,
++    province,
++    onsetDate: toThai(pick(sv, "begin_date")),
++    dxDate: toThai(pick(sv, "diagnosis_date")),
++    reportDate: toThai(pick(sv, "report_date")),
++    deathDate: toThai(deathRaw),
++    ptype: toPtype(pick(sv, "department", "ptype"), pick(sv, "an"), pick(sv, "vn")),
++    code506: pick(sv, "code506"),
++    icd10: pick(sv, "pdx", "icd10"),
++    status: pick(sv, "status_name"),
++    reporter: pick(sv, "informname", "informer", "report_by", "staff"),
++  };
++}
++
++export function getD506FormExtra(hn: string, reportDate = ""): Promise<D506FormExtra> {
++  return cachedQuery(["d506-form", hn, reportDate], () => fetchFormExtra(hn, reportDate), TTL);
++}
+diff --git a/lib/d506Sheets.service.ts b/lib/d506Sheets.service.ts
+index f58692b..13c6b8f 100644
+--- a/lib/d506Sheets.service.ts
++++ b/lib/d506Sheets.service.ts
+@@ -9,7 +9,7 @@ import {
+   getValues,
+   toStr,
+ } from "@/lib/sheets";
+-import { cachedQuery } from "./cache";
++import { cachedQuery, invalidate } from "./cache";
+ 
+ // ทะเบียน 506 อัปเดตเป็นรอบ (เจ้าหน้าที่กรอกมือ) → cache 5 นาทีพอ
+ const TTL = 300;
+@@ -57,44 +57,34 @@ export interface D506Payload {
+   sheetName: string;
+   rowCount: number;
+   rows: D506Row[];
++  /** หัวคอลัมน์ที่อ่านได้ + คอลัมน์ที่จับคู่ได้ (ไว้ตรวจเวลาชีตสลับคอลัมน์) */
++  header: string[];
++  columns: Record<string, number>;
+ }
+ 
+ // ─── ตรวจจับคอลัมน์จาก header ─────────────────────────────────────────────────
+-// ชีตจริงสลับลำดับคอลัมน์ได้ (เช่น ชนิดแลป มาก่อน/หลัง ผล Lab) → ตรวจจากชื่อหัวคอลัมน์
+-// พอร์ตตรรกะมาจาก autoDetectColumns() ใน D506_Dashboard.html
+-interface ColMap {
+-  seq: number;
+-  date: number;
+-  hn: number;
+-  pid: number;
+-  prefix: number;
+-  fname: number;
+-  lname: number;
+-  sex: number;
+-  dob: number;
+-  age: number;
+-  addr: number;
+-  tambon: number;
+-  amphoe: number;
+-  province: number;
+-  onsetDate: number;
+-  disease: number;
+-  code506: number;
+-  icd10: number;
+-  ptype: number;
+-  labType: number;
+-  lab: number;
+-  labSendDate: number;
+-  labResultDate: number;
+-  organism: number;
+-  status: number;
+-  dischargeDate: number;
+-  outcome: number;
+-  d506Date: number;
+-  remark: number;
+-  death: number;
+-}
++// ชีตจริงสลับ/เพิ่ม/ลดคอลัมน์ได้ และหัวตารางมักเป็น 2 บรรทัด (merge cell) →
++// ห้ามพึ่งลำดับคอลัมน์ ต้องอ่านจากชื่อหัวคอลัมน์เท่านั้น
++// (ของเดิมใช้ regex แบบ ^ตำบล$ ซึ่งพลาดง่าย แล้ว fallback ไปใช้ลำดับ default
++//  ผลคือช่อง "บ้านเลขที่" ได้วันเกิดมาแสดง / "จังหวัด" ได้ชื่ออำเภอ ฯลฯ)
++type ColKey =
++  | "seq" | "date" | "hn" | "pid" | "prefix" | "fname" | "lname" | "sex"
++  | "dob" | "age" | "addr" | "tambon" | "amphoe" | "province" | "onsetDate"
++  | "disease" | "code506" | "icd10" | "ptype" | "labType" | "lab"
++  | "labSendDate" | "labResultDate" | "organism" | "status" | "dischargeDate"
++  | "outcome" | "d506Date" | "remark" | "death";
++
++type ColMap = Record<ColKey, number>;
++
++const COL_KEYS: ColKey[] = [
++  "seq", "date", "hn", "pid", "prefix", "fname", "lname", "sex", "dob", "age",
++  "addr", "tambon", "amphoe", "province", "onsetDate", "disease", "code506",
++  "icd10", "ptype", "labType", "lab", "labSendDate", "labResultDate",
++  "organism", "status", "dischargeDate", "outcome", "d506Date", "remark",
++  "death",
++];
+ 
++/** ลำดับคอลัมน์ตามฟอร์มทะเบียนมาตรฐาน — ใช้เฉพาะกรณีหา header ไม่เจอเลย */
+ function defaultCol(): ColMap {
+   return {
+     seq: 0, date: 1, hn: 2, pid: 3, prefix: 4, fname: 5, lname: 6, sex: 7,
+@@ -106,58 +96,74 @@ function defaultCol(): ColMap {
+   };
+ }
+ 
+-function detectColumns(header: string[]): ColMap {
+-  const col = defaultCol();
+-  const norm = (raw: string) =>
+-    raw.replace(/\n/g, " ").replace(/\s+/g, " ").trim();
+-
+-  header.forEach((raw, idx) => {
+-    const c = norm(raw);
+-    if (!c) return;
+-    if (/ชนิด\s*lab|ชนิดแลป/i.test(c)) return void (col.labType = idx);
+-    if (/ชนิดเชื้อ|ผลเพาะ/i.test(c)) return void (col.organism = idx);
+-    if (/^HN$/i.test(c)) return void (col.hn = idx);
+-    if (/เลขบัตร|บัตรประชาชน/i.test(c)) return void (col.pid = idx);
+-    if (/คำนำหน้า/i.test(c)) return void (col.prefix = idx);
+-    if (/^ชื่อ$/.test(c)) return void (col.fname = idx);
+-    if (/^สกุล$/.test(c)) return void (col.lname = idx);
+-    if (/^เพศ$/.test(c)) return void (col.sex = idx);
+-    if (/เกิด/i.test(c)) return void (col.dob = idx);
+-    if (/อายุ/i.test(c)) return void (col.age = idx);
+-    if (/บ้านเลขที่|ที่อยู่/i.test(c)) return void (col.addr = idx);
+-    if (/^ตำบล$/.test(c)) return void (col.tambon = idx);
+-    if (/^อำเภอ$/.test(c)) return void (col.amphoe = idx);
+-    if (/^จังหวัด$/.test(c)) return void (col.province = idx);
+-    if (/โรค.*วินิจฉัย|วินิจฉัย.*โรค/i.test(c)) return void (col.disease = idx);
+-    if (/รหัส.*506/i.test(c) && !/ICD/i.test(c)) return void (col.code506 = idx);
+-    if (/ICD/i.test(c)) return void (col.icd10 = idx);
+-    if (/ประเภท.*ผู้ป่วย/i.test(c)) return void (col.ptype = idx);
+-    if (/สถานะ.*ผู้ป่วย/i.test(c)) return void (col.status = idx);
+-    if (/จำหน่าย/i.test(c) && /วันที่/i.test(c))
+-      return void (col.dischargeDate = idx);
+-    if (/ผล.*การรักษา|การรักษา/i.test(c)) return void (col.outcome = idx);
+-    if (/D506/i.test(c) && /ส่ง|วันที่/i.test(c))
+-      return void (col.d506Date = idx);
+-    if (/หมายเหตุ/i.test(c)) return void (col.remark = idx);
+-    if (/เสียชีวิต/i.test(c)) return void (col.death = idx);
+-    // วันที่ได้ผล Lab ต้องตรวจก่อน "ผล Lab" ไม่งั้น regex ผล Lab จับผิด
+-    if (/วันที่.*ได้ผล|ได้ผล.*lab/i.test(c))
+-      return void (col.labResultDate = idx);
+-    if (/ส่งตัวอย่าง|ส่ง.*ตัวอย่าง/i.test(c))
+-      return void (col.labSendDate = idx);
+-    if (/^ผล.*lab/i.test(c) && !/วันที่/i.test(c) && !/ชนิด/i.test(c))
+-      return void (col.lab = idx);
+-    if (/ลำดับ/i.test(c)) return void (col.seq = idx);
+-  });
+-
+-  // วันที่รับรายงาน / วันที่เริ่มป่วย — จับแยกรอบเพราะลำดับเงื่อนไขสำคัญ
+-  header.forEach((raw, idx) => {
+-    const c = norm(raw);
+-    if (/วันที่.*รับรายงาน|รับรายงาน/i.test(c)) col.date = idx;
+-    else if (/วันที่.*เริ่มป่วย|เริ่มป่วย/i.test(c)) col.onsetDate = idx;
+-  });
+-
+-  return col;
++function emptyCol(): ColMap {
++  return Object.fromEntries(COL_KEYS.map((k) => [k, -1])) as ColMap;
++}
++
++/** เลข ๐-๙ (ชีตบางคอลัมน์ format เป็นเลขไทย) → 0-9 ไม่งั้น parse วันที่/ลำดับไม่ได้ */
++export function thaiDigits(v: string): string {
++  return v.replace(/[๐-๙]/g, (d) => String("๐๑๒๓๔๕๖๗๘๙".indexOf(d)));
++}
++
++const normHeader = (raw: string) =>
++  thaiDigits(String(raw ?? ""))
++    .replace(/[\n\r]/g, " ")
++    .replace(/\s+/g, "")
++    .toLowerCase();
++
++/** กติกาจับคอลัมน์ — เรียงจาก "เฉพาะเจาะจงที่สุด" ลงมา อันแรกที่เข้าเงื่อนไขชนะ
++ *  not = คำที่ถ้าเจอแล้วห้ามจับ (กันคอลัมน์ที่ชื่อคล้ายกันแย่งกัน) */
++const RULES: { key: ColKey; re: RegExp; not?: RegExp }[] = [
++  { key: "labResultDate", re: /(วันที่.*ได้ผล|ได้ผล.*(lab|แลป))/ },
++  { key: "labSendDate", re: /ส่ง.*ตัวอย่าง|ตัวอย่าง.*ส่ง/ },
++  { key: "labType", re: /ชนิด.*(lab|แลป)/ },
++  { key: "organism", re: /ชนิดเชื้อ|ผลเพาะ|เพาะเลี้ยง/ },
++  { key: "lab", re: /ผล.*(lab|แลป)/, not: /วันที่|ชนิด/ },
++  { key: "d506Date", re: /d506/, not: /^รหัส/ },
++  { key: "date", re: /รับรายงาน/ },
++  { key: "onsetDate", re: /เริ่มป่วย/ },
++  { key: "dischargeDate", re: /จำหน่าย/ },
++  { key: "dob", re: /เกิด/ },
++  { key: "age", re: /อายุ/ },
++  { key: "seq", re: /ลำดับ|^#$|^ที่$/ },
++  { key: "hn", re: /\bhn\b|^hn/ },
++  { key: "pid", re: /บัตรประชาชน|เลขบัตร|ประชาชน|\bcid\b/ },
++  { key: "prefix", re: /คำนำหน้า/ },
++  { key: "lname", re: /สกุล/ },
++  { key: "sex", re: /เพศ/ },
++  { key: "addr", re: /บ้านเลขที่|ที่อยู่|เลขที่.*หมู่|^หมู่/ },
++  { key: "tambon", re: /ตำบล/ },
++  { key: "amphoe", re: /อำเภอ/ },
++  { key: "province", re: /จังหวัด/ },
++  { key: "code506", re: /506/, not: /icd|d506|วันที่/ },
++  { key: "icd10", re: /icd/ },
++  { key: "disease", re: /โรค/, not: /รหัส|icd|506/ },
++  { key: "ptype", re: /ประเภท/ },
++  { key: "status", re: /สถานะ/ },
++  { key: "outcome", re: /ผลการรักษา|การรักษา/ },
++  { key: "remark", re: /หมายเหตุ/ },
++  { key: "death", re: /เสียชีวิต|ตาย/ },
++  // "ชื่อ" กว้างสุด — ไว้ท้ายสุดกันไปแย่ง "ชื่อโรค" / "ชื่อผู้รายงาน"
++  { key: "fname", re: /ชื่อ/, not: /โรค|ผู้รายงาน|สกุล|คำนำหน้า|เชื้อ/ },
++];
++
++function detectColumns(header: string[]): { col: ColMap; hits: number } {
++  const col = emptyCol();
++  const used = new Set<number>();
++  const cells = header.map(normHeader);
++
++  for (const rule of RULES) {
++    if (col[rule.key] >= 0) continue;
++    const idx = cells.findIndex(
++      (c, i) =>
++        c !== "" && !used.has(i) && rule.re.test(c) && !(rule.not?.test(c) ?? false),
++    );
++    if (idx >= 0) {
++      col[rule.key] = idx;
++      used.add(idx);
++    }
++  }
++  return { col, hits: used.size };
+ }
+ 
+ // ─── โหลด + normalize ─────────────────────────────────────────────────────────
+@@ -182,12 +188,25 @@ async function fetchD506(): Promise<D506Payload> {
+   );
+   if (headerIdx === -1) headerIdx = 0;
+ 
+-  const col = detectColumns(raw[headerIdx] ?? []);
+-  const at = (r: string[], i: number) => toStr(i >= 0 ? r[i] : "");
++  // หัวตารางมักถูก merge เป็น 2 บรรทัด (เช่น "ที่อยู่ขณะเริ่มป่วย" คร่อม
++  // ตำบล/อำเภอ/จังหวัด ที่อยู่บรรทัดล่าง) → รวมข้อความ 2 แถวเป็นหัวเดียวก่อนตรวจ
++  const width = Math.max(...raw.slice(headerIdx, headerIdx + 3).map((r) => r.length), 0);
++  const header = Array.from({ length: width }, (_, i) =>
++    [raw[headerIdx]?.[i], raw[headerIdx + 1]?.[i]]
++      .map((c) => toStr(c))
++      .filter(Boolean)
++      .join(" "),
++  );
++
++  // จับหัวคอลัมน์ได้น้อยเกินไป = แถวนั้นไม่ใช่หัวตารางจริง → ค่อยใช้ลำดับมาตรฐาน
++  const detected = detectColumns(header);
++  const col = detected.hits >= 6 ? detected.col : defaultCol();
++
++  const at = (r: string[], i: number) => thaiDigits(toStr(i >= 0 ? r[i] : ""));
+ 
+   const rows: D506Row[] = raw
+     .slice(headerIdx + 1)
+-    .filter((r) => /^\d+$/.test(toStr(r[col.seq])))
++    .filter((r) => /^\d+$/.test(thaiDigits(toStr(r[col.seq]))))
+     .map((r) => ({
+       seq: at(r, col.seq),
+       reportDate: at(r, col.date),
+@@ -227,9 +246,18 @@ async function fetchD506(): Promise<D506Payload> {
+     sheetName,
+     rowCount: rows.length,
+     rows,
++    header,
++    columns: col as unknown as Record<string, number>,
+   };
+ }
+ 
++const CACHE_KEY = "d506-sheets";
++
+ export function getD506SheetsCached(): Promise<D506Payload> {
+-  return cachedQuery(["d506-sheets", SPREADSHEET_ID], fetchD506, TTL);
++  return cachedQuery([CACHE_KEY, SPREADSHEET_ID], fetchD506, TTL);
++}
++
++/** ล้าง cache ทะเบียน 506 — ใช้ตอนกดรีโหลดเพื่อบังคับอ่าน Sheet ใหม่ */
++export function invalidateD506Sheets(): Promise<void> {
++  return invalidate(CACHE_KEY);
+ }
+-- 
+2.43.0
+
