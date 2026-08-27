@@ -42,6 +42,7 @@ const TARGETS: WarmTarget[] = [
   { path: "/api/drug-usage?preset=fiscal&kind=nondrug&section=dims", everySec: 480 },
   { path: "/api/drug-usage?preset=fiscal&kind=lab&section=core", everySec: 480 },
   { path: "/api/drug-usage?preset=fiscal&kind=lab&section=dims", everySec: 480 },
+  { path: "/api/drug-usage?preset=fiscal&section=summary", everySec: 480 },
   // TTL 180
   { path: "/api/ipd/ward-census", everySec: 150 },
 ];

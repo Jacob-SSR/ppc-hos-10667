@@ -6,12 +6,14 @@
 //     ?kind=drug (เวชภัณฑ์ยา — default) | nondrug (เวชภัณฑ์ที่ไม่ใช่ยา) | lab (ตรวจทางห้องปฏิบัติการ)
 //     ?section=core — KPI/ปีงบ/รายการ/แนวโน้ม (เบา เรนเดอร์ได้ทันที)
 //                dims — แผนก/ผู้สั่งใช้/สิทธิ์ (หนักกว่า โหลดตามหลัง)
+//                summary — ยอดรวมของทั้ง 3 ชนิดในช่วงเดียวกัน (ไม่สนใจ ?kind)
 //                ไม่ระบุ = ทั้งหมด (ใช้กับงานที่อยากได้ครบทีเดียว)
 import { NextResponse } from "next/server";
 import {
   getDrugUsageCore,
   getDrugUsageDashboard,
   getDrugUsageDims,
+  getDrugUsageSummary,
   isItemKind,
 } from "@/lib/drugUsage.service";
 import { cachedQuery } from "@/lib/cache";
@@ -111,7 +113,13 @@ export async function GET(req: Request) {
     const ttl = closed ? TTL_CLOSED : TTL_ONGOING;
 
     const data =
-      section === "core"
+      section === "summary"
+        ? await cachedQuery(
+            ["drug-usage-summary", start, end],
+            () => getDrugUsageSummary(start, end),
+            ttl,
+          )
+        : section === "core"
         ? await cachedQuery(
             ["drug-usage-core", kind, start, end],
             () => getDrugUsageCore(start, end, kind),

@@ -137,6 +137,10 @@ function firstCol(
 // ─── Types ────────────────────────────────────────────────────────────────────
 export interface DrugUsageItemRow {
   icode: string;
+  /** ราคาต่อหน่วยจากทะเบียนเวชภัณฑ์ (0 = ไม่มีข้อมูล) */
+  price: number;
+  /** ราคาต่อหน่วยเฉลี่ยที่คิดจริง = มูลค่ารวม / จำนวนที่จ่าย */
+  avg_price: number;
   /** ปีงบประมาณ พ.ศ. ของยอดแถวนี้ — แยกแถวเมื่อช่วงข้อมูลคร่อมหลายปีงบ */
   fiscal_year: number;
   name: string;
@@ -229,6 +233,7 @@ export type DrugUsageDashboardData = DrugUsageCoreData & DrugUsageDimsData;
 // ─── DB rows ──────────────────────────────────────────────────────────────────
 interface ItemDbRow extends RowDataPacket {
   icode: string;
+  price: number;
   fiscal_year: number;
   name: string;
   strength: string;
@@ -290,6 +295,7 @@ interface QueryCtx {
   unitsExpr: string;
   opdValue: string;
   ipdValue: string;
+  priceExpr: string;
   where: string;
   from: string;
   params: (string | number)[];
@@ -311,6 +317,8 @@ async function buildCtx(
   const strengthExpr = firstCol(itemCols, "d", ["strength"]);
   const unitsExpr = firstCol(itemCols, "d", ["units", "unit"]);
   const nameExpr = `COALESCE(NULLIF(${firstCol(itemCols, "d", cfg.nameCols)}, ''), o.icode)`;
+  // ราคาต่อหน่วยจากทะเบียน — drugitems/nondrugitems ใช้ price, บางเวอร์ชันใช้ unitprice
+  const priceExpr = firstCol(itemCols, "d", ["price", "unitprice"], "0");
 
   // IPD = บรรทัดที่ผูกกับ AN (admit), นอกนั้นเป็น OPD
   const hasAn = opCols.has("an");
@@ -342,6 +350,7 @@ async function buildCtx(
     nameExpr,
     strengthExpr,
     unitsExpr,
+    priceExpr,
     opdValue,
     ipdValue,
     where,
@@ -401,6 +410,7 @@ export async function getDrugUsageCore(
         o.icode                                  AS icode,
         ${FY_EXPR}                               AS fiscal_year,
         ${c.nameExpr}                            AS name,
+        MAX(${c.priceExpr})                      AS price,
         ${c.strengthExpr}                        AS strength,
         ${c.unitsExpr}                           AS units,
         COUNT(*)                                 AS order_count,
@@ -492,8 +502,13 @@ export async function getDrugUsageCore(
     totals,
     itemsLimit,
     itemsTruncated: itemRows.length >= itemsLimit,
-    items: itemRows.map((r) => ({
+    items: itemRows.map((r) => {
+      const qty = num(r.qty);
+      const value = num(r.value);
+      return {
       icode: str(r.icode),
+      price: num(r.price),
+      avg_price: qty > 0 ? value / qty : num(r.price),
       fiscal_year: num(r.fiscal_year),
       name: str(r.name),
       strength: str(r.strength),
@@ -505,7 +520,8 @@ export async function getDrugUsageCore(
       value: num(r.value),
       opd_value: num(r.opd_value),
       ipd_value: num(r.ipd_value),
-    })),
+      };
+    }),
     trend: trendRows.map((r) => ({
       date: str(r.date),
       value: num(r.value),
@@ -621,6 +637,67 @@ export async function getDrugUsageDims(
     prescribers,
     rights: rightRows.map(toDim),
   };
+}
+
+// ─── สรุปงบประมาณรวมข้ามชนิด (ยา / ไม่ใช่ยา / Lab) — query เบา ๆ ชนิดละ 1 รอบ ────
+export interface DrugUsageKindTotal {
+  kind: ItemKind;
+  label: string;
+  value: number;
+  qty: number;
+  order_count: number;
+  item_count: number;
+}
+export interface DrugUsageSummaryData {
+  start: string;
+  end: string;
+  kinds: DrugUsageKindTotal[];
+}
+
+interface KindTotalRow extends RowDataPacket {
+  value: number;
+  qty: number;
+  order_count: number;
+  item_count: number;
+}
+
+export async function getDrugUsageSummary(
+  start: string,
+  end: string,
+): Promise<DrugUsageSummaryData> {
+  const kinds: ItemKind[] = ["drug", "nondrug", "lab"];
+  const results = await Promise.all(
+    kinds.map(async (kind): Promise<DrugUsageKindTotal> => {
+      const label = KIND_CONFIG[kind].label;
+      try {
+        const c = await buildCtx(start, end, kind);
+        const [rows] = await db.query<KindTotalRow[]>(
+          `
+          SELECT
+            SUM(COALESCE(o.sum_price, 0)) AS value,
+            SUM(COALESCE(o.qty, 0))       AS qty,
+            COUNT(*)                      AS order_count,
+            COUNT(DISTINCT o.icode)       AS item_count
+          ${c.from}
+          `,
+          c.params,
+        );
+        const r = rows[0];
+        return {
+          kind,
+          label,
+          value: num(r?.value),
+          qty: num(r?.qty),
+          order_count: num(r?.order_count),
+          item_count: num(r?.item_count),
+        };
+      } catch {
+        // บางโรงพยาบาลอาจไม่มีตาราง lab_items — อย่าให้ทั้งการ์ดพัง
+        return { kind, label, value: 0, qty: 0, order_count: 0, item_count: 0 };
+      }
+    }),
+  );
+  return { start, end, kinds: results };
 }
 
 /** ทั้งหน้าในครั้งเดียว — ใช้กับ cache warmer / ผู้เรียกที่อยากได้ครบทีเดียว */

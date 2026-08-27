@@ -8,7 +8,7 @@ import {
 import {
     Pill, Syringe, FlaskConical, Coins, Boxes, Users, Receipt, Building2, Stethoscope, ShieldCheck,
     TrendingUp, Table2, Download, Search, ChevronUp, ChevronDown, ChevronsUpDown,
-    ChevronLeft, ChevronRight, Layers, CalendarRange,
+    ChevronLeft, ChevronRight, Layers, CalendarRange, PieChart as PieChartIcon,
 } from "lucide-react";
 import {
     HBarList, KpiCard, LiveBadge, RefreshButton, SectionCard,
@@ -24,7 +24,7 @@ import { THAI_MONTHS_SHORT, toThaiDateLabel } from "@/lib/thaiDate";
 type Kind = "drug" | "nondrug" | "lab";
 
 interface ItemRow {
-    fiscal_year: number;
+    fiscal_year: number; price: number; avg_price: number;
     icode: string; name: string; strength: string; units: string;
     order_count: number; qty: number; vn_count: number; hn_count: number;
     value: number; opd_value: number; ipd_value: number;
@@ -51,6 +51,13 @@ interface DashData {
     totals: Totals; items: ItemRow[]; trend: TrendRow[];
     itemsLimit: number; itemsTruncated: boolean;
 }
+/** ยอดรวมของทุกชนิดในช่วงเดียวกัน — ใช้ทำการ์ดสรุปงบประมาณรวม */
+interface KindTotal {
+    kind: Kind; label: string; value: number; qty: number;
+    order_count: number; item_count: number;
+}
+interface SummaryData { start: string; end: string; kinds: KindTotal[] }
+
 /** ส่วนแยกมิติ — โหลดตามหลัง (query หนักกว่า) */
 interface DimsData {
     departments: DimRow[]; prescribers: DimRow[]; rights: DimRow[];
@@ -291,6 +298,7 @@ function DashboardSkeleton() {
 export default function DrugUsageDashboardPage() {
     const [data, setData] = useState<DashData | null>(null);
     const [dims, setDims] = useState<DimsData | null>(null);
+    const [summary, setSummary] = useState<SummaryData | null>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     // นับรอบคำขอ — คำตอบที่มาช้ากว่ารอบล่าสุดจะถูกทิ้ง (สลับแท็บรัว ๆ ไม่สลับข้อมูลกัน)
@@ -331,12 +339,19 @@ export default function DrugUsageDashboardPage() {
         // ทิ้งชุดเดิมทันที กัน UI ค้างที่ตัวเลขของชนิด/ช่วงเวลาก่อนหน้าระหว่างรอ
         setData(null);
         setDims(null);
+        setSummary(null);
 
         // จังหวะที่ 2: มิติแผนก/ผู้สั่ง/สิทธิ์ (query หนักกว่า) — ยิงคู่ขนาน ไม่บล็อกการเรนเดอร์
         fetch(`/api/drug-usage?${params}&section=dims`, { credentials: "include" })
             .then((r) => (r.ok ? r.json() : null))
             .then((d: DimsData | null) => { if (d && seq === reqSeq.current) setDims(d); })
             .catch(() => { /* มิติเสริมล้มเหลว ไม่ทำให้ทั้งหน้าพัง */ });
+
+        // สรุปงบประมาณรวมข้ามชนิด (ยา/ไม่ใช่ยา/Lab) — ไม่ขึ้นกับแท็บที่เลือก
+        fetch(`/api/drug-usage?${params}&section=summary`, { credentials: "include" })
+            .then((r) => (r.ok ? r.json() : null))
+            .then((d: SummaryData | null) => { if (d && seq === reqSeq.current) setSummary(d); })
+            .catch(() => { /* การ์ดสรุปรวมล้มเหลว ไม่ทำให้ทั้งหน้าพัง */ });
 
         // จังหวะที่ 1: ส่วนหลัก — มาถึงเมื่อไหร่เรนเดอร์ทันที
         try {
@@ -493,9 +508,30 @@ export default function DrugUsageDashboardPage() {
         [byYear],
     );
 
+    // ── สรุปงบประมาณรวมข้ามหมวด ──
+    const summaryTotal = useMemo(
+        () => (summary?.kinds ?? []).reduce((a, k) => a + k.value, 0),
+        [summary],
+    );
+    const summaryPie = useMemo(
+        () =>
+            (summary?.kinds ?? [])
+                .filter((k) => k.value > 0)
+                .map((k, i) => ({
+                    name: KINDS.find((x) => x.key === k.kind)?.label ?? k.label,
+                    value: k.value,
+                    color: PALETTE[i % PALETTE.length],
+                })),
+        [summary],
+    );
+
     // ── charts ──
+    // 15 อันดับแรก ระบายสีตามกลุ่ม ABC (แดง=A ควบคุมเข้ม)
     const topDrugs = useMemo(
-        () => ranked.slice(0, 10).map((r) => ({ name: shortName(r), value: r.value })),
+        () =>
+            ranked
+                .slice(0, 15)
+                .map((r) => ({ name: shortName(r), value: r.value, color: ABC_META[r.abc].color })),
         [ranked],
     );
     const trendData = useMemo(() => {
@@ -539,6 +575,7 @@ export default function DrugUsageDashboardPage() {
                 ชื่อเวชภัณฑ์: r.name,
                 ความแรง: r.strength,
                 หน่วย: r.units,
+                ราคาต่อหน่วย: Number((r.price || r.avg_price).toFixed(2)),
                 จำนวนที่จ่าย: r.qty,
                 ครั้งที่สั่งใช้: r.order_count,
                 จำนวน_visit: r.vn_count,
@@ -812,58 +849,69 @@ export default function DrugUsageDashboardPage() {
                         />
                     </div>
 
-                    {/* ABC analysis */}
+                    {/* ABC analysis — แถบสัดส่วนเดียวอ่านง่ายแบบรายงานแผนจัดซื้อ */}
                     <SectionCard title="การวิเคราะห์ ABC ตามมูลค่าการใช้" icon={Layers} titleColor={MINT[800]}>
-                        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                        <p className="text-xs text-gray-500 -mt-2 mb-3">
+                            กลุ่ม A คือรายการที่กินงบสะสม 80% แรกของมูลค่ารวม ควรควบคุมการจัดซื้อ/สต๊อกใกล้ชิดที่สุด
+                        </p>
+
+                        {/* แถบเทอร์โมมิเตอร์ A/B/C */}
+                        <div className="flex h-7 rounded-lg overflow-hidden border border-gray-200">
                             {(["A", "B", "C"] as AbcClass[]).map((cls) => {
-                                const m = ABC_META[cls];
-                                const s = abcSummary[cls];
-                                const pct = totals.value ? (s.value / totals.value) * 100 : 0;
+                                const pct = totals.value ? (abcSummary[cls].value / totals.value) * 100 : 0;
+                                if (pct <= 0) return null;
                                 return (
                                     <button
                                         key={cls}
                                         onClick={() => setAbcFilter((p) => (p === cls ? "" : cls))}
-                                        className={`text-left rounded-2xl p-4 border transition-all ${abcFilter === cls ? "ring-2" : ""}`}
+                                        title={`${ABC_META[cls].label} · ${fmtPct(pct)}`}
+                                        className="flex items-center justify-center text-[11px] font-bold text-white transition-opacity hover:opacity-90"
                                         style={{
-                                            backgroundColor: m.bg,
-                                            borderColor: m.color + "33",
-                                            // @ts-expect-error — CSS custom property สำหรับ ring color
-                                            "--tw-ring-color": m.color,
+                                            width: `${pct}%`,
+                                            backgroundColor: ABC_META[cls].color,
+                                            opacity: abcFilter && abcFilter !== cls ? 0.35 : 1,
                                         }}
                                     >
-                                        <div className="flex items-center justify-between">
-                                            <span className="text-sm font-bold" style={{ color: m.color }}>
-                                                {m.label}
-                                            </span>
-                                            <span className="text-xs font-semibold" style={{ color: m.color }}>
-                                                {fmt(s.items)} รายการ
-                                            </span>
-                                        </div>
-                                        <p className="text-xl font-extrabold tabular-nums mt-1" style={{ color: m.color }}>
-                                            {fmtB(s.value)} ฿
-                                        </p>
-                                        <div className="h-1.5 rounded-full bg-white/70 mt-2 overflow-hidden">
-                                            <div
-                                                className="h-full rounded-full"
-                                                style={{ width: `${pct}%`, backgroundColor: m.color }}
-                                            />
-                                        </div>
-                                        <p className="text-[11px] mt-1.5" style={{ color: m.color + "cc" }}>
-                                            {fmtPct(pct)} ของมูลค่ารวม · {m.hint}
-                                        </p>
+                                        {pct >= 7 ? `${pct.toFixed(0)}%` : ""}
                                     </button>
                                 );
                             })}
                         </div>
-                        {abcFilter && (
-                            <p className="text-xs text-gray-500 mt-3">
-                                กำลังกรองตารางเฉพาะ{" "}
-                                <span className="font-semibold">{ABC_META[abcFilter].label}</span> ·{" "}
-                                <button onClick={() => setAbcFilter("")} className="underline" style={{ color: MINT[600] }}>
+
+                        {/* คำอธิบายใต้แถบ — กดเพื่อกรองตารางได้ */}
+                        <div className="flex flex-wrap gap-x-6 gap-y-2 mt-3">
+                            {(["A", "B", "C"] as AbcClass[]).map((cls) => {
+                                const m = ABC_META[cls];
+                                const sum = abcSummary[cls];
+                                const active = abcFilter === cls;
+                                return (
+                                    <button
+                                        key={cls}
+                                        onClick={() => setAbcFilter((p) => (p === cls ? "" : cls))}
+                                        className={`flex items-center gap-2 text-xs transition-colors ${active ? "font-bold" : "text-gray-500 hover:text-gray-700"}`}
+                                        style={active ? { color: m.color } : undefined}
+                                    >
+                                        <span
+                                            className="w-2.5 h-2.5 rounded-full shrink-0"
+                                            style={{ backgroundColor: m.color }}
+                                        />
+                                        {m.label} · {fmt(sum.items)} รายการ · {fmtB(sum.value)} บาท
+                                    </button>
+                                );
+                            })}
+                            {abcFilter && (
+                                <button
+                                    onClick={() => setAbcFilter("")}
+                                    className="text-xs underline"
+                                    style={{ color: MINT[600] }}
+                                >
                                     ล้างตัวกรอง
                                 </button>
-                            </p>
-                        )}
+                            )}
+                        </div>
+                        <p className="text-[11px] text-gray-400 mt-2">
+                            {ABC_META.A.hint} · {ABC_META.B.hint} · {ABC_META.C.hint}
+                        </p>
                     </SectionCard>
 
                     {/* เปรียบเทียบรายปีงบ — โผล่เมื่อช่วงข้อมูลคร่อมมากกว่า 1 ปีงบ */}
@@ -1049,10 +1097,10 @@ export default function DrugUsageDashboardPage() {
                         </SectionCard>
 
                         <SectionCard
-                            title={`10 อันดับ${kindMeta.label}ที่มีมูลค่าการใช้สูงสุด`}
+                            title={`15 อันดับ${kindMeta.label}ที่มีมูลค่าการใช้สูงสุด`}
                             icon={kindMeta.icon} titleColor={MINT[800]}
                         >
-                            <ResponsiveContainer width="100%" height={260}>
+                            <ResponsiveContainer width="100%" height={420}>
                                 <BarChart
                                     data={topDrugs} layout="vertical"
                                     margin={{ top: 4, right: 16, bottom: 4, left: 8 }}
@@ -1062,8 +1110,8 @@ export default function DrugUsageDashboardPage() {
                                     <YAxis type="category" dataKey="name" width={170} tick={{ fontSize: 10 }} />
                                     <RTooltip formatter={(v?: number) => [`${fmtB(Number(v))} บาท`, "มูลค่า"]} />
                                     <Bar dataKey="value" radius={[0, 6, 6, 0]}>
-                                        {topDrugs.map((_, i) => (
-                                            <Cell key={i} fill={PALETTE[i % PALETTE.length]} />
+                                        {topDrugs.map((d, i) => (
+                                            <Cell key={i} fill={d.color} />
                                         ))}
                                     </Bar>
                                 </BarChart>
@@ -1182,16 +1230,28 @@ export default function DrugUsageDashboardPage() {
                                     ))}
                                 </select>
                             )}
-                            <select
-                                value={abcFilter}
-                                onChange={(e) => setAbcFilter(e.target.value as "" | AbcClass)}
-                                className="border border-gray-200 rounded-lg px-2 py-1.5 text-sm text-gray-600 bg-white"
-                            >
-                                <option value="">ทุกกลุ่ม ABC</option>
-                                <option value="A">กลุ่ม A</option>
-                                <option value="B">กลุ่ม B</option>
-                                <option value="C">กลุ่ม C</option>
-                            </select>
+                            <div className="flex items-center gap-1">
+                                {([["", "ทั้งหมด"], ["A", "A"], ["B", "B"], ["C", "C"]] as const).map(
+                                    ([key, label]) => {
+                                        const active = abcFilter === key;
+                                        const color = key ? ABC_META[key as AbcClass].color : MINT[700];
+                                        return (
+                                            <button
+                                                key={label}
+                                                onClick={() => setAbcFilter(key as "" | AbcClass)}
+                                                className="px-3 py-1.5 rounded-full text-xs font-bold border transition-colors"
+                                                style={
+                                                    active
+                                                        ? { backgroundColor: color, borderColor: color, color: "#fff" }
+                                                        : { borderColor: "#e5e7eb", color: "#6b7280" }
+                                                }
+                                            >
+                                                {label}
+                                            </button>
+                                        );
+                                    },
+                                )}
+                            </div>
                             <span className="text-xs text-gray-500">
                                 {fmt(filtered.length)} รายการ · รวม{" "}
                                 <span className="font-bold" style={{ color: MINT[700] }}>{fmtB(filteredValue)}</span> บาท
@@ -1233,6 +1293,7 @@ export default function DrugUsageDashboardPage() {
                                                 <Th>
                                                     {kind === "drug" ? "ความแรง / หน่วย" : "หน่วย"}
                                                 </Th>
+                                                <Th className="text-right">ราคา/หน่วย</Th>
                                                 <Th className="text-right" onClick={() => sortBy("qty")} active={sortKey === "qty"} asc={sortAsc}>
                                                     {kind === "lab" ? "จำนวนตรวจ" : "จำนวนจ่าย"}
                                                 </Th>
@@ -1271,6 +1332,9 @@ export default function DrugUsageDashboardPage() {
                                                     <td className="px-3 py-2 text-gray-500 whitespace-nowrap">
                                                         {[r.strength, r.units].filter(Boolean).join(" / ") || "—"}
                                                     </td>
+                                                    <td className="px-3 py-2 text-right tabular-nums text-gray-500">
+                                                        {fmtB(r.price || r.avg_price)}
+                                                    </td>
                                                     <td className="px-3 py-2 text-right tabular-nums">{fmt(r.qty)}</td>
                                                     <td className="px-3 py-2 text-right tabular-nums">{fmt(r.order_count)}</td>
                                                     <td className="px-3 py-2 text-right tabular-nums">{fmt(r.vn_count)}</td>
@@ -1308,6 +1372,90 @@ export default function DrugUsageDashboardPage() {
                                     </div>
                                 )}
                             </>
+                        )}
+                    </SectionCard>
+
+                    {/* สรุปงบประมาณรวมทุกชนิด — ใช้ประกอบการจัดสรรงบจัดซื้อ */}
+                    <SectionCard
+                        title="สรุปงบประมาณรวม — เทียบมูลค่าการใช้แต่ละหมวด"
+                        icon={PieChartIcon}
+                        titleColor={MINT[800]}
+                    >
+                        {!summary ? (
+                            <Shimmer h="h-[260px]" />
+                        ) : (
+                            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-center">
+                                <ResponsiveContainer width="100%" height={260}>
+                                    <PieChart>
+                                        <Pie
+                                            data={summaryPie} dataKey="value" nameKey="name"
+                                            innerRadius={62} outerRadius={95} paddingAngle={2}
+                                        >
+                                            {summaryPie.map((sl, i) => <Cell key={i} fill={sl.color} />)}
+                                        </Pie>
+                                        <RTooltip formatter={(v?: number) => `${fmtB(Number(v))} บาท`} />
+                                        <Legend wrapperStyle={{ fontSize: 11 }} />
+                                    </PieChart>
+                                </ResponsiveContainer>
+
+                                <div className="overflow-x-auto">
+                                    <table className="min-w-full text-sm border-collapse">
+                                        <thead>
+                                            <tr>
+                                                <Th>หมวด</Th>
+                                                <Th className="text-right">มูลค่า (บาท)</Th>
+                                                <Th className="text-right">สัดส่วน</Th>
+                                                <Th className="text-right">รายการ</Th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {summary.kinds.map((k, i) => {
+                                                const pct = summaryTotal ? (k.value / summaryTotal) * 100 : 0;
+                                                const meta = KINDS.find((x) => x.key === k.kind);
+                                                return (
+                                                    <tr
+                                                        key={k.kind}
+                                                        className="border-b border-gray-100"
+                                                        style={{ backgroundColor: i % 2 ? "#f9fafb" : "#ffffff" }}
+                                                    >
+                                                        <td className="px-3 py-2 font-medium whitespace-nowrap">
+                                                            {meta?.label ?? k.label}
+                                                        </td>
+                                                        <td
+                                                            className="px-3 py-2 text-right tabular-nums font-bold"
+                                                            style={{ color: MINT[700] }}
+                                                        >
+                                                            {fmtB(k.value)}
+                                                        </td>
+                                                        <td className="px-3 py-2 text-right tabular-nums text-gray-500">
+                                                            {fmtPct(pct)}
+                                                        </td>
+                                                        <td className="px-3 py-2 text-right tabular-nums text-gray-500">
+                                                            {fmt(k.item_count)}
+                                                        </td>
+                                                    </tr>
+                                                );
+                                            })}
+                                            <tr className="bg-white font-bold">
+                                                <td className="px-3 py-2">รวมทุกหมวด</td>
+                                                <td
+                                                    className="px-3 py-2 text-right tabular-nums"
+                                                    style={{ color: MINT[800] }}
+                                                >
+                                                    {fmtB(summaryTotal)}
+                                                </td>
+                                                <td className="px-3 py-2 text-right tabular-nums">100.0%</td>
+                                                <td className="px-3 py-2 text-right tabular-nums">
+                                                    {fmt(summary.kinds.reduce((a, k) => a + k.item_count, 0))}
+                                                </td>
+                                            </tr>
+                                        </tbody>
+                                    </table>
+                                    <p className="text-[11px] text-gray-400 mt-2">
+                                        * ช่วงข้อมูลเดียวกับที่เลือกด้านบน · ใช้ประกอบการพิจารณาจัดสรรงบจัดซื้อ
+                                    </p>
+                                </div>
+                            </div>
                         )}
                     </SectionCard>
 
