@@ -74,6 +74,11 @@ const MINT = {
     50: "#f0faf4", 100: "#d6f0e0", 200: "#a8d5ba", 300: "#7ec8a0",
     400: "#55b882", 500: "#3aa36a", 600: "#2d8a56", 700: "#236b43", 800: "#1a5233",
 };
+// สีประจำตัว OPD / IPD — ใช้ชุดเดียวกันทุกกราฟและทุกตารางในหน้านี้
+// เขียวมิ้นต์ = ผู้ป่วยนอก, น้ำเงินคราม = ผู้ป่วยใน (จำง่าย ไม่ต้องเปิด legend ทุกครั้ง)
+const OPD_COLOR = "#3fbf95";
+const IPD_COLOR = "#3f6fd4";
+
 const PALETTE = ["#3aa36a", "#185FA5", "#6a1b9a", "#e65100", "#00695c", "#880e4f", "#5b21b6", "#b45309"];
 
 const PRESETS: { key: Preset; label: string }[] = [
@@ -619,8 +624,8 @@ export default function DrugUsageDashboardPage() {
     const typePie = useMemo(() => {
         if (!totals) return [];
         return [
-            { name: "ผู้ป่วยนอก (OPD)", value: totals.opd_value, color: PALETTE[0] },
-            { name: "ผู้ป่วยใน (IPD)", value: totals.ipd_value, color: PALETTE[1] },
+            { name: "ผู้ป่วยนอก (OPD)", value: totals.opd_value, color: OPD_COLOR },
+            { name: "ผู้ป่วยใน (IPD)", value: totals.ipd_value, color: IPD_COLOR },
         ].filter((s) => s.value > 0);
     }, [totals]);
     const rightPie = useMemo(
@@ -1187,6 +1192,23 @@ export default function DrugUsageDashboardPage() {
                             title={`15 อันดับ${kindMeta.label}ที่มีมูลค่าการใช้สูงสุด (แยก OPD / IPD)`}
                             icon={kindMeta.icon} titleColor={MINT[800]}
                         >
+                            <p className="text-xs text-gray-500 -mt-2 mb-2 flex flex-wrap items-center gap-x-3">
+                                <span className="inline-flex items-center gap-1.5">
+                                    <span
+                                        className="w-3 h-3 rounded-sm inline-block"
+                                        style={{ backgroundColor: OPD_COLOR }}
+                                    />
+                                    ผู้ป่วยนอก (OPD)
+                                </span>
+                                <span className="inline-flex items-center gap-1.5">
+                                    <span
+                                        className="w-3 h-3 rounded-sm inline-block"
+                                        style={{ backgroundColor: IPD_COLOR }}
+                                    />
+                                    ผู้ป่วยใน (IPD)
+                                </span>
+                                <span className="text-gray-400">· คลิกแท่งเพื่อค้นหารายการนั้นในตารางด้านล่าง</span>
+                            </p>
                             <ResponsiveContainer width="100%" height={420}>
                                 <BarChart
                                     data={topDrugs} layout="vertical"
@@ -1194,37 +1216,51 @@ export default function DrugUsageDashboardPage() {
                                 >
                                     <CartesianGrid strokeDasharray="3 3" stroke="#eef2f6" horizontal={false} />
                                     <XAxis type="number" tick={{ fontSize: 11 }} tickFormatter={(v) => fmt(Number(v))} />
-                                    <YAxis type="category" dataKey="name" width={170} tick={{ fontSize: 10 }} />
-                                    <RTooltip formatter={(v?: number) => [`${fmtB(Number(v))} บาท`, "มูลค่า"]} />
-                                    <Legend wrapperStyle={{ fontSize: 11 }} />
+                                    <YAxis
+                                        type="category" dataKey="name" width={190}
+                                        tick={{ fontSize: 10 }}
+                                    />
+                                    <defs>
+                                        <linearGradient id="gradOpd" x1="0" y1="0" x2="1" y2="0">
+                                            <stop offset="0%" stopColor={OPD_COLOR} stopOpacity={0.75} />
+                                            <stop offset="100%" stopColor={OPD_COLOR} stopOpacity={1} />
+                                        </linearGradient>
+                                        <linearGradient id="gradIpd" x1="0" y1="0" x2="1" y2="0">
+                                            <stop offset="0%" stopColor={IPD_COLOR} stopOpacity={0.75} />
+                                            <stop offset="100%" stopColor={IPD_COLOR} stopOpacity={1} />
+                                        </linearGradient>
+                                    </defs>
+                                    <RTooltip
+                                        cursor={{ fill: "#f8fafc" }}
+                                        formatter={(v: number | undefined, name) => [
+                                            `${fmtB(Number(v))} บาท`,
+                                            String(name),
+                                        ]}
+                                        labelFormatter={(l, payload) =>
+                                            (payload?.[0]?.payload as { fullName?: string })?.fullName ?? String(l)
+                                        }
+                                    />
+                                    <Legend wrapperStyle={{ fontSize: 11 }} iconType="circle" />
                                     <Bar
                                         dataKey="opd" name="ผู้ป่วยนอก (OPD)" stackId="v"
-                                        cursor="pointer"
+                                        fill="url(#gradOpd)" cursor="pointer"
                                         onClick={(d) =>
                                             setSearch(
                                                 (d as unknown as { payload?: { fullName?: string } })
                                                     ?.payload?.fullName ?? "",
                                             )
                                         }
-                                    >
-                                        {topDrugs.map((d, i) => (
-                                            <Cell key={i} fill={d.color} fillOpacity={0.45} />
-                                        ))}
-                                    </Bar>
+                                    />
                                     <Bar
                                         dataKey="ipd" name="ผู้ป่วยใน (IPD)" stackId="v"
-                                        radius={[0, 6, 6, 0]} cursor="pointer"
+                                        fill="url(#gradIpd)" radius={[0, 6, 6, 0]} cursor="pointer"
                                         onClick={(d) =>
                                             setSearch(
                                                 (d as unknown as { payload?: { fullName?: string } })
                                                     ?.payload?.fullName ?? "",
                                             )
                                         }
-                                    >
-                                        {topDrugs.map((d, i) => (
-                                            <Cell key={i} fill={d.color} />
-                                        ))}
-                                    </Bar>
+                                    />
                                 </BarChart>
                             </ResponsiveContainer>
                         </SectionCard>
@@ -1431,7 +1467,20 @@ export default function DrugUsageDashboardPage() {
                                                 <Th className="text-right" onClick={() => sortBy("value")} active={sortKey === "value"} asc={sortAsc}>
                                                     มูลค่า (บาท)
                                                 </Th>
-                                                <Th className="text-center">OPD/IPD</Th>
+                                                <Th className="text-center">
+                                                    <span className="inline-flex items-center gap-1 whitespace-nowrap">
+                                                        <span
+                                                            className="w-2 h-2 rounded-full inline-block"
+                                                            style={{ backgroundColor: OPD_COLOR }}
+                                                        />
+                                                        OPD
+                                                        <span
+                                                            className="w-2 h-2 rounded-full inline-block ml-1"
+                                                            style={{ backgroundColor: IPD_COLOR }}
+                                                        />
+                                                        IPD
+                                                    </span>
+                                                </Th>
                                                 <Th className="text-right">สัดส่วน</Th>
                                                 <Th className="text-right">สะสม</Th>
                                                 <Th className="text-center">ABC</Th>
@@ -1481,8 +1530,8 @@ export default function DrugUsageDashboardPage() {
                                                                     className="flex h-2 w-16 mx-auto rounded-full overflow-hidden bg-gray-100"
                                                                     title={`OPD ${fmtPct(opdPct)} · IPD ${fmtPct(100 - opdPct)}`}
                                                                 >
-                                                                    <div style={{ width: `${opdPct}%`, backgroundColor: "#55b882" }} />
-                                                                    <div style={{ width: `${100 - opdPct}%`, backgroundColor: "#185FA5" }} />
+                                                                    <div style={{ width: `${opdPct}%`, backgroundColor: OPD_COLOR }} />
+                                                                    <div style={{ width: `${100 - opdPct}%`, backgroundColor: IPD_COLOR }} />
                                                                 </div>
                                                             );
                                                         })()}
@@ -1614,10 +1663,10 @@ export default function DrugUsageDashboardPage() {
                                             <YAxis tick={{ fontSize: 11 }} tickFormatter={(v) => fmt(Number(v))} width={70} />
                                             <RTooltip formatter={(v?: number) => `${fmtB(Number(v))} บาท`} />
                                             <Legend wrapperStyle={{ fontSize: 11 }} />
-                                            <Bar dataKey="opd" name="ผู้ป่วยนอก (OPD)" stackId="k" fill="#55b882" />
+                                            <Bar dataKey="opd" name="ผู้ป่วยนอก (OPD)" stackId="k" fill={OPD_COLOR} />
                                             <Bar
                                                 dataKey="ipd" name="ผู้ป่วยใน (IPD)" stackId="k"
-                                                fill="#185FA5" radius={[6, 6, 0, 0]}
+                                                fill={IPD_COLOR} radius={[6, 6, 0, 0]}
                                             />
                                         </BarChart>
                                     </ResponsiveContainer>
