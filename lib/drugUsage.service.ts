@@ -65,6 +65,8 @@ const KIND_CONFIG: Record<
     itemIncomeNot?: string[];
     /** true = เพิ่มเงื่อนไข "เป็นยาสมุนไพร" */
     herbalOnly?: boolean;
+    /** "supply" = เอาเฉพาะวัสดุสิ้นเปลืองจริง, "service" = เอาเฉพาะค่าบริการ/หัตถการ */
+    nondrugSplit?: "supply" | "service";
     /** กรองด้วย o.income บน opitemrece */
     income: string[];
   }
@@ -91,21 +93,22 @@ const KIND_CONFIG: Record<
     itemIncome: envList(process.env.DRUG_USAGE_LAB_ITEM_INCOME),
     income: envList(process.env.DRUG_USAGE_LAB_INCOME),
   },
-  // วัสดุสิ้นเปลือง = nondrugitems หมวด 05 (ตามรายงานหน้างาน)
+  // วัสดุสิ้นเปลืองจริง = nondrugitems หมวด 05 ที่เป็นของจับต้องได้จริง
   supply: {
     table: "nondrugitems",
-    label: "วัสดุสิ้นเปลือง",
+    label: "วัสดุสิ้นเปลืองจริง",
     nameCols: ["name"],
     itemIncome: envList(process.env.DRUG_USAGE_SUPPLY_ITEM_INCOME ?? "05"),
+    nondrugSplit: "supply",
     income: envList(process.env.DRUG_USAGE_SUPPLY_INCOME),
   },
-  // ค่าบริการ/หัตถการ = nondrugitems หมวดอื่นที่ไม่ใช่ 05
+  // ค่าบริการ/หัตถการ = nondrugitems ที่เหลือทั้งหมด (ทุกหมวด)
   service: {
     table: "nondrugitems",
     label: "ค่าบริการ/หัตถการ",
     nameCols: ["name"],
-    itemIncome: [],
-    itemIncomeNot: envList(process.env.DRUG_USAGE_SERVICE_ITEM_INCOME_NOT ?? "05"),
+    itemIncome: envList(process.env.DRUG_USAGE_SERVICE_ITEM_INCOME),
+    nondrugSplit: "service",
     income: envList(process.env.DRUG_USAGE_SERVICE_INCOME),
   },
   // alias เดิม (ก่อนแยก supply/service) — ชี้ไปที่วัสดุสิ้นเปลืองเหมือนเดิม
@@ -157,6 +160,20 @@ const HERBAL_KEYWORDS = envList(
       "พอกเข่า", "มะขามป้อม", "บำรุงน้ำนม", "อบสมุนไพร", "กัญชา",
     ].join(","),
 );
+// ── แยก "วัสดุสิ้นเปลืองจริง" ออกจาก "ค่าบริการ/หัตถการ" ใน nondrugitems ──
+// กฎเดียวกับไฟล์ต้นแบบที่แพทย์ใช้:
+//   ชื่อขึ้นต้นด้วย "ค่า"        → ค่าบริการ/หัตถการ (เช่น ค่าห้อง/ค่าอาหาร)
+//   หน่วยนับเป็นหน่วยของจริง    → วัสดุสิ้นเปลืองจริง
+//   นอกนั้น                     → ค่าบริการ/หัตถการ
+const SUPPLY_UNITS = envList(
+  process.env.DRUG_USAGE_SUPPLY_UNITS ??
+    [
+      "ชิ้น", "คู่", "ชุด", "ม้วน", "ถุง", "ขวด", "แผ่น", "หลอด",
+      "ซอง", "พับ", "อัน", "ห่อ", "กล่อง", "ผืน", "คัน", "แท่ง",
+    ].join(","),
+);
+const SERVICE_NAME_PREFIX = process.env.DRUG_USAGE_SERVICE_PREFIX ?? "ค่า";
+
 const HERBAL_FLAG_COLS = ["is_herb", "is_herbal", "herbal", "herb", "thai_herb"];
 const HERBAL_TYPE_COLS = ["drugtype", "drug_type", "drugitem_type", "drug_group"];
 
@@ -411,6 +428,21 @@ async function buildCtx(
     incomeSql += ` AND d.income IN (${cfg.itemIncome.map(() => "?").join(",")})`;
     params.push(...cfg.itemIncome);
   }
+  // แยกวัสดุจริง / ค่าบริการ ตามหน่วยนับ + ชื่อขึ้นต้น "ค่า"
+  if (cfg.nondrugSplit) {
+    const unitCol = ["unit", "units"].find((cName) => itemCols.has(cName));
+    // เงื่อนไข "เป็นวัสดุจริง": ชื่อไม่ขึ้นต้นด้วย ค่า และหน่วยอยู่ในรายการหน่วยของจริง
+    const isSupply =
+      unitCol && SUPPLY_UNITS.length
+        ? `(COALESCE(d.name, '') NOT LIKE ? AND TRIM(COALESCE(d.${unitCol}, '')) IN (${SUPPLY_UNITS.map(
+            () => "?",
+          ).join(",")}))`
+        : `(COALESCE(d.name, '') NOT LIKE ?)`;
+    incomeSql += cfg.nondrugSplit === "supply" ? ` AND ${isSupply}` : ` AND NOT ${isSupply}`;
+    params.push(`${SERVICE_NAME_PREFIX}%`);
+    if (unitCol && SUPPLY_UNITS.length) params.push(...SUPPLY_UNITS);
+  }
+
   // ตัดหมวดออก (ใช้กับค่าบริการ/หัตถการ = ทุกหมวดยกเว้น 05)
   if (cfg.itemIncomeNot?.length && itemCols.has("income")) {
     incomeSql += ` AND COALESCE(d.income, '') NOT IN (${cfg.itemIncomeNot
