@@ -340,6 +340,9 @@ export default function DrugUsageDashboardPage() {
     const [search, setSearch] = useState("");
     const [abcFilter, setAbcFilter] = useState<"" | AbcClass>("");
     const [yearFilter, setYearFilter] = useState<number | "">("");
+    // รวมรายการชื่อเดียวกันเป็นแถวเดียว (ตรงกับรายงานหน้างานที่ GROUP BY d.name)
+    // ปิดสวิตช์นี้เพื่อดูแยกตามรหัสเวชภัณฑ์ (icode)
+    const [groupByName, setGroupByName] = useState(true);
     const [sortKey, setSortKey] = useState<SortKey>("value");
     const [sortAsc, setSortAsc] = useState(false);
     const [page, setPage] = useState(1);
@@ -409,7 +412,7 @@ export default function DrugUsageDashboardPage() {
     }, [preset, kind, fiscalYear]);
 
     // เปลี่ยนตัวกรอง → กลับหน้าแรกเสมอ
-    useEffect(() => { setPage(1); }, [search, abcFilter, yearFilter, sortKey, sortAsc, data]);
+    useEffect(() => { setPage(1); }, [search, abcFilter, yearFilter, groupByName, sortKey, sortAsc, data]);
 
     // ── derived ──
     // ข้อมูลในมือยังไม่ใช่ของชนิดที่เลือกอยู่ → ถือว่ายังโหลดไม่เสร็จ
@@ -424,10 +427,43 @@ export default function DrugUsageDashboardPage() {
     const multiYear = dataYears.length > 1;
 
     /** ทุกรายการ + %สัดส่วน, %สะสม และ ABC class (เรียงตามมูลค่าจาก API อยู่แล้ว) */
+    /**
+     * รวมรายการชื่อเดียวกัน (ภายในปีงบเดียวกัน) ให้เป็นแถวเดียว —
+     * ตรงกับรายงานหน้างานที่ GROUP BY d.name เช่น arm sling หลายไซซ์/หลายรหัส
+     * หมายเหตุ: Visit/ผู้ป่วยของแถวที่รวมแล้วเป็นผลบวก อาจนับซ้ำได้ถ้าคนไข้
+     *           คนเดียวได้รับหลายรหัสในชื่อเดียวกัน (มูลค่า/จำนวนถูกต้องเสมอ)
+     */
+    const groupedItems = useMemo(() => {
+        if (!groupByName) return items;
+        const map = new Map<string, ItemRow & { codeCount: number }>();
+        for (const r of items) {
+            const key = `${r.name}__${r.fiscal_year}`;
+            const cur = map.get(key);
+            if (!cur) {
+                map.set(key, { ...r, codeCount: 1 });
+                continue;
+            }
+            cur.codeCount++;
+            cur.qty += r.qty;
+            cur.order_count += r.order_count;
+            cur.vn_count += r.vn_count;
+            cur.hn_count += r.hn_count;
+            cur.value += r.value;
+            cur.opd_value += r.opd_value;
+            cur.ipd_value += r.ipd_value;
+            if (!cur.units && r.units) cur.units = r.units;
+            if (!cur.strength && r.strength) cur.strength = r.strength;
+            // ราคา/หน่วยของแถวที่รวมแล้ว = ราคาเฉลี่ยถ่วงน้ำหนักตามจำนวนที่จ่าย
+            cur.price = 0;
+            cur.avg_price = cur.qty > 0 ? cur.value / cur.qty : cur.avg_price;
+        }
+        return [...map.values()].sort((a, b) => b.value - a.value);
+    }, [items, groupByName]);
+
     const ranked = useMemo(() => {
-        const total = items.reduce((s, r) => s + r.value, 0);
+        const total = groupedItems.reduce((s, r) => s + r.value, 0);
         let cum = 0;
-        return items.map((r, i) => {
+        return groupedItems.map((r, i) => {
             cum += r.value;
             const cumPct = total > 0 ? (cum / total) * 100 : 0;
             const abc: AbcClass = cumPct <= 80 ? "A" : cumPct <= 95 ? "B" : "C";
@@ -439,7 +475,7 @@ export default function DrugUsageDashboardPage() {
                 abc,
             };
         });
-    }, [items]);
+    }, [groupedItems]);
 
     type RankedRow = (typeof ranked)[number];
 
@@ -610,7 +646,9 @@ export default function DrugUsageDashboardPage() {
             filtered.map((r) => ({
                 อันดับ: r.rank,
                 ปีงบประมาณ: r.fiscal_year,
-                รหัสเวชภัณฑ์: r.icode,
+                รหัสเวชภัณฑ์: groupByName && ((r as { codeCount?: number }).codeCount ?? 1) > 1
+                    ? `รวม ${(r as { codeCount?: number }).codeCount} รหัส`
+                    : r.icode,
                 ชื่อเวชภัณฑ์: r.name,
                 ความแรง: r.strength,
                 หน่วย: r.units,
@@ -1326,6 +1364,18 @@ export default function DrugUsageDashboardPage() {
                                     },
                                 )}
                             </div>
+                            <button
+                                onClick={() => setGroupByName((p) => !p)}
+                                title="สลับระหว่างรวมรายการชื่อเดียวกัน (ตรงกับรายงานหน้างาน) กับแยกตามรหัสเวชภัณฑ์"
+                                className="px-3 py-1.5 rounded-lg text-xs font-semibold border transition-colors"
+                                style={
+                                    groupByName
+                                        ? { backgroundColor: MINT[50], borderColor: MINT[200], color: MINT[800] }
+                                        : { borderColor: "#e5e7eb", color: "#6b7280" }
+                                }
+                            >
+                                {groupByName ? "รวมชื่อเดียวกัน" : "แยกตามรหัส"}
+                            </button>
                             <span className="text-xs text-gray-500">
                                 {fmt(filtered.length)} รายการ · รวม{" "}
                                 <span className="font-bold" style={{ color: MINT[700] }}>{fmtB(filteredValue)}</span> บาท
@@ -1390,7 +1440,7 @@ export default function DrugUsageDashboardPage() {
                                         <tbody>
                                             {pageRows.map((r: RankedRow, i) => (
                                                 <tr
-                                                    key={`${r.icode}_${r.fiscal_year}`}
+                                                    key={`${groupByName ? r.name : r.icode}_${r.fiscal_year}`}
                                                     className="border-b border-gray-100"
                                                     style={{ backgroundColor: i % 2 ? "#f9fafb" : "#ffffff" }}
                                                 >
@@ -1403,7 +1453,11 @@ export default function DrugUsageDashboardPage() {
                                                             {r.fiscal_year}
                                                         </span>
                                                     </td>
-                                                    <td className="px-3 py-2 text-gray-500 whitespace-nowrap">{r.icode}</td>
+                                                    <td className="px-3 py-2 text-gray-500 whitespace-nowrap">
+                                                        {groupByName && ((r as { codeCount?: number }).codeCount ?? 1) > 1
+                                                            ? `${(r as { codeCount?: number }).codeCount} รหัส`
+                                                            : r.icode}
+                                                    </td>
                                                     <td className="px-3 py-2 font-medium">{r.name}</td>
                                                     <td className="px-3 py-2 text-gray-500 whitespace-nowrap">
                                                         {[r.strength, r.units].filter(Boolean).join(" / ") || "—"}
