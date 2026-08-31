@@ -53,7 +53,10 @@ const chartTip = { fontSize: 12, borderRadius: 8, border: "1px solid #e5e7eb" };
 // ─── Page ─────────────────────────────────────────────────────────────────────
 export default function IpHomeWardDashboardPage() {
     const { data, loading, error, connected, secondsLeft, refetch } =
-        useAutoRefresh<IpHomeWardData>("/api/ip-homeward-sheets", REFRESH_INTERVAL_MS);
+        useAutoRefresh<IpHomeWardData>("/api/ip-homeward-sheets", REFRESH_INTERVAL_MS, {
+            // กดปุ่มรีเฟรชเอง = ล้าง cache ฝั่ง server ด้วย (เพิ่งแก้ชีตแล้วอยากเห็นทันที)
+            refreshUrl: "/api/ip-homeward-sheets?refresh=1",
+        });
     const [tab, setTab] = useState<Tab>("overview");
 
     // ── สรุปสำหรับ AI — ส่งเฉพาะสถิติรวม (ไม่ส่งข้อมูลผู้ป่วยรายบุคคล) ──

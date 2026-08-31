@@ -15,9 +15,16 @@ interface AutoRefreshState<T> {
   refetch: () => void;
 }
 
+export interface AutoRefreshOptions {
+  /** URL ที่ใช้เฉพาะตอนผู้ใช้กดปุ่มรีเฟรชเอง — ใส่ ?refresh=1 เพื่อล้าง cache ฝั่ง server
+   *  (poll อัตโนมัติยังใช้ url ปกติ จะได้ไม่ไปทุบ cache ทุก 30 วิ) */
+  refreshUrl?: string;
+}
+
 export function useAutoRefresh<T>(
   url: string,
   intervalMs = 30_000,
+  opts: AutoRefreshOptions = {},
 ): AutoRefreshState<T> {
   const [data, setData] = useState<T | null>(null);
   const [loading, setLoading] = useState(true);
@@ -27,12 +34,18 @@ export function useAutoRefresh<T>(
 
   const countRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
+  const { refreshUrl } = opts;
+
   const fetchData = useCallback(
-    async (silent = false) => {
+    async (silent = false, force = false) => {
       if (!silent) setLoading(true);
       setError(null);
       try {
-        const res = await fetch(url, { credentials: "include" });
+        const target = force && refreshUrl ? refreshUrl : url;
+        const res = await fetch(target, {
+          credentials: "include",
+          cache: force ? "no-store" : "default",
+        });
         if (!res.ok) {
           const j = await res.json().catch(() => ({}));
           throw new Error(j.error ?? `HTTP ${res.status}`);
@@ -47,7 +60,7 @@ export function useAutoRefresh<T>(
         setSecondsLeft(intervalMs / 1000);
       }
     },
-    [url, intervalMs],
+    [url, refreshUrl, intervalMs],
   );
 
   useEffect(() => {
@@ -70,6 +83,6 @@ export function useAutoRefresh<T>(
     error,
     connected,
     secondsLeft,
-    refetch: () => fetchData(),
+    refetch: () => fetchData(false, true),
   };
 }

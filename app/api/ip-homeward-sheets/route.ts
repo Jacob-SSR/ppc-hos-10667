@@ -1,6 +1,6 @@
 // app/api/ip-homeward-sheets/route.ts
 import { NextResponse } from "next/server";
-import { cachedQuery, defaultMaxAge } from "@/lib/cache";
+import { cachedQuery, defaultMaxAge, invalidate } from "@/lib/cache";
 import { jsonCached } from "@/lib/httpCache";
 import {
   getSheetClient,
@@ -28,17 +28,48 @@ const SPREADSHEET_ID = process.env.IP_HOMEWARD_SPREADSHEET_ID!;
 const TTL_SECONDS = 900;
 const CACHE_KEY = "ip-homeward-sheets";
 
-// แท็บรายเดือน เรียงตามเวลา (ต.ค.68 → พ.ค.69) — ปีงบ 2569
-const MONTH_SHEETS: { sheet: string; label: string }[] = [
-  { sheet: "1068", label: "ต.ค.68" },
-  { sheet: "1168", label: "พ.ย.68" },
-  { sheet: "1268", label: "ธ.ค.68" },
-  { sheet: "0169", label: "ม.ค.69" },
-  { sheet: "0269", label: "ก.พ.69" },
-  { sheet: "0369", label: "มี.ค.69" },
-  { sheet: "0469", label: "เม.ย.69" },
-  { sheet: "0569", label: "พ.ค.69" },
+// แท็บรายเดือนใช้ชื่อรูปแบบ "MMYY" (พ.ศ. 2 หลัก) เช่น 1068 = ต.ค.68, 0969 = ก.ย.69
+// เดิม hard-code ไว้ถึง 0569 → พอในชีตเพิ่มเดือนใหม่ (มิ.ย.69 เป็นต้นไป) หน้า dashboard
+// ก็ไม่ขึ้นตาม เพราะ route ไม่รู้จักแท็บนั้น จึงเปลี่ยนมาอ่านรายชื่อแท็บจริงทุกครั้งแทน
+const THAI_MONTH_ABBR = [
+  "ม.ค.",
+  "ก.พ.",
+  "มี.ค.",
+  "เม.ย.",
+  "พ.ค.",
+  "มิ.ย.",
+  "ก.ค.",
+  "ส.ค.",
+  "ก.ย.",
+  "ต.ค.",
+  "พ.ย.",
+  "ธ.ค.",
 ];
+
+interface MonthSheet {
+  sheet: string;
+  label: string;
+  order: number;
+}
+
+/** ชื่อแท็บ "MMYY" → {label: "ต.ค.68", order} (คืน null ถ้าไม่ใช่แท็บรายเดือน) */
+function toMonthSheet(title: string): MonthSheet | null {
+  const t = title.trim();
+  const m = t.match(/^(0[1-9]|1[0-2])(\d{2})$/);
+  if (!m) return null;
+  const mm = Number(m[1]);
+  const yy = Number(m[2]);
+  // เรียงตามเวลาจริง: ปี พ.ศ. ก่อน แล้วค่อยเดือน (6810 → 6812 → 6901 → …)
+  return { sheet: t, label: `${THAI_MONTH_ABBR[mm - 1]}${m[2]}`, order: yy * 100 + mm };
+}
+
+/** คัดเฉพาะแท็บรายเดือนจากรายชื่อชีตทั้งหมด แล้วเรียงตามเวลา */
+function discoverMonthSheets(titles: string[]): MonthSheet[] {
+  return titles
+    .map(toMonthSheet)
+    .filter((m): m is MonthSheet => m !== null)
+    .sort((a, b) => a.order - b.order);
+}
 
 const FUND_KEYS: FundKey[] = ["UC", "OFC/LGO", "SSS", "Other"];
 
@@ -422,14 +453,16 @@ async function buildIpHomeWardData(): Promise<CachedIpHomeWard> {
   const cmiByLabel: Record<string, number | null> = {};
   statement.forEach((s) => (cmiByLabel[s.label] = s.cmi));
 
-  // 2) รายเดือน — เฉพาะแท็บที่มีจริง
-  const present = MONTH_SHEETS.filter((m) => titles.includes(m.sheet));
+  // 2) รายเดือน — อ่านจากแท็บที่มีอยู่จริงในไฟล์ (เพิ่มเดือนใหม่แล้วขึ้นเองทันที)
+  const present = discoverMonthSheets(titles);
   const monthParses: MonthParse[] = [];
   for (const m of present) {
     const raw = await getValues(sheets, SPREADSHEET_ID, `${m.sheet}!A:T`);
     const p = parseMonthSheet(m.label, m.sheet, raw);
     p.row.cmi = cmiByLabel[m.label] ?? null;
-    monthParses.push(p);
+    // แท็บเดือนที่ยังไม่มีคนไข้เลย (เช่น เดือนปัจจุบันที่เพิ่งสร้างเปล่าไว้)
+    // ตัดทิ้ง ไม่งั้นกราฟจะมีแท่ง 0 โผล่ค้างท้ายทุกใบ
+    if (p.row.dc > 0) monthParses.push(p);
   }
   const monthly: IpMonthRow[] = monthParses.map((p) => p.row);
   const monthLabels = monthly.map((m) => m.label);
@@ -561,7 +594,7 @@ async function buildIpHomeWardData(): Promise<CachedIpHomeWard> {
     data,
     debugInfo: {
       titles,
-      monthSheetsPresent: present.map((m) => m.sheet),
+      monthSheetsPresent: monthParses.map((p) => p.row.sheet),
       statementCount: statement.length,
       doctorCount: doctors.length,
       sample: monthly[0],
@@ -571,9 +604,14 @@ async function buildIpHomeWardData(): Promise<CachedIpHomeWard> {
 
 // ─── GET ────────────────────────────────────────────────────────────────────────
 export async function GET(req: Request) {
-  const debug = new URL(req.url).searchParams.get("debug") === "1";
+  const params = new URL(req.url).searchParams;
+  const debug = params.get("debug") === "1";
 
   try {
+    // ?refresh=1 → ล้าง cache แล้วอ่าน Sheet ใหม่ (ปุ่มรีเฟรชในหน้า dashboard)
+    // ไม่งั้นคนที่เพิ่งแก้ชีตเสร็จจะยังเห็นของเก่าได้ถึง 15 นาที
+    if (params.get("refresh") === "1") await invalidate(CACHE_KEY);
+
     const cached = await cachedQuery(
       [CACHE_KEY],
       buildIpHomeWardData,
