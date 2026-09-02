@@ -71,6 +71,40 @@ function rangeOf(
     return { start: new Date(ceEnd - 1, 9, 1), end: end > today ? today : end };
 }
 
+// ─── เวร (จัดจากเวลามารับบริการ ovst.vsttime) ────────────────────────────────
+// ขอบเขตเดียวกับ lib/servicetime.queries.ts และหน้า "สถิติเวร":
+// เช้า 08:30–16:30 · บ่าย 16:30–00:30 · ดึก 00:30–08:30 (ดึกคาบเที่ยงคืน จึง +1440)
+type Shift = "all" | "morning" | "evening" | "night";
+const SHIFT_OPTIONS: { key: Shift; label: string }[] = [
+    { key: "all", label: "ทุกเวร" },
+    { key: "morning", label: "เวรเช้า (08:30–16:30)" },
+    { key: "evening", label: "เวรบ่าย (16:30–00:30)" },
+    { key: "night", label: "เวรดึก (00:30–08:30)" },
+];
+const SHIFT_NAME: Record<string, string> = { morning: "เช้า", evening: "บ่าย", night: "ดึก" };
+const SHIFT_STYLE: Record<string, { color: string; bg: string }> = {
+    morning: { color: "#854F0B", bg: "#FAEEDA" },
+    evening: { color: "#185FA5", bg: "#E6F1FB" },
+    night: { color: "#6B21A8", bg: "#F3E8FF" },
+};
+
+/** "HH:MM" → เวรที่ตรงกับเวลานั้น (null = ไม่มีเวลาให้จัดเวร) */
+function shiftOf(vsttime: string): "morning" | "evening" | "night" | null {
+    const [h, m] = vsttime.split(":").map(Number);
+    if (!Number.isFinite(h) || !Number.isFinite(m)) return null;
+    const min = h * 60 + m;
+    const mm = min < 510 ? min + 1440 : min; // ก่อน 08:30 = ช่วงดึกของ "วันถัดไป"
+    if (mm < 990) return "morning";
+    if (mm < 1470) return "evening";
+    return "night";
+}
+
+/** "HH:MM" → "เช้า"/"บ่าย"/"ดึก" (ว่าง = ไม่มีเวลา) */
+function shiftLabelOf(vsttime: string): string {
+    const sh = shiftOf(vsttime);
+    return sh ? SHIFT_NAME[sh] : "";
+}
+
 /** index (0-11 แบบปีงบ) ของเดือนปัจจุบัน — ต.ค. = 0 */
 function currentFiscalMonthIdx(): number {
     return (getBangkokToday().getMonth() + 3) % 12; // ต.ค.(9) → 0, พ.ย.(10) → 1, ม.ค.(0) → 3
@@ -120,6 +154,7 @@ export default function ErProceduresPage() {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [picked, setPicked] = useState<string[]>([]); // icode ที่เลือก (ว่าง = ทุกหัตถการ)
+    const [shift, setShift] = useState<Shift>("all");
     const [keyword, setKeyword] = useState("");
 
     // เดือนที่เลือกอาจไม่มีในปีงบใหม่ (เช่นสลับมาปีงบปัจจุบันที่ยังไม่ถึงเดือนนั้น)
@@ -158,8 +193,8 @@ export default function ErProceduresPage() {
         fetchData();
     }, [fetchData]);
 
-    // ── กรองฝั่ง client: หัตถการที่เลือก + คำค้น ─────────────────────────────
-    const rows = useMemo(() => {
+    // ── กรองฝั่ง client: หัตถการที่เลือก + คำค้น (ยังไม่กรองเวร) ─────────────
+    const baseRows = useMemo(() => {
         const set = new Set(picked);
         const kw = keyword.trim().toLowerCase();
         return (data?.rows ?? []).filter((r) => {
@@ -174,6 +209,22 @@ export default function ErProceduresPage() {
             );
         });
     }, [data, picked, keyword]);
+
+    // ยอดแยกเวร คิดจาก baseRows เสมอ → ปุ่มเลือกเวรยังเห็นยอดของเวรอื่นอยู่
+    const shiftCounts = useMemo(() => {
+        const m = new Map<string, number>();
+        for (const r of baseRows) {
+            const sh = shiftOf(r.vsttime);
+            if (sh) m.set(sh, (m.get(sh) ?? 0) + 1);
+        }
+        return m;
+    }, [baseRows]);
+
+    // ── กรองเวร ──
+    const rows = useMemo(
+        () => (shift === "all" ? baseRows : baseRows.filter((r) => shiftOf(r.vsttime) === shift)),
+        [baseRows, shift],
+    );
 
     // ── สรุปจากแถวที่กรองแล้ว (KPI/กราฟจึงตรงกับ filter เสมอ) ────────────────
     const stats = useMemo(() => {
@@ -233,14 +284,13 @@ export default function ErProceduresPage() {
                 "ลำดับ": i + 1,
                 "วันที่รับบริการ": formatThaiDate(r.vstdate),
                 "เวลา": r.vsttime || "",
+                "เวร": shiftLabelOf(r.vsttime),
                 HN: r.hn,
                 VN: r.vn,
                 "ชื่อ-นามสกุล": r.patientName,
                 "อายุ": r.age || "",
                 "เพศ": sexLabel(r.sex),
                 "สิทธิ์การรักษา": r.pttypeName,
-                "รหัสรายการ (icode)": r.icode,
-                "รหัสหัตถการ ER": r.operCode,
                 "ชื่อหัตถการ": r.procedureName,
                 "จำนวน": r.qty,
                 "แพทย์/ผู้ทำหัตถการ": r.doctorName,
@@ -337,6 +387,8 @@ export default function ErProceduresPage() {
                             onChange={setPicked}
                             disabled={!data}
                         />
+
+                        <Dropdown<Shift> value={shift} options={SHIFT_OPTIONS} onChange={setShift} />
                     </div>
                 </div>
 
@@ -377,6 +429,42 @@ export default function ErProceduresPage() {
                     <KpiBox Icon={Users} label="ผู้รับบริการ" value={fmt(stats.patients)} sub="คน (HN ไม่ซ้ำ)" color="#6B21A8" bg="#F3E8FF" />
                     <KpiBox Icon={Scissors} label="ชนิดหัตถการ" value={fmt(stats.types)} sub="รายการ" color="#854F0B" bg="#FAEEDA" />
                     <KpiBox Icon={UserRound} label="แพทย์/ผู้ทำหัตถการ" value={fmt(stats.byDoctor.length)} sub="คน" color="#A32D2D" bg="#FCEBEB" />
+                </div>
+            )}
+
+            {/* ── แยกตามเวร (กดเพื่อกรองได้ กดซ้ำ = ทุกเวร) ── */}
+            {data && (
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    {SHIFT_OPTIONS.filter((o) => o.key !== "all").map((o) => {
+                        const n = shiftCounts.get(o.key) ?? 0;
+                        const st = SHIFT_STYLE[o.key];
+                        const active = shift === o.key;
+                        const pct = baseRows.length ? Math.round((n / baseRows.length) * 100) : 0;
+                        return (
+                            <button
+                                key={o.key}
+                                onClick={() => setShift(active ? "all" : o.key)}
+                                className={`text-left rounded-2xl border px-4 py-3 transition-all ${active ? "shadow-sm" : "border-gray-200 bg-white hover:border-gray-300"}`}
+                                style={active ? { backgroundColor: st.bg, borderColor: st.color } : undefined}
+                            >
+                                <div className="flex items-center justify-between gap-2">
+                                    <span className="text-xs font-bold" style={{ color: st.color }}>
+                                        {o.label}
+                                    </span>
+                                    <span className="text-[10px] text-gray-400">{pct}%</span>
+                                </div>
+                                <div className="flex items-end gap-1.5 mt-1">
+                                    <span className="text-2xl font-extrabold tabular-nums" style={{ color: st.color }}>
+                                        {fmt(n)}
+                                    </span>
+                                    <span className="text-[11px] text-gray-400 mb-1">ครั้ง</span>
+                                </div>
+                                <div className="mt-2 h-1.5 rounded-full bg-gray-100 overflow-hidden">
+                                    <div className="h-full rounded-full" style={{ width: `${pct}%`, backgroundColor: st.color }} />
+                                </div>
+                            </button>
+                        );
+                    })}
                 </div>
             )}
 
@@ -500,12 +588,12 @@ export default function ErProceduresPage() {
                                             <Th right>ลำดับ</Th>
                                             <Th>วันที่รับบริการ</Th>
                                             <Th>เวลา</Th>
+                                            <Th>เวร</Th>
                                             <Th>HN</Th>
                                             <Th>ชื่อ-นามสกุล</Th>
                                             <Th right>อายุ</Th>
                                             <Th>เพศ</Th>
                                             <Th>สิทธิ์</Th>
-                                            <Th>รหัส</Th>
                                             <Th>ชื่อหัตถการ</Th>
                                             <Th right>จำนวน</Th>
                                             <Th>แพทย์/ผู้ทำหัตถการ</Th>
@@ -522,20 +610,12 @@ export default function ErProceduresPage() {
                                                 </td>
                                                 <td className="px-3 py-2 whitespace-nowrap text-gray-700">{formatThaiDate(r.vstdate)}</td>
                                                 <td className="px-3 py-2 text-gray-500">{r.vsttime || "-"}</td>
+                                                <td className="px-3 py-2"><ShiftBadge vsttime={r.vsttime} /></td>
                                                 <td className="px-3 py-2 font-mono text-gray-700">{r.hn}</td>
                                                 <td className="px-3 py-2 text-gray-800 whitespace-nowrap">{r.patientName || "-"}</td>
                                                 <td className="px-3 py-2 text-right text-gray-600">{r.age || "-"}</td>
                                                 <td className="px-3 py-2 text-gray-600">{sexLabel(r.sex)}</td>
                                                 <td className="px-3 py-2 text-gray-500 whitespace-nowrap">{r.pttypeName || "-"}</td>
-                                                <td className="px-3 py-2">
-                                                    <span
-                                                        className="inline-block px-2 py-0.5 rounded-full text-[11px] font-semibold font-mono"
-                                                        style={{ backgroundColor: "#EAF3DE", color: MINT[800] }}
-                                                        title={r.operCode ? `รหัสหัตถการ ER ${r.operCode}` : undefined}
-                                                    >
-                                                        {r.icode}
-                                                    </span>
-                                                </td>
                                                 <td className="px-3 py-2 text-gray-700 whitespace-nowrap">{r.procedureName}</td>
                                                 <td className="px-3 py-2 text-right text-gray-600 tabular-nums">{fmt(r.qty)}</td>
                                                 <td className="px-3 py-2 text-gray-700 whitespace-nowrap">{r.doctorName}</td>
@@ -562,13 +642,17 @@ export default function ErProceduresPage() {
                             จำนวนผู้รับบริการ: stats.patients,
                             ชนิดหัตถการที่ทำ: stats.types,
                             แยกตามหัตถการ: stats.byProcedure.slice(0, 15).map((p) => ({
-                                รหัส: p.icode,
                                 ชื่อหัตถการ: p.name,
                                 จำนวนครั้ง: p.count,
                             })),
                             รายเดือน: stats.byMonth.map((m) => ({
                                 เดือน: m.label,
                                 จำนวนครั้ง: m.count,
+                            })),
+                            เวรที่เลือก: SHIFT_OPTIONS.find((o) => o.key === shift)?.label ?? "ทุกเวร",
+                            แยกตามเวร: SHIFT_OPTIONS.filter((o) => o.key !== "all").map((o) => ({
+                                เวร: SHIFT_NAME[o.key],
+                                จำนวนครั้ง: shiftCounts.get(o.key) ?? 0,
                             })),
                             แยกตามผู้ทำหัตถการ: stats.byDoctor.slice(0, 10).map((d) => ({
                                 ผู้ทำหัตถการ: d.label,
@@ -581,6 +665,21 @@ export default function ErProceduresPage() {
                 disabled={!data}
             />
         </div>
+    );
+}
+
+// ─── ป้ายเวร ─────────────────────────────────────────────────────────────────
+function ShiftBadge({ vsttime }: { vsttime: string }) {
+    const sh = shiftOf(vsttime);
+    if (!sh) return <span className="text-gray-300">-</span>;
+    const st = SHIFT_STYLE[sh];
+    return (
+        <span
+            className="inline-block px-2 py-0.5 rounded-full text-[11px] font-semibold whitespace-nowrap"
+            style={{ backgroundColor: st.bg, color: st.color }}
+        >
+            {SHIFT_NAME[sh]}
+        </span>
     );
 }
 

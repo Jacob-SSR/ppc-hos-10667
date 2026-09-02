@@ -84,7 +84,7 @@ export function ProcedurePicker({ catalog, selected, onChange, disabled }: Props
                 autoFocus
                 value={q}
                 onChange={(e) => setQ(e.target.value)}
-                placeholder="ค้นหาชื่อหัตถการ / รหัส"
+                placeholder="ค้นหาชื่อหัตถการ"
                 className="w-full text-sm outline-none text-gray-700 placeholder:text-gray-300"
               />
               {q && (
@@ -124,14 +124,8 @@ export function ProcedurePicker({ catalog, selected, onChange, disabled }: Props
                     >
                       {on && <Check size={11} className="text-white" strokeWidth={3} />}
                     </span>
-                    <span className="flex-1 min-w-0">
-                      <span className={`block truncate ${on ? "text-green-800 font-semibold" : "text-gray-700"}`}>
-                        {c.name}
-                      </span>
-                      <span className="block text-[11px] text-gray-400 font-mono">
-                        {c.icode}
-                        {c.operCode ? ` · ER ${c.operCode}` : ""}
-                      </span>
+                    <span className={`flex-1 min-w-0 truncate ${on ? "text-green-800 font-semibold" : "text-gray-700"}`}>
+                      {c.name}
                     </span>
                     <span
                       className={`text-[11px] font-semibold tabular-nums flex-shrink-0 ${c.count ? "text-gray-500" : "text-gray-300"}`}
