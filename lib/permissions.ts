@@ -87,6 +87,8 @@ export const FEATURE_PATHS = {
     "/api/acs-sheets",
     "/pages/high-risk-procedures",
     "/api/high-risk-procedures",
+    "/pages/er-procedures",
+    "/api/er-procedures",
   ],
 
   // Sepsis (ทั้ง ER และหน่วยควบคุมการติดเชื้อต้องเห็น)

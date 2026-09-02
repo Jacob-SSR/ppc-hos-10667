@@ -272,6 +272,12 @@ export const DASHBOARD_GROUPS: SidebarSubGroup[] = [
         group: "disease",
       },
       {
+        label: "การทำหัตถการที่ห้อง ER",
+        href: "/pages/er-procedures",
+        icon: Syringe,
+        group: "disease",
+      },
+      {
         label: "อุบัติเหตุ",
         href: "/pages/accident-dashboard",
         icon: Ambulance,
