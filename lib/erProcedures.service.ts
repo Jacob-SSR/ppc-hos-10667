@@ -61,6 +61,10 @@ export interface ErProcedureRow {
   /** '1' = ชาย */
   sex: string;
   pttypeName: string;
+  /** รหัสวินิจฉัยหลักของ visit (vn_stat.main_pdx) */
+  mainPdx: string;
+  /** ชื่อวินิจฉัยหลักจากทะเบียน ICD-10 (icd101) */
+  mainPdxName: string;
   doctorName: string;
   /** จำนวนหน่วยที่คิดค่าบริการ (ปกติ 1) */
   qty: number;
@@ -122,6 +126,8 @@ interface DetailQueryRow extends RowDataPacket {
   age: number | null;
   sex: string | null;
   pttype_name: string | null;
+  main_pdx: string | null;
+  main_pdx_name: string | null;
   doctor_name: string | null;
   qty: number | string | null;
   sum_price: number | string | null;
@@ -224,6 +230,8 @@ export async function getErProcedures(
         COALESCE(v.age_y, 0)                         AS age,
         COALESCE(p.sex, '')                          AS sex,
         COALESCE(ptt.name, '')                       AS pttype_name,
+        COALESCE(v.main_pdx, '')                     AS main_pdx,
+        COALESCE(icd.name, '')                       AS main_pdx_name,
         ${DOCTOR_NAME_EXPR}                          AS doctor_name,
         COALESCE(SUM(oo.qty), 0)                     AS qty,
         COALESCE(SUM(oo.sum_price), 0)               AS sum_price
@@ -234,6 +242,7 @@ export async function getErProcedures(
       LEFT  JOIN patient p              ON p.hn     = oo.hn
       LEFT  JOIN vn_stat v              ON v.vn     = oo.vn
       LEFT  JOIN pttype ptt             ON ptt.pttype = v.pttype
+      LEFT  JOIN icd101 icd             ON icd.code = v.main_pdx
       LEFT  JOIN doctor dop             ON dop.code = oo.doctor
       LEFT  JOIN doctor dv              ON dv.code  = o.doctor
       WHERE er.vstdate BETWEEN ? AND ?
@@ -257,6 +266,8 @@ export async function getErProcedures(
     age: toNum(r.age),
     sex: String(r.sex ?? ""),
     pttypeName: (r.pttype_name ?? "").trim(),
+    mainPdx: (r.main_pdx ?? "").trim(),
+    mainPdxName: (r.main_pdx_name ?? "").trim(),
     doctorName: (r.doctor_name ?? "").trim() || "ไม่ระบุ",
     qty: toNum(r.qty),
     sumPrice: toNum(r.sum_price),
