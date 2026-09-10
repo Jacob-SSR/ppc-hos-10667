@@ -208,6 +208,8 @@ export default function PtIpdRegisterPage() {
         const byPttype = new Map<string, number>();
         const byPdx = new Map<string, { code: string; name: string; count: number }>();
         const byTag = new Map<string, number>();
+        // ข้อความรายละเอียดการให้บริการดิบ — รวมข้อความที่ต่างกันแค่ช่องว่าง/ตัวพิมพ์
+        const byText = new Map<string, { label: string; count: number }>();
         const byDx = new Map<string, { label: string; count: number }>();
         const an = new Set<string>();
         const hn = new Set<string>();
@@ -230,6 +232,14 @@ export default function PtIpdRegisterPage() {
 
             // 1 ครั้งทำได้หลายอย่าง → นับทุกหมวดที่จับได้ (ผลรวมเกินจำนวนครั้งได้)
             for (const t of r.serviceTags) byTag.set(t, (byTag.get(t) ?? 0) + 1);
+
+            const text = r.serviceText.replace(/\s+/g, " ").trim();
+            if (text) {
+                const key = text.toLowerCase();
+                const e = byText.get(key) ?? { label: text, count: 0 };
+                e.count += 1;
+                byText.set(key, e);
+            }
 
             const g = byDx.get(r.dxGroupKey) ?? { label: r.dxGroupLabel, count: 0 };
             g.count += 1;
@@ -264,6 +274,9 @@ export default function PtIpdRegisterPage() {
                 .map(([name, count]) => ({ name, count }))
                 .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name, "th")),
             byPdx: [...byPdx.values()].sort((a, b) => b.count - a.count).slice(0, 10),
+            byServiceText: [...byText.values()]
+                .sort((a, b) => b.count - a.count || a.label.localeCompare(b.label, "th"))
+                .slice(0, 10),
             byServiceTag: [...byTag.entries()]
                 .map(([key, count]) => ({ label: SERVICE_LABEL.get(key) ?? key, count }))
                 .sort((a, b) => b.count - a.count),
@@ -648,6 +661,51 @@ export default function PtIpdRegisterPage() {
                 </div>
             )}
 
+            {/* ── 10 อันดับรายละเอียดการให้บริการ (ข้อความที่บันทึกจริง ไม่ใช่หมวด) ── */}
+            {data && (
+                <SectionCard
+                    title={`รายละเอียดการให้บริการที่บันทึกบ่อยที่สุด${stats.byServiceText.length >= 10 ? " (10 อันดับแรก)" : ""}`}
+                    icon={ClipboardList}
+                    titleColor={MINT[800]}
+                >
+                    {stats.byServiceText.length === 0 ? (
+                        <p className="text-xs text-gray-400 text-center py-10">
+                            ไม่พบรายละเอียดการให้บริการที่บันทึกไว้ในช่วงนี้
+                        </p>
+                    ) : (
+                        <>
+                            <ResponsiveContainer width="100%" height={Math.max(220, stats.byServiceText.length * 34)}>
+                                <BarChart
+                                    data={stats.byServiceText}
+                                    layout="vertical"
+                                    margin={{ top: 4, right: 40, left: 12, bottom: 4 }}
+                                >
+                                    <CartesianGrid horizontal={false} stroke="#eef2f7" />
+                                    <XAxis type="number" tick={{ fontSize: 11, fill: "#6b7280" }} axisLine={false} tickLine={false} allowDecimals={false} />
+                                    <YAxis
+                                        type="category" dataKey="label" width={260}
+                                        tick={{ fontSize: 11, fill: "#4b5563" }} axisLine={false} tickLine={false}
+                                        // ข้อความยาว ๆ ตัดท้ายด้วย … ตัวเต็มดูได้ที่ tooltip และตารางด้านล่าง
+                                        tickFormatter={(v: string) => (v.length > 40 ? `${v.slice(0, 40)}…` : v)}
+                                    />
+                                    <Tooltip
+                                        formatter={(v: number | undefined) => [`${fmt(v ?? 0)} ครั้ง`, "จำนวน"]}
+                                        contentStyle={{ fontSize: 12, borderRadius: 8, border: "1px solid #e5e7eb", maxWidth: 420, whiteSpace: "normal" }}
+                                    />
+                                    <Bar dataKey="count" radius={[0, 4, 4, 0]} barSize={18} fill={MINT[500]}>
+                                        <LabelList dataKey="count" position="right" style={{ fontSize: 11, fill: "#4b5563" }} />
+                                    </Bar>
+                                </BarChart>
+                            </ResponsiveContainer>
+                            <p className="mt-3 text-[11px] text-gray-400">
+                                * นับจากข้อความที่พิมพ์ไว้ตรง ๆ — ข้อความที่ต่างกันแม้แต่คำเดียวจะนับแยกกัน
+                                (ถ้าอยากดูภาพรวม ให้ดูที่การ์ด “หมวดหมู่รายละเอียดการให้บริการ” ด้านบน)
+                            </p>
+                        </>
+                    )}
+                </SectionCard>
+            )}
+
             {/* ── การวินิจฉัยหลัก + กิจกรรมกายภาพ ── */}
             {data && (
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
@@ -857,6 +915,10 @@ export default function PtIpdRegisterPage() {
                                 รหัส: p.code,
                                 ชื่อ: p.name,
                                 จำนวนครั้ง: p.count,
+                            })),
+                            รายละเอียดการให้บริการที่บันทึกบ่อยที่สุด: stats.byServiceText.map((t) => ({
+                                รายละเอียด: t.label,
+                                จำนวนครั้ง: t.count,
                             })),
                             หมวดการให้บริการ_นับทุกหมวดที่ทำ: stats.byServiceTag.map((t) => ({
                                 หมวด: t.label,
