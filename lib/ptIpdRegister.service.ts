@@ -20,43 +20,46 @@
 //      จังหวัดว่างหรือไม่ตรงทะเบียน) จะหายไปทั้งแถว → ที่นี่ใช้ left join
 //      แล้วแสดงที่อยู่เท่าที่มี (ข้อมูลการให้บริการกายภาพไม่หาย)
 //   2) ต้นฉบับ inner join patient → เช่นเดียวกัน ที่นี่ใช้ left join
-//   เพิ่มเติม: join icd101 เพื่อเอา "ชื่อ" ของ pdx มาแสดง/จัดหมวดหมู่
+//   เพิ่มเติม: join icd101 เพื่อเอา "ชื่อ" ของ pdx มาแสดง/จัดกลุ่มโรค
 //
 // นิยาม 1 แถวของรายงาน:
 //   1 แถว = การให้บริการกายภาพ 1 ครั้ง (1 แถวใน physic_main_ipd) ของ admission (AN) หนึ่ง
 //   → ผู้ป่วยใน 1 คนที่ได้รับกายภาพหลายวัน จะมีหลายแถว (นับเป็นหลายครั้ง)
 //   วันที่ที่ใช้รายงาน = physic_main_ipd.vstdate (วันที่ให้บริการกายภาพ)
 //
-// "หมวดหมู่เฉพาะงานกายภาพ" (แยกตามการวินิจฉัย):
-//   HOSxP ไม่มีทะเบียนหมวดหมู่กายภาพให้ → จัดกลุ่มเองจากรหัส ICD-10 ของ pdx
-//   (ถ้า pdx จัดไม่ได้ → ไล่ดู dx0–dx5 ต่อ) ตามกลุ่มงานที่นักกายภาพใช้จริง
-//   เช่น Stroke / อัมพาต-ไขสันหลัง / กระดูกหัก / กายภาพทรวงอก ฯลฯ ดู PT_CATEGORIES
+// "หมวดหมู่" ที่ใช้กรอง = หมวดของ "รายละเอียดการให้บริการ" (service_text):
+//   HOSxP ไม่มีทะเบียนหมวดหมู่กายภาพให้ → จับ keyword จากข้อความที่นักกายภาพ
+//   บันทึกไว้เอง แล้วจัดเป็นหมวดที่คนกายภาพเรียกกันจริง เช่น กายภาพทรวงอก /
+//   ฝึกยืน–ฝึกเดิน / ออกกำลังกาย-บริหารข้อ ฯลฯ (ดู PT_SERVICE_CATEGORIES)
+//   1 ครั้งอาจเข้าได้หลายหมวด → เก็บไว้ทั้งหมดใน serviceTags แต่ "หมวดหลัก"
+//   (categoryKey) เอาหมวดแรกตามลำดับความสำคัญ เพื่อให้ยอดรวมกันได้ 100%
+//   เป็นตัวเลข best-effort เพราะต้นทางเป็นข้อความอิสระ — เขียนบอกไว้ในหน้าเว็บแล้ว
 //
-// "กิจกรรมกายภาพ" (แยกตามสิ่งที่ทำ):
-//   อ่านจาก service_text ซึ่งเป็นข้อความอิสระที่นักกายภาพพิมพ์เอง
-//   → จับ keyword แบบ best-effort 1 ครั้งอาจอยู่ได้หลายกิจกรรม (ดู PT_ACTIVITIES)
+// "กลุ่มโรค" (จัดจากรหัส ICD-10 ของ pdx / dx0–dx5):
+//   ไม่ได้ใช้เป็นตัวกรองแล้ว เหลือไว้เป็นกราฟประกอบ (ดู PT_DX_GROUPS)
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { db } from "@/lib/db";
 import { RowDataPacket } from "mysql2";
 import {
-  PT_ACTIVITIES,
-  PT_CATEGORIES,
-  PT_CATEGORY_BY_KEY,
-  classifyPtCategory,
-  classifyPtActivities,
-  normalizeIcd,
+  PT_SERVICE_CATEGORIES,
+  PT_SERVICE_BY_KEY,
+  PT_DX_GROUPS,
+  PT_DX_GROUP_BY_KEY,
+  classifyPtService,
+  classifyPtDxGroup,
 } from "@/lib/ptIpdCategories";
 
-// re-export ให้ฝั่ง API/หน้าเว็บ import จากที่เดียวได้เหมือนเดิม
+// re-export ให้ฝั่ง API/หน้าเว็บ import จากที่เดียวได้
 export {
-  PT_CATEGORIES,
-  PT_CATEGORY_BY_KEY,
-  PT_ACTIVITIES,
-  classifyPtCategory,
-  classifyPtActivities,
+  PT_SERVICE_CATEGORIES,
+  PT_SERVICE_BY_KEY,
+  PT_DX_GROUPS,
+  PT_DX_GROUP_BY_KEY,
+  classifyPtService,
+  classifyPtDxGroup,
 } from "@/lib/ptIpdCategories";
-export type { PtIpdCategoryDef, PtActivityDef } from "@/lib/ptIpdCategories";
+export type { PtServiceCategoryDef, PtDxGroupDef } from "@/lib/ptIpdCategories";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -87,13 +90,14 @@ export interface PtIpdRow {
   /** วันนอน (null = ยังไม่จำหน่าย) */
   los: number | null;
   address: string;
-  /** หมวดหมู่งานกายภาพ (key ใน PT_CATEGORIES) */
+  /** หมวดหลักของรายละเอียดการให้บริการ (key ใน PT_SERVICE_CATEGORIES) */
   categoryKey: string;
   categoryLabel: string;
-  /** รหัสวินิจฉัยที่ทำให้จัดเข้าหมวดนี้ ("" = จัดไม่ได้) */
-  categoryCode: string;
-  /** กิจกรรมที่จับได้จาก service_text */
-  activities: string[];
+  /** ทุกหมวดที่จับได้จาก service_text (1 ครั้งอาจทำหลายอย่าง) */
+  serviceTags: string[];
+  /** กลุ่มโรคจากการวินิจฉัย (key ใน PT_DX_GROUPS) — ใช้เป็นกราฟประกอบ */
+  dxGroupKey: string;
+  dxGroupLabel: string;
 }
 
 export interface PtIpdCategoryItem {
@@ -126,9 +130,13 @@ export interface PtIpdRegisterData {
     avgPerAdmission: number;
     /** วันนอนเฉลี่ยของ admission ที่จำหน่ายแล้ว */
     avgLos: number;
+    /** แยกตามหมวดรายละเอียดการให้บริการ (หมวดหลักของแต่ละครั้ง) */
     byCategory: { key: string; label: string; count: number; admissions: number }[];
     byMonth: { month: string; count: number; admissions: number }[];
-    byActivity: { key: string; label: string; count: number }[];
+    /** นับทุกหมวดที่จับได้ (1 ครั้งนับได้หลายหมวด) → รวมกันเกินจำนวนครั้งได้ */
+    byServiceTag: { key: string; label: string; count: number }[];
+    /** แยกตามกลุ่มโรค (ICD-10) — กราฟประกอบ */
+    byDxGroup: { key: string; label: string; count: number; admissions: number }[];
     byPdx: { code: string; name: string; count: number }[];
   };
 }
@@ -258,15 +266,8 @@ export async function getPtIpdRegister(
       .map((d) => (d ?? "").trim())
       .filter(Boolean);
     const pdx = (r.pdx ?? "").trim();
-    const codes = [pdx, ...dxList];
-    const categoryKey = classifyPtCategory(codes);
-    const categoryCode =
-      categoryKey === "other"
-        ? ""
-        : (codes.find((c) => {
-            const n = normalizeIcd(c);
-            return n && PT_CATEGORY_BY_KEY.get(categoryKey)?.match(n);
-          }) ?? "");
+    const service = classifyPtService(r.service_text ?? "");
+    const dxGroupKey = classifyPtDxGroup([pdx, ...dxList]);
     const regdate = dateKey(r.regdate);
     const dchdate = dateKey(r.dchdate);
     const moo = (r.moopart ?? "").trim();
@@ -296,10 +297,12 @@ export async function getPtIpdRegister(
       dchdate,
       los: losDays(regdate, dchdate),
       address,
-      categoryKey,
-      categoryLabel: PT_CATEGORY_BY_KEY.get(categoryKey)?.label ?? categoryKey,
-      categoryCode,
-      activities: classifyPtActivities(r.service_text ?? ""),
+      categoryKey: service.primary,
+      categoryLabel:
+        PT_SERVICE_BY_KEY.get(service.primary)?.label ?? service.primary,
+      serviceTags: service.tags,
+      dxGroupKey,
+      dxGroupLabel: PT_DX_GROUP_BY_KEY.get(dxGroupKey)?.label ?? dxGroupKey,
     };
   });
 
@@ -329,7 +332,7 @@ function buildCategories(rows: PtIpdRow[]): PtIpdCategoryItem[] {
     if (!anSet.has(r.categoryKey)) anSet.set(r.categoryKey, new Set());
     if (r.an) anSet.get(r.categoryKey)!.add(r.an);
   }
-  return PT_CATEGORIES.map((c) => ({
+  return PT_SERVICE_CATEGORIES.map((c) => ({
     key: c.key,
     label: c.label,
     color: c.color,
@@ -343,7 +346,8 @@ function buildCategories(rows: PtIpdRow[]): PtIpdCategoryItem[] {
 function buildSummary(rows: PtIpdRow[]): PtIpdRegisterData["summary"] {
   const byCat = new Map<string, { count: number; an: Set<string> }>();
   const byMonth = new Map<string, { count: number; an: Set<string> }>();
-  const byActivity = new Map<string, number>();
+  const byTag = new Map<string, number>();
+  const byDx = new Map<string, { count: number; an: Set<string> }>();
   const byPdx = new Map<string, { name: string; count: number }>();
   const anSet = new Set<string>();
   const hnSet = new Set<string>();
@@ -363,7 +367,12 @@ function buildSummary(rows: PtIpdRow[]): PtIpdRegisterData["summary"] {
       byMonth.set(month, m);
     }
 
-    for (const a of r.activities) byActivity.set(a, (byActivity.get(a) ?? 0) + 1);
+    for (const t of r.serviceTags) byTag.set(t, (byTag.get(t) ?? 0) + 1);
+
+    const g = byDx.get(r.dxGroupKey) ?? { count: 0, an: new Set<string>() };
+    g.count += 1;
+    if (r.an) g.an.add(r.an);
+    byDx.set(r.dxGroupKey, g);
 
     if (r.pdx) {
       const p = byPdx.get(r.pdx) ?? { name: r.pdxName, count: 0 };
@@ -391,7 +400,7 @@ function buildSummary(rows: PtIpdRow[]): PtIpdRegisterData["summary"] {
       ? Math.round((rows.length / anSet.size) * 10) / 10
       : 0,
     avgLos: Math.round(avgLos * 10) / 10,
-    byCategory: PT_CATEGORIES.map((c) => ({
+    byCategory: PT_SERVICE_CATEGORIES.map((c) => ({
       key: c.key,
       label: c.label,
       count: byCat.get(c.key)?.count ?? 0,
@@ -402,12 +411,20 @@ function buildSummary(rows: PtIpdRow[]): PtIpdRegisterData["summary"] {
     byMonth: [...byMonth.entries()]
       .map(([month, v]) => ({ month, count: v.count, admissions: v.an.size }))
       .sort((a, b) => a.month.localeCompare(b.month)),
-    byActivity: PT_ACTIVITIES.map((a) => ({
-      key: a.key,
-      label: a.label,
-      count: byActivity.get(a.key) ?? 0,
+    byServiceTag: PT_SERVICE_CATEGORIES.map((c) => ({
+      key: c.key,
+      label: c.label,
+      count: byTag.get(c.key) ?? 0,
     }))
-      .filter((a) => a.count > 0)
+      .filter((c) => c.count > 0)
+      .sort((a, b) => b.count - a.count),
+    byDxGroup: PT_DX_GROUPS.map((g) => ({
+      key: g.key,
+      label: g.label,
+      count: byDx.get(g.key)?.count ?? 0,
+      admissions: byDx.get(g.key)?.an.size ?? 0,
+    }))
+      .filter((g) => g.count > 0)
       .sort((a, b) => b.count - a.count),
     byPdx: [...byPdx.entries()]
       .map(([code, v]) => ({ code, name: v.name, count: v.count }))

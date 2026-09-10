@@ -1,27 +1,188 @@
 // lib/ptIpdCategories.ts
 // ─────────────────────────────────────────────────────────────────────────────
-// "หมวดหมู่เฉพาะงานกายภาพ" + "กิจกรรมกายภาพ" ของทะเบียนผู้ป่วยในงานกายภาพ
+// หมวดหมู่ของทะเบียนผู้ป่วยในงานกายภาพ — มี 2 ชุด
+//
+//   1) PT_SERVICE_CATEGORIES = "หมวดหมู่รายละเอียดการให้บริการ"  ← ชุดหลักที่ใช้กรอง
+//      จัดจากข้อความที่นักกายภาพบันทึกไว้เอง (physic_main_ipd.service_text)
+//      เป็นภาษาที่คนกายภาพใช้จริง เช่น "กายภาพทรวงอก", "ฝึกยืน–ฝึกเดิน"
+//
+//   2) PT_DX_GROUPS = "กลุ่มโรค" จัดจากรหัส ICD-10 ของการวินิจฉัย
+//      ไม่ได้ใช้เป็นตัวกรองแล้ว เหลือไว้เป็นกราฟประกอบ (ดูว่าคนไข้กลุ่มโรคไหนบ้าง)
 //
 // แยกออกจาก lib/ptIpdRegister.service.ts เพราะหน้าเว็บ (client component) ต้องใช้
-// ชื่อ/สีของหมวดและกิจกรรมด้วย — ถ้า import จากไฟล์ service ที่ import lib/db
+// ชื่อ/สีของหมวดด้วย — ถ้า import จากไฟล์ service ที่ import lib/db
 // จะลาก mysql2 เข้าไปอยู่ใน bundle ฝั่ง browser (build ไม่ผ่าน)
 // ไฟล์นี้จึงเป็น pure TypeScript ไม่มี dependency ภายนอก
 // ─────────────────────────────────────────────────────────────────────────────
 
-// ─── หมวดหมู่เฉพาะงานกายภาพ (จัดจากรหัส ICD-10) ───────────────────────────────
+// ═══ 1) หมวดหมู่รายละเอียดการให้บริการ (ชุดหลัก) ═══════════════════════════════
 //
-// เรียงจาก "เจาะจงที่สุด → กว้างที่สุด" เพราะจับหมวดแรกที่ตรงแล้วหยุด
-// (เช่น I63 ต้องเป็น stroke ไม่ใช่ cardio, S72 ต้องเป็นกระดูกหักไม่ใช่ msk)
+// วิธีจัด: จับ keyword จาก service_text ซึ่งเป็นข้อความอิสระ
+//   - 1 ครั้งอาจเข้าได้หลายหมวด (เช่น "เคาะปอด + ฝึกเดิน") → เก็บไว้ทั้งหมดใน tags
+//   - แต่ "หมวดหลัก" ของแถวนั้นเอาหมวดแรกที่ตรงตามลำดับในรายการนี้
+//     (เรียงตามงานที่เป็นเนื้องานหลักก่อน) เพื่อให้ยอดในการ์ด/กราฟรวมกันได้ 100%
+//   - ปรับ keyword เพิ่มได้ตลอดถ้าห้องกายภาพเขียนคำอื่น — แก้ที่ไฟล์นี้ที่เดียว
 
-export interface PtIpdCategoryDef {
+export interface PtServiceCategoryDef {
   key: string;
   label: string;
   /** สีประจำหมวด — ใช้ทั้งการ์ด กราฟ และป้ายในตาราง */
   color: string;
   bg: string;
-  /** คำอธิบายว่าหมวดนี้ครอบคลุมรหัสอะไร (แสดงใน tooltip ของตัวเลือก) */
+  /** ตัวอย่างคำที่ใช้จับหมวดนี้ (แสดงใต้ชื่อหมวดในตัวเลือก) */
   hint: string;
-  /** ตรวจว่ารหัส ICD-10 (ตัวพิมพ์ใหญ่ ไม่มีจุด) อยู่ในหมวดนี้ไหม */
+  /** ไม่มี keyword = หมวดปลายทาง (other / none) ที่ไม่ได้จับจากคำ */
+  keywords: string[];
+}
+
+export const PT_SERVICE_CATEGORIES: PtServiceCategoryDef[] = [
+  {
+    key: "chest",
+    label: "กายภาพทรวงอก / ระบายเสมหะ",
+    color: "#0369A1",
+    bg: "#E0F2FE",
+    hint: "เคาะปอด, ระบายเสมหะ, ฝึกหายใจ, chest PT, percussion",
+    keywords: [
+      "เคาะปอด", "เคาะระบาย", "ระบายเสมหะ", "ขับเสมหะ", "เสมหะ", "ดูดเสมหะ",
+      "ฝึกหายใจ", "หายใจ", "บริหารปอด", "ขยายปอด", "chest", "percussion",
+      "postural drainage", "suction", "breathing", "incentive",
+    ],
+  },
+  {
+    key: "ambulation",
+    label: "ฝึกยืน–ฝึกเดิน / ฝึกเคลื่อนย้าย",
+    color: "#185FA5",
+    bg: "#E6F1FB",
+    hint: "ฝึกเดิน, ฝึกยืน, ลุกนั่ง, ย้ายตัว, walker, gait, transfer",
+    keywords: [
+      "ฝึกเดิน", "หัดเดิน", "เดิน", "ฝึกยืน", "หัดยืน", "ยืน", "ลุกนั่ง",
+      "ฝึกนั่ง", "ทรงตัว", "ย้ายตัว", "เคลื่อนย้าย", "ไม้เท้า", "วอล์คเกอร์",
+      "walker", "walk", "ambulat", "gait", "transfer", "standing", "sitting",
+      "balance",
+    ],
+  },
+  {
+    key: "exercise",
+    label: "ออกกำลังกาย / บริหารข้อ (ROM)",
+    color: "#0F766E",
+    bg: "#CCFBF1",
+    hint: "ออกกำลังกาย, บริหารข้อ, ยืดกล้ามเนื้อ, ROM, exercise",
+    keywords: [
+      "ออกกำลัง", "บริหารข้อ", "บริหารกล้าม", "บริหาร", "ยืดกล้าม", "ยืดเหยียด",
+      "ยืด", "เพิ่มกำลังกล้าม", "กำลังกล้ามเนื้อ", "องศาการเคลื่อนไหว",
+      "exercise", "ex.", "rom", "range of motion", "stretch", "strength",
+      "active", "passive",
+    ],
+  },
+  {
+    key: "manual",
+    label: "นวด / ดัดดึงข้อต่อ",
+    color: "#9D174D",
+    bg: "#FCE7F3",
+    hint: "นวด, คลึง, ดัดดึง, massage, mobilization",
+    keywords: ["นวด", "คลึง", "ดัดดึง", "ดึงข้อ", "massage", "mobiliz", "manual", "traction"],
+  },
+  {
+    key: "modality",
+    label: "เครื่องมือกายภาพ (ประคบ / กระตุ้นไฟฟ้า)",
+    color: "#B45309",
+    bg: "#FEF3C7",
+    hint: "ประคบร้อน–เย็น, อัลตราซาวด์, กระตุ้นไฟฟ้า, TENS, laser",
+    keywords: [
+      "ประคบ", "แผ่นความร้อน", "ความร้อน", "ความเย็น", "ผ้าเย็น", "hot pack",
+      "cold pack", "อัลตราซาวด์", "อัลตร้าซาวด์", "ultrasound", "กระตุ้นไฟฟ้า",
+      "กระตุ้นกล้าม", "tens", "stimulat", "laser", "short wave", "infrared",
+    ],
+  },
+  {
+    key: "positioning",
+    label: "จัดท่า / พลิกตะแคง / ป้องกันแผลกดทับ",
+    color: "#7C3AED",
+    bg: "#EDE9FE",
+    hint: "จัดท่านอน, พลิกตะแคงตัว, ป้องกันแผลกดทับ, positioning",
+    keywords: [
+      "จัดท่า", "จัดท่านอน", "พลิกตะแคง", "ตะแคง", "พลิกตัว", "แผลกดทับ",
+      "ป้องกันข้อติด", "ดามข้อ", "position", "turning", "splint",
+    ],
+  },
+  {
+    key: "education",
+    label: "ให้คำแนะนำ / สอนญาติ / เตรียมกลับบ้าน",
+    color: "#4D7C0F",
+    bg: "#ECFCCB",
+    hint: "แนะนำ, สอนญาติ, home program, เตรียมจำหน่าย",
+    keywords: [
+      "แนะนำ", "ให้ความรู้", "สอนญาติ", "สอน", "ญาติ", "กลับบ้าน", "จำหน่าย",
+      "home program", "advice", "educat", "teaching", "discharge",
+    ],
+  },
+  {
+    key: "assessment",
+    label: "ประเมิน / ติดตามอาการ",
+    color: "#DB2777",
+    bg: "#FCE7F3",
+    hint: "ประเมินอาการ, ติดตามผล, F/U, assessment",
+    keywords: [
+      "ประเมิน", "ตรวจประเมิน", "ติดตามอาการ", "ติดตาม", "เยี่ยม", "assess",
+      "evaluat", "follow", "f/u",
+    ],
+  },
+  {
+    key: "other",
+    label: "อื่น ๆ (มีบันทึกแต่ไม่เข้าหมวด)",
+    color: "#6B7280",
+    bg: "#F3F4F6",
+    hint: "มีข้อความบันทึกไว้ แต่ไม่ตรง keyword หมวดใดเลย",
+    keywords: [],
+  },
+  {
+    key: "none",
+    label: "ไม่ได้บันทึกรายละเอียด",
+    color: "#9CA3AF",
+    bg: "#F9FAFB",
+    hint: "service_text ว่าง",
+    keywords: [],
+  },
+];
+
+export const PT_SERVICE_BY_KEY = new Map(
+  PT_SERVICE_CATEGORIES.map((c) => [c.key, c]),
+);
+
+/** หมวดที่ "จับจาก keyword ได้จริง" (ไม่รวม other/none) */
+const KEYWORD_CATEGORIES = PT_SERVICE_CATEGORIES.filter((c) => c.keywords.length);
+
+/**
+ * service_text → หมวดหมู่การให้บริการ
+ * @returns primary = หมวดหลักของแถวนั้น (ใช้กรอง/นับ), tags = ทุกหมวดที่จับได้
+ */
+export function classifyPtService(text: string): {
+  primary: string;
+  tags: string[];
+} {
+  const t = (text ?? "").toLowerCase();
+  if (!t.trim()) return { primary: "none", tags: [] };
+
+  const tags = KEYWORD_CATEGORIES.filter((c) =>
+    c.keywords.some((k) => t.includes(k.toLowerCase())),
+  ).map((c) => c.key);
+
+  return { primary: tags[0] ?? "other", tags };
+}
+
+// ═══ 2) กลุ่มโรค (จัดจากรหัส ICD-10) — ใช้เป็นกราฟประกอบ ═════════════════════
+//
+// เรียงจาก "เจาะจงที่สุด → กว้างที่สุด" เพราะจับกลุ่มแรกที่ตรงแล้วหยุด
+// (เช่น I63 ต้องเป็น stroke ไม่ใช่ cardio, S72 ต้องเป็นกระดูกหักไม่ใช่ msk)
+
+export interface PtDxGroupDef {
+  key: string;
+  label: string;
+  color: string;
+  bg: string;
+  /** คำอธิบายว่ากลุ่มนี้ครอบคลุมรหัสอะไร */
+  hint: string;
+  /** ตรวจว่ารหัส ICD-10 (ตัวพิมพ์ใหญ่ ไม่มีจุด) อยู่ในกลุ่มนี้ไหม */
   match: (code: string) => boolean;
 }
 
@@ -49,7 +210,7 @@ const any =
   (code: string): boolean =>
     tests.some((t) => t(code));
 
-export const PT_CATEGORIES: PtIpdCategoryDef[] = [
+export const PT_DX_GROUPS: PtDxGroupDef[] = [
   {
     key: "stroke",
     label: "โรคหลอดเลือดสมอง (Stroke)",
@@ -103,7 +264,7 @@ export const PT_CATEGORIES: PtIpdCategoryDef[] = [
   },
   {
     key: "respiratory",
-    label: "ระบบหายใจ / กายภาพทรวงอก",
+    label: "โรคระบบหายใจ",
     color: "#0369A1",
     bg: "#E0F2FE",
     hint: "J00–J99",
@@ -146,81 +307,24 @@ export const PT_CATEGORIES: PtIpdCategoryDef[] = [
     label: "อื่น ๆ / ไม่ระบุการวินิจฉัย",
     color: "#6B7280",
     bg: "#F3F4F6",
-    hint: "รหัสที่ไม่เข้าหมวดข้างต้น หรือไม่มีการวินิจฉัย",
-    match: () => true, // หมวดสุดท้าย — รับที่เหลือทั้งหมด
+    hint: "รหัสที่ไม่เข้ากลุ่มข้างต้น หรือไม่มีการวินิจฉัย",
+    match: () => true, // กลุ่มสุดท้าย — รับที่เหลือทั้งหมด
   },
 ];
 
-export const PT_CATEGORY_BY_KEY = new Map(PT_CATEGORIES.map((c) => [c.key, c]));
+export const PT_DX_GROUP_BY_KEY = new Map(PT_DX_GROUPS.map((g) => [g.key, g]));
 
 /**
- * จัดหมวดจากรหัสวินิจฉัย — ไล่ pdx ก่อน ถ้าไม่เข้าหมวดใดเลย (ตกไป "other")
+ * จัดกลุ่มโรคจากรหัสวินิจฉัย — ไล่ pdx ก่อน ถ้าไม่เข้ากลุ่มใดเลย
  * ค่อยลอง dx รอง ๆ ต่อ เพื่อไม่ให้เคสอย่าง "pdx = ปอดบวม, dx1 = อัมพาตครึ่งซีก"
  * หล่นไปกอง "อื่น ๆ" ทั้งที่เป็นงานกายภาพชัดเจน
  */
-export function classifyPtCategory(codes: string[]): string {
+export function classifyPtDxGroup(codes: string[]): string {
   for (const raw of codes) {
     const code = normalizeIcd(raw ?? "");
     if (!code) continue;
-    const hit = PT_CATEGORIES.find((c) => c.key !== "other" && c.match(code));
+    const hit = PT_DX_GROUPS.find((g) => g.key !== "other" && g.match(code));
     if (hit) return hit.key;
   }
   return "other";
-}
-
-// ─── กิจกรรมกายภาพ (จับ keyword จาก service_text) ────────────────────────────
-// service_text เป็นข้อความอิสระ → จับได้เท่าที่พิมพ์มา ถือเป็นตัวเลข "ประมาณการ"
-// 1 ครั้งอยู่ได้หลายกิจกรรม (เช่น "เคาะปอด + ฝึกเดิน") จึงรวมกันเกิน 100% ได้
-
-export interface PtActivityDef {
-  key: string;
-  label: string;
-  keywords: string[];
-}
-
-export const PT_ACTIVITIES: PtActivityDef[] = [
-  {
-    key: "chest",
-    label: "กายภาพทรวงอก / ระบบหายใจ",
-    keywords: ["เคาะปอด", "เคาะ", "ปอด", "หายใจ", "เสมหะ", "ดูดเสมหะ", "chest", "percussion", "suction", "breathing", "postural drainage"],
-  },
-  {
-    key: "exercise",
-    label: "ออกกำลังกาย / บริหารข้อ (ROM)",
-    keywords: ["ออกกำลัง", "บริหาร", "ยืด", "กำลังกล้ามเนื้อ", "exercise", "rom", "range of motion", "stretch", "strength"],
-  },
-  {
-    key: "ambulation",
-    label: "ฝึกเดิน / ฝึกเคลื่อนย้าย",
-    keywords: ["ฝึกเดิน", "เดิน", "ฝึกยืน", "ยืน", "ลุกนั่ง", "ย้ายตัว", "walk", "ambulat", "gait", "transfer", "standing", "sitting"],
-  },
-  {
-    key: "positioning",
-    label: "จัดท่า / พลิกตะแคงตัว",
-    keywords: ["จัดท่า", "พลิกตะแคง", "ตะแคง", "จัดท่านอน", "position", "turning"],
-  },
-  {
-    key: "modality",
-    label: "เครื่องมือกายภาพ (ประคบ/กระตุ้น)",
-    keywords: ["ประคบ", "แผ่นความร้อน", "ความร้อน", "กระตุ้นไฟฟ้า", "อัลตราซาวด์", "hot pack", "cold pack", "ultrasound", "tens", "stimulat", "laser", "short wave"],
-  },
-  {
-    key: "manual",
-    label: "นวด / ดัดดึงข้อต่อ",
-    keywords: ["นวด", "ดัดดึง", "massage", "mobiliz", "manual"],
-  },
-  {
-    key: "education",
-    label: "ให้คำแนะนำ / สอนญาติ",
-    keywords: ["แนะนำ", "สอน", "ญาติ", "home program", "advice", "educat"],
-  },
-];
-
-/** service_text → กิจกรรมที่จับได้ (ว่าง = จับไม่ได้/ไม่ได้บันทึกข้อความ) */
-export function classifyPtActivities(text: string): string[] {
-  const t = (text ?? "").toLowerCase();
-  if (!t.trim()) return [];
-  return PT_ACTIVITIES.filter((a) =>
-    a.keywords.some((k) => t.includes(k.toLowerCase())),
-  ).map((a) => a.key);
 }

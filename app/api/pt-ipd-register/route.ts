@@ -3,7 +3,8 @@
 //
 // query params (ทุกตัวเป็น optional):
 //   start, end : ช่วงวันที่ (YYYY-MM-DD) — default = ปีงบประมาณปัจจุบัน
-//   category   : หมวดหมู่กายภาพ คั่นด้วย , (เช่น stroke,fracture) — default = ทุกหมวด
+//   category   : หมวดรายละเอียดการให้บริการ คั่นด้วย , (เช่น chest,ambulation)
+//                — default = ทุกหมวด
 //
 // หน้าเว็บดึงข้อมูลทั้งช่วงมาครั้งเดียวแล้วกรองหมวดหมู่ฝั่ง client (สลับ filter ได้ทันที)
 // ส่วน param category มีไว้ให้คนที่เรียก API ตรง ๆ ดึงเฉพาะหมวดที่สนใจได้
@@ -11,7 +12,7 @@ import { NextResponse } from "next/server";
 import {
   getPtIpdRegister,
   defaultFiscalRange,
-  PT_CATEGORY_BY_KEY,
+  PT_SERVICE_BY_KEY,
 } from "@/lib/ptIpdRegister.service";
 import { cachedQuery, defaultMaxAge } from "@/lib/cache";
 import { jsonCached } from "@/lib/httpCache";
@@ -28,7 +29,7 @@ const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const safeDate = (v: string | null, fallback: string): string =>
   v && DATE_RE.test(v) ? v : fallback;
 
-/** "stroke, fracture" → ["stroke","fracture"] (เอาเฉพาะ key ที่มีจริงในทะเบียนหมวด) */
+/** "chest, ambulation" → ["chest","ambulation"] (เอาเฉพาะ key ที่มีจริงในทะเบียนหมวด) */
 function parseCategories(raw: string | null): string[] {
   if (!raw) return [];
   return [
@@ -36,7 +37,7 @@ function parseCategories(raw: string | null): string[] {
       raw
         .split(",")
         .map((s) => s.trim())
-        .filter((s) => PT_CATEGORY_BY_KEY.has(s)),
+        .filter((s) => PT_SERVICE_BY_KEY.has(s)),
     ),
   ];
 }

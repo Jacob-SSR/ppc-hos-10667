@@ -1,11 +1,12 @@
 "use client";
 
-// ตัวเลือก "หมวดหมู่งานกายภาพ" แบบเลือกได้หลายหมวด
-// หมวดหมู่มีไม่มาก (สิบกว่าหมวด) จึงไม่มีช่องค้นหาแบบตัวเลือกหัตถการ ER
-// แต่แสดง "ยอดครั้ง / จำนวน AN" กำกับทุกหมวด เพื่อเลือกได้โดยไม่ต้องเปิดกราฟดูก่อน
+// ตัวเลือก "หมวดหมู่รายละเอียดการให้บริการ" แบบเลือกได้หลายหมวด + ช่องค้นหา
+// ค้นได้ทั้งชื่อหมวดและ "คำที่ใช้จับหมวดนั้น" (hint) เช่นพิมพ์ "เสมหะ" แล้วเจอ
+// หมวดกายภาพทรวงอก — คนกายภาพนึกคำที่ตัวเองพิมพ์ในเวชระเบียนออกก่อนชื่อหมวดเสมอ
+// แสดง "ยอดครั้ง / จำนวน AN" กำกับทุกหมวด เพื่อเลือกได้โดยไม่ต้องเปิดกราฟดูก่อน
 import { useEffect, useMemo, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { ChevronDown, Check } from "lucide-react";
+import { ChevronDown, Check, Search, X } from "lucide-react";
 import type { PtIpdCategoryItem } from "@/lib/ptIpdRegister.service";
 
 interface Props {
@@ -18,6 +19,7 @@ interface Props {
 
 export function CategoryPicker({ categories, selected, onChange, disabled }: Props) {
   const [open, setOpen] = useState(false);
+  const [q, setQ] = useState("");
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -29,6 +31,15 @@ export function CategoryPicker({ categories, selected, onChange, disabled }: Pro
   }, []);
 
   const selectedSet = useMemo(() => new Set(selected), [selected]);
+
+  const filtered = useMemo(() => {
+    const kw = q.trim().toLowerCase();
+    if (!kw) return categories;
+    return categories.filter(
+      (c) =>
+        c.label.toLowerCase().includes(kw) || c.hint.toLowerCase().includes(kw),
+    );
+  }, [categories, q]);
 
   const label =
     selected.length === 0
@@ -66,6 +77,22 @@ export function CategoryPicker({ categories, selected, onChange, disabled }: Pro
             transition={{ duration: 0.12 }}
             className="absolute right-0 top-full mt-1 w-[340px] bg-white border border-gray-200 rounded-xl shadow-lg z-50 overflow-hidden"
           >
+            <div className="p-2 border-b border-gray-100 flex items-center gap-2">
+              <Search size={14} className="text-gray-400 flex-shrink-0" />
+              <input
+                autoFocus
+                value={q}
+                onChange={(e) => setQ(e.target.value)}
+                placeholder="ค้นหาหมวด หรือคำที่บันทึก เช่น เสมหะ, ฝึกเดิน"
+                className="w-full text-sm outline-none text-gray-700 placeholder:text-gray-300"
+              />
+              {q && (
+                <button onClick={() => setQ("")} className="text-gray-400 hover:text-gray-600">
+                  <X size={13} />
+                </button>
+              )}
+            </div>
+
             <div className="flex items-center justify-between px-3 py-1.5 border-b border-gray-100 bg-gray-50">
               <span className="text-[11px] text-gray-400">
                 {selected.length === 0 ? "แสดงทุกหมวดหมู่" : `เลือกไว้ ${selected.length} หมวด`}
@@ -80,16 +107,18 @@ export function CategoryPicker({ categories, selected, onChange, disabled }: Pro
             </div>
 
             <div className="max-h-80 overflow-y-auto">
-              {categories.length === 0 && (
-                <p className="text-center text-xs text-gray-400 py-6">ยังไม่มีข้อมูล</p>
+              {filtered.length === 0 && (
+                <p className="text-center text-xs text-gray-400 py-6">
+                  {categories.length === 0 ? "ยังไม่มีข้อมูล" : "ไม่พบหมวดที่ค้นหา"}
+                </p>
               )}
-              {categories.map((c) => {
+              {filtered.map((c) => {
                 const on = selectedSet.has(c.key);
                 return (
                   <button
                     key={c.key}
                     onClick={() => toggle(c.key)}
-                    title={`ICD-10: ${c.hint}`}
+                    title={`คำที่ใช้จับหมวดนี้: ${c.hint}`}
                     className={`w-full flex items-start gap-2 text-left px-3 py-2 text-sm transition-colors hover:bg-gray-50 ${on ? "bg-green-50" : ""}`}
                   >
                     <span

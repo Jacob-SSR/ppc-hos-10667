@@ -1,7 +1,8 @@
 "use client";
 
 // รายงาน "ทะเบียนผู้ป่วยในสำหรับงานกายภาพ"
-// filter: ช่วงวัน (เลือกเอง) / ปีงบประมาณ / รายเดือน / หมวดหมู่กายภาพ (เลือกได้หลายหมวด)
+// filter: ช่วงวัน (เลือกเอง) / ปีงบประมาณ / รายเดือน /
+//         หมวดหมู่รายละเอียดการให้บริการ (เลือกได้หลายหมวด + ค้นหาได้)
 // ข้อมูลจาก /api/pt-ipd-register — ดึงทั้งช่วงมาครั้งเดียว แล้วกรองหมวด/คำค้นฝั่ง client
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
@@ -27,7 +28,7 @@ import {
 } from "@/lib/thaiDate";
 import { usePagination } from "@/hooks/usePagination";
 import type { PtIpdRegisterData, PtIpdRow } from "@/lib/ptIpdRegister.service";
-import { PT_ACTIVITIES } from "@/lib/ptIpdCategories";
+import { PT_SERVICE_CATEGORIES } from "@/lib/ptIpdCategories";
 import AiSummaryCard from "@/app/components/ai/AiSummaryCard";
 
 // ─── ธีมมิ้นต์ (เดียวกับทั้งเว็บ) ──────────────────────────────────────────────
@@ -37,8 +38,10 @@ const fmt = (n: number) => n.toLocaleString("th-TH");
 const sexLabel = (s: string) => (s === "1" ? "ชาย" : s === "2" ? "หญิง" : "-");
 const PAGE_SIZE = 25;
 
-// ชื่อกิจกรรมกายภาพ (จับจาก service_text) — ใช้ทั้งกราฟ ตาราง และ Excel
-const ACTIVITY_LABEL = new Map(PT_ACTIVITIES.map((a) => [a.key, a.label]));
+// ชื่อหมวดรายละเอียดการให้บริการ — ใช้ทั้งกราฟ ตาราง และ Excel
+const SERVICE_LABEL = new Map<string, string>(
+    PT_SERVICE_CATEGORIES.map((c) => [c.key, c.label]),
+);
 
 // ─── ตัวเลือกช่วงเวลา ─────────────────────────────────────────────────────────
 type Mode = "fiscal" | "month" | "custom";
@@ -204,7 +207,8 @@ export default function PtIpdRegisterPage() {
         const byCat = new Map<string, { count: number; an: Set<string> }>();
         const byPttype = new Map<string, number>();
         const byPdx = new Map<string, { code: string; name: string; count: number }>();
-        const byActivity = new Map<string, number>();
+        const byTag = new Map<string, number>();
+        const byDx = new Map<string, { label: string; count: number }>();
         const an = new Set<string>();
         const hn = new Set<string>();
         const losByAn = new Map<string, number>();
@@ -224,7 +228,12 @@ export default function PtIpdRegisterPage() {
                 byPdx.set(r.pdx, p);
             }
 
-            for (const a of r.activities) byActivity.set(a, (byActivity.get(a) ?? 0) + 1);
+            // 1 ครั้งทำได้หลายอย่าง → นับทุกหมวดที่จับได้ (ผลรวมเกินจำนวนครั้งได้)
+            for (const t of r.serviceTags) byTag.set(t, (byTag.get(t) ?? 0) + 1);
+
+            const g = byDx.get(r.dxGroupKey) ?? { label: r.dxGroupLabel, count: 0 };
+            g.count += 1;
+            byDx.set(r.dxGroupKey, g);
 
             if (r.an) {
                 an.add(r.an);
@@ -255,8 +264,11 @@ export default function PtIpdRegisterPage() {
                 .map(([name, count]) => ({ name, count }))
                 .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name, "th")),
             byPdx: [...byPdx.values()].sort((a, b) => b.count - a.count).slice(0, 10),
-            byActivity: [...byActivity.entries()]
-                .map(([key, count]) => ({ label: ACTIVITY_LABEL.get(key) ?? key, count }))
+            byServiceTag: [...byTag.entries()]
+                .map(([key, count]) => ({ label: SERVICE_LABEL.get(key) ?? key, count }))
+                .sort((a, b) => b.count - a.count),
+            byDxGroup: [...byDx.values()]
+                .map((g) => ({ label: g.label, count: g.count }))
                 .sort((a, b) => b.count - a.count),
         };
     }, [rows, data]);
@@ -335,14 +347,15 @@ export default function PtIpdRegisterPage() {
                 "อายุ": ageLabel(r.ageY, r.ageM),
                 "เพศ": sexLabel(r.sex),
                 "สิทธิ์การรักษา": r.pttypeName,
-                "หมวดหมู่งานกายภาพ": r.categoryLabel,
+                "หมวดการให้บริการ": r.categoryLabel,
+                "หมวดการให้บริการ (ทั้งหมด)": r.serviceTags.map((t) => SERVICE_LABEL.get(t) ?? t).join(", "),
+                "กลุ่มโรค": r.dxGroupLabel,
                 "การวินิจฉัยหลัก (pdx)": r.pdx,
                 "ชื่อการวินิจฉัยหลัก": r.pdxName,
                 "การวินิจฉัยอื่น (dx0-dx5)": r.dxList.join(", "),
                 "วันที่รับไว้": r.regdate ? formatThaiDate(r.regdate) : "",
                 "วันที่จำหน่าย": r.dchdate ? formatThaiDate(r.dchdate) : "",
                 "วันนอน": r.los ?? "",
-                "กิจกรรมกายภาพ": r.activities.map((a) => ACTIVITY_LABEL.get(a) ?? a).join(", "),
                 "รายละเอียดการให้บริการ": r.serviceText,
                 "ที่อยู่": r.address,
             })),
@@ -445,7 +458,7 @@ export default function PtIpdRegisterPage() {
                     <p className="mt-2 text-xs text-gray-500 flex items-start gap-1.5">
                         <Layers size={13} className="mt-0.5 flex-shrink-0" style={{ color: MINT[500] }} />
                         <span>
-                            <span className="font-semibold text-gray-600">หมวดหมู่ที่เลือก:</span> {pickedLabel}
+                            <span className="font-semibold text-gray-600">หมวดการให้บริการที่เลือก:</span> {pickedLabel}
                         </span>
                     </p>
                 )}
@@ -484,7 +497,7 @@ export default function PtIpdRegisterPage() {
             {/* ── หมวดหมู่เฉพาะงานกายภาพ (กดเพื่อกรองได้ กดซ้ำ = เอาออก) ── */}
             {data && categoryCards.length > 0 && (
                 <SectionCard
-                    title="หมวดหมู่เฉพาะงานกายภาพ (จัดจากการวินิจฉัย ICD-10)"
+                    title="หมวดหมู่รายละเอียดการให้บริการ (จากบันทึกของนักกายภาพ)"
                     icon={Layers}
                     titleColor={MINT[800]}
                 >
@@ -498,7 +511,7 @@ export default function PtIpdRegisterPage() {
                                     onClick={() =>
                                         setPicked(active ? picked.filter((k) => k !== c.key) : [...picked, c.key])
                                     }
-                                    title={`ICD-10: ${c.hint}`}
+                                    title={`คำที่ใช้จับหมวดนี้: ${c.hint}`}
                                     className={`text-left rounded-2xl border px-4 py-3 transition-all ${active ? "shadow-sm" : "border-gray-200 bg-white hover:border-gray-300"}`}
                                     style={active ? { backgroundColor: c.bg, borderColor: c.color } : undefined}
                                 >
@@ -521,6 +534,11 @@ export default function PtIpdRegisterPage() {
                             );
                         })}
                     </div>
+                    <p className="mt-3 text-[11px] text-gray-400">
+                        * จับหมวดจากข้อความที่นักกายภาพบันทึกไว้ (รายละเอียดการให้บริการ) —
+                        1 ครั้งที่ทำหลายอย่างจะนับเข้า “หมวดหลัก” ตามงานหลักของครั้งนั้น
+                        ส่วนหมวดที่เหลือแสดงไว้ในตารางและกราฟด้านล่าง
+                    </p>
                 </SectionCard>
             )}
 
@@ -668,23 +686,20 @@ export default function PtIpdRegisterPage() {
                         )}
                     </SectionCard>
 
-                    {/* กิจกรรมกายภาพอ่านจากข้อความอิสระ → บอกไว้ตรง ๆ ว่าเป็นตัวเลขประมาณการ */}
-                    <SectionCard title="กิจกรรมกายภาพที่ให้บริการ" icon={ClipboardList} titleColor={MINT[800]}>
-                        {stats.byActivity.length === 0 ? (
-                            <p className="text-xs text-gray-400 text-center py-10">
-                                ไม่พบรายละเอียดการให้บริการที่จับหมวดกิจกรรมได้
-                            </p>
+                    {/* กลุ่มโรคเป็นข้อมูลประกอบ — ตัวกรองหลักคือหมวดรายละเอียดการให้บริการ */}
+                    <SectionCard title="กลุ่มโรคของผู้ป่วยที่ได้รับกายภาพ" icon={Stethoscope} titleColor={MINT[800]}>
+                        {stats.byDxGroup.length === 0 ? (
+                            <p className="text-xs text-gray-400 text-center py-10">ไม่พบข้อมูล</p>
                         ) : (
                             <>
                                 <HBarList
-                                    data={stats.byActivity}
+                                    data={stats.byDxGroup}
                                     colors={[MINT[500]]}
                                     total={stats.total}
-                                    labelWidth={180}
+                                    labelWidth={190}
                                 />
                                 <p className="mt-3 text-[11px] text-gray-400">
-                                    * จับหมวดจากข้อความที่นักกายภาพบันทึกไว้ (service_text) —
-                                    1 ครั้งอยู่ได้หลายกิจกรรม ผลรวมจึงมากกว่าจำนวนครั้งทั้งหมดได้
+                                    * จัดกลุ่มจากรหัส ICD-10 ของการวินิจฉัย (pdx ก่อน ถ้าจัดไม่ได้จึงดู dx0–dx5)
                                 </p>
                             </>
                         )}
@@ -766,7 +781,7 @@ export default function PtIpdRegisterPage() {
                                                         <span
                                                             className="inline-block px-2 py-0.5 rounded-full text-[11px] font-semibold whitespace-nowrap"
                                                             style={{ backgroundColor: cat?.bg ?? "#F3F4F6", color: cat?.color ?? "#6B7280" }}
-                                                            title={r.categoryCode ? `จัดหมวดจากรหัส ${r.categoryCode}` : undefined}
+                                                            title={r.serviceText || undefined}
                                                         >
                                                             {r.categoryLabel}
                                                         </span>
@@ -798,9 +813,9 @@ export default function PtIpdRegisterPage() {
                                                         <span className="block truncate" title={r.serviceText}>
                                                             {r.serviceText || "-"}
                                                         </span>
-                                                        {r.activities.length > 0 && (
+                                                        {r.serviceTags.length > 1 && (
                                                             <span className="block text-[10px] text-gray-400 truncate">
-                                                                {r.activities.map((a) => ACTIVITY_LABEL.get(a) ?? a).join(" · ")}
+                                                                {r.serviceTags.map((t) => SERVICE_LABEL.get(t) ?? t).join(" · ")}
                                                             </span>
                                                         )}
                                                     </td>
@@ -843,9 +858,13 @@ export default function PtIpdRegisterPage() {
                                 ชื่อ: p.name,
                                 จำนวนครั้ง: p.count,
                             })),
-                            กิจกรรมกายภาพ: stats.byActivity.map((a) => ({
-                                กิจกรรม: a.label,
-                                จำนวนครั้ง: a.count,
+                            หมวดการให้บริการ_นับทุกหมวดที่ทำ: stats.byServiceTag.map((t) => ({
+                                หมวด: t.label,
+                                จำนวนครั้ง: t.count,
+                            })),
+                            กลุ่มโรค: stats.byDxGroup.map((g) => ({
+                                กลุ่มโรค: g.label,
+                                จำนวนครั้ง: g.count,
                             })),
                             แยกตามสิทธิ์การรักษา: pttypeSlices.map((sl) => ({
                                 สิทธิ์: sl.name,
@@ -854,7 +873,7 @@ export default function PtIpdRegisterPage() {
                         }
                         : null
                 }
-                context="ทะเบียนผู้ป่วยในสำหรับงานกายภาพบำบัด โรงพยาบาลพลับพลาชัย — นับจากบันทึกการให้บริการกายภาพของผู้ป่วยใน (physic_main_ipd) แยกหมวดหมู่เฉพาะงานกายภาพจากรหัสวินิจฉัย ICD-10 และจับกิจกรรมกายภาพจากข้อความที่นักกายภาพบันทึกไว้"
+                context="ทะเบียนผู้ป่วยในสำหรับงานกายภาพบำบัด โรงพยาบาลพลับพลาชัย — นับจากบันทึกการให้บริการกายภาพของผู้ป่วยใน (physic_main_ipd) หมวดหมู่หลักแยกตาม 'รายละเอียดการให้บริการ' ที่นักกายภาพบันทึกไว้ (เคาะปอด/ฝึกเดิน/บริหารข้อ ฯลฯ) ส่วนกลุ่มโรคจัดจากรหัสวินิจฉัย ICD-10 เป็นข้อมูลประกอบ"
                 disabled={!data}
             />
         </div>
