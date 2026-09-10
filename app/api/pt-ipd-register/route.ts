@@ -52,7 +52,9 @@ export async function GET(req: Request) {
     const categories = parseCategories(searchParams.get("category"));
 
     const data = await cachedQuery(
-      ["pt-ipd-register", start, end, categories.join("|")],
+      // v2 = โครงข้อมูลเปลี่ยน (เพิ่มผู้ทำหัตถการ/เวร) — ขึ้นเลขทุกครั้งที่ field เปลี่ยน
+      // ไม่งั้นของเก่าใน cache ที่ยังไม่หมดอายุจะถูกส่งให้หน้าเว็บรุ่นใหม่
+      ["pt-ipd-register", "v2", start, end, categories.join("|")],
       () => getPtIpdRegister(start, end, categories),
       TTL_SECONDS,
     );

@@ -150,8 +150,9 @@ export interface PtIpdRegisterData {
 }
 
 interface QueryRow extends RowDataPacket {
-  staff_name: string | null;
+  staff_doctor_name: string | null;
   staff_position: string | number | null;
+  staff_raw: string | null;
   an: string;
   hn: string;
   service_date: string | Date | null;
@@ -207,6 +208,78 @@ function losDays(regdate: string, dchdate: string): number | null {
   return Math.round((b - a) / 86_400_000);
 }
 
+interface PtStaffRow extends RowDataPacket {
+  an: string;
+  name: string | null;
+  amount: number | string | null;
+}
+
+/**
+ * ชั้น 2 ของการหาผู้ทำหัตถการ: เจ้าหน้าที่กายภาพที่ลงค่าบริการของ admission นั้น
+ * (เกณฑ์เดียวกับ dashboard กายภาพ — เลือกคนที่คิดเงินให้ AN นั้นมากที่สุด)
+ * ยิงครั้งเดียวต่อ 1 รายงาน แล้ว map ด้วย AN ฝั่ง app (เร็วกว่า subquery ต่อแถว)
+ */
+async function fetchPtStaffByAn(
+  start: string,
+  end: string,
+  enabled: boolean,
+): Promise<Map<string, string>> {
+  const out = new Map<string, string>();
+  if (!enabled) return out;
+  try {
+    const [rows] = await db.query<PtStaffRow[]>(
+      `SELECT oo.an                  AS an,
+              d2.name                AS name,
+              SUM(oo.sum_price)      AS amount
+         FROM opitemrece oo
+         JOIN doctor d2 ON d2.code = oo.doctor
+        WHERE d2.position_id IN (${PT_POSITION_IN})
+          AND oo.an IN (SELECT pmi.an
+                          FROM physic_main_ipd pmi
+                         WHERE pmi.vstdate BETWEEN ? AND ?
+                           AND pmi.an IS NOT NULL AND pmi.an <> ''
+                         GROUP BY pmi.an)
+        GROUP BY oo.an, oo.doctor, d2.name`,
+      [start, end],
+    );
+    const best = new Map<string, { name: string; amount: number }>();
+    for (const r of rows) {
+      const an = String(r.an ?? "");
+      const name = (r.name ?? "").trim();
+      if (!an || !name) continue;
+      const amount = Number(r.amount) || 0;
+      const cur = best.get(an);
+      if (!cur || amount > cur.amount) best.set(an, { name, amount });
+    }
+    for (const [an, v] of best) out.set(an, v.name);
+  } catch (e) {
+    console.error("fetchPtStaffByAn failed:", e);
+  }
+  return out;
+}
+
+/**
+ * เลือกชื่อผู้ทำหัตถการจาก 3 ชั้นที่ query ส่งมา (ดูหมายเหตุด้านบนไฟล์)
+ * isPt = ยืนยันได้ว่าเป็นเจ้าหน้าที่กายภาพ (มีตำแหน่งกายภาพในทะเบียน doctor)
+ */
+function pickStaff(
+  r: {
+    staff_doctor_name: string | null;
+    staff_position: string | number | null;
+    staff_raw: string | null;
+  },
+  chargeStaff: string,
+): { name: string; isPt: boolean } {
+  const doctorName = (r.staff_doctor_name ?? "").trim();
+  const chargeName = chargeStaff.trim();
+  const raw = (r.staff_raw ?? "").trim();
+  const doctorIsPt = PT_POSITION_IDS.includes(String(r.staff_position ?? "").trim());
+
+  if (doctorName) return { name: doctorName, isPt: doctorIsPt };
+  if (chargeName) return { name: chargeName, isPt: true }; // ชั้นนี้กรอง position มาแล้ว
+  return { name: raw, isPt: false };
+}
+
 /** ปีงบประมาณปัจจุบัน (1 ต.ค. – 30 ก.ย.) ใน timezone Asia/Bangkok */
 export function defaultFiscalRange(): { start: string; end: string } {
   const now = new Date(
@@ -219,40 +292,63 @@ export function defaultFiscalRange(): { start: string; end: string } {
 
 // ─── ผู้ให้บริการกายภาพ ───────────────────────────────────────────────────────
 //
-// physic_main_ipd เก็บ "คนที่ลงบันทึก" ไว้คนละชื่อคอลัมน์ในแต่ละ HOSxP
-// (staff / doctor / …) และบางที่ก็ไม่มีเลย → หาจาก information_schema ตอน runtime
-// แล้วจำไว้ ถ้าไม่เจอก็ปล่อยว่าง (หน้าเว็บจะไม่แสดงการ์ดผู้ให้บริการ) ไม่ทำให้ query พัง
+// หาชื่อผู้ทำหัตถการไล่ 3 ชั้น (เอาชั้นแรกที่ได้ชื่อ):
+//   1) คอลัมน์ผู้ลงบันทึกใน physic_main_ipd (staff / doctor / …) → join ทะเบียน doctor
+//      ชื่อคอลัมน์ไม่เท่ากันทุก HOSxP และบางที่ไม่มีเลย → หาจาก information_schema
+//   2) เจ้าหน้าที่กายภาพที่ลงค่าบริการของ admission นั้นใน opitemrece
+//      (เกณฑ์เดียวกับ dashboard กายภาพ: doctor.position_id = 9, เลือกคนที่คิดเงินมากสุด)
+//      ชั้นนี้คือชั้นที่ทำงานจริงในโรงพยาบาลที่ physic_main_ipd ไม่ได้เก็บผู้บันทึกไว้
+//   3) ค่าดิบในคอลัมน์ผู้ลงบันทึก (เช่น loginname ที่ไม่มีในทะเบียน doctor)
 //
-// เจ้าของงานนับเป็น "คนกายภาพ" เมื่อ doctor.position_id อยู่ใน PT_POSITION_IDS
-// (เกณฑ์เดียวกับ lib/pt.service.ts: 9 = เจ้าหน้าที่กายภาพ PT/PTA)
+// ทุกชั้นตรวจจาก information_schema ก่อนใช้ ถ้าคอลัมน์/ตารางไม่มีจริงก็ข้ามไป
+// (ไม่ทำให้ query ทั้งหน้าพังเพราะ schema ต่างรุ่นกัน)
 const STAFF_COLUMN_CANDIDATES = ["staff", "doctor", "physic_staff", "staff_id", "user"];
 const PT_POSITION_IDS = ["9"];
+const PT_POSITION_IN = PT_POSITION_IDS.map((p) => `'${p}'`).join(",");
 
 interface SchemaRow extends RowDataPacket {
+  TABLE_NAME: string;
   COLUMN_NAME: string;
 }
 
-/** คอลัมน์ผู้ให้บริการที่ใช้ได้จริง (null = ตารางนี้ไม่ได้เก็บไว้) */
-let staffColumn: string | null | undefined;
+interface StaffSource {
+  /** คอลัมน์ผู้ลงบันทึกใน physic_main_ipd (null = ไม่มี) */
+  column: string | null;
+  /** opitemrece มีคอลัมน์ an ให้ผูกกับ admission ได้ไหม */
+  hasOpitemAn: boolean;
+}
 
-async function resolveStaffColumn(): Promise<string | null> {
-  if (staffColumn !== undefined) return staffColumn;
+let staffSource: StaffSource | undefined;
+
+async function resolveStaffSource(): Promise<StaffSource> {
+  if (staffSource !== undefined) return staffSource;
   try {
     const [rows] = await db.query<SchemaRow[]>(
-      `SELECT COLUMN_NAME
+      `SELECT TABLE_NAME, COLUMN_NAME
          FROM information_schema.COLUMNS
         WHERE TABLE_SCHEMA = DATABASE()
-          AND TABLE_NAME = 'physic_main_ipd'
-          AND COLUMN_NAME IN (${STAFF_COLUMN_CANDIDATES.map(() => "?").join(",")})`,
+          AND ((TABLE_NAME = 'physic_main_ipd'
+                AND COLUMN_NAME IN (${STAFF_COLUMN_CANDIDATES.map(() => "?").join(",")}))
+            OR (TABLE_NAME = 'opitemrece' AND COLUMN_NAME = 'an'))`,
       STAFF_COLUMN_CANDIDATES,
     );
-    const found = new Set(rows.map((r) => String(r.COLUMN_NAME).toLowerCase()));
-    staffColumn = STAFF_COLUMN_CANDIDATES.find((c) => found.has(c)) ?? null;
+    const physicCols = new Set<string>();
+    let hasOpitemAn = false;
+    for (const r of rows) {
+      const table = String(r.TABLE_NAME).toLowerCase();
+      const col = String(r.COLUMN_NAME).toLowerCase();
+      if (table === "physic_main_ipd") physicCols.add(col);
+      if (table === "opitemrece" && col === "an") hasOpitemAn = true;
+    }
+    staffSource = {
+      column: STAFF_COLUMN_CANDIDATES.find((c) => physicCols.has(c)) ?? null,
+      hasOpitemAn,
+    };
   } catch (e) {
-    console.error("resolveStaffColumn failed:", e);
-    staffColumn = null;
+    console.error("resolveStaffSource failed:", e);
+    staffSource = { column: null, hasOpitemAn: false };
   }
-  return staffColumn;
+  return staffSource;
 }
 
 // ─── Main ─────────────────────────────────────────────────────────────────────
@@ -268,12 +364,12 @@ export async function getPtIpdRegister(
   end: string,
   catKeys: string[] = [],
 ): Promise<PtIpdRegisterData> {
-  // ชื่อคอลัมน์มาจาก whitelist ในไฟล์นี้เท่านั้น (ไม่ได้มาจาก user input)
-  const staffCol = await resolveStaffColumn();
-  const staffSelect = staffCol
-    ? `COALESCE(NULLIF(TRIM(dpt.name), ''), NULLIF(TRIM(pmi.${staffCol}), ''), '') AS staff_name,
-       COALESCE(dpt.position_id, '')                                              AS staff_position`
-    : `'' AS staff_name, '' AS staff_position`;
+  // ชื่อคอลัมน์/ตารางมาจาก whitelist ในไฟล์นี้เท่านั้น (ไม่ได้มาจาก user input)
+  const { column: staffCol, hasOpitemAn } = await resolveStaffSource();
+
+  const staffSelect = `${staffCol ? `COALESCE(TRIM(dpt.name), '')` : `''`}   AS staff_doctor_name,
+      ${staffCol ? `COALESCE(dpt.position_id, '')` : `''`}                   AS staff_position,
+      ${staffCol ? `COALESCE(TRIM(pmi.${staffCol}), '')` : `''`}             AS staff_raw`;
   const staffJoin = staffCol
     ? `LEFT JOIN doctor dpt ON dpt.code = pmi.${staffCol}`
     : "";
@@ -321,12 +417,16 @@ export async function getPtIpdRegister(
     [start, end],
   );
 
+  // ชั้น 2 ของผู้ทำหัตถการ — ยิงหลัง query หลัก (ใช้ช่วงวันเดียวกัน)
+  const ptStaffByAn = await fetchPtStaffByAn(start, end, hasOpitemAn);
+
   const allRows: PtIpdRow[] = raw.map((r) => {
     const dxList = [r.dx0, r.dx1, r.dx2, r.dx3, r.dx4, r.dx5]
       .map((d) => (d ?? "").trim())
       .filter(Boolean);
     const pdx = (r.pdx ?? "").trim();
     const service = classifyPtService(r.service_text ?? "");
+    const staff = pickStaff(r, ptStaffByAn.get(String(r.an ?? "")) ?? "");
     const dxGroupKey = classifyPtDxGroup([pdx, ...dxList]);
     const regdate = dateKey(r.regdate);
     const dchdate = dateKey(r.dchdate);
@@ -363,8 +463,8 @@ export async function getPtIpdRegister(
       serviceTags: service.tags,
       dxGroupKey,
       dxGroupLabel: PT_DX_GROUP_BY_KEY.get(dxGroupKey)?.label ?? dxGroupKey,
-      staffName: (r.staff_name ?? "").trim(),
-      staffIsPt: PT_POSITION_IDS.includes(String(r.staff_position ?? "").trim()),
+      staffName: staff.name,
+      staffIsPt: staff.isPt,
     };
   });
 
