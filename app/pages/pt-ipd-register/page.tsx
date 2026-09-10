@@ -18,7 +18,7 @@ import {
     UserRound, Users,
 } from "lucide-react";
 import ThaiDateInput from "@/app/components/ThaiDateInput";
-import { SectionCard, LiveBadge, HBarList, MiniPagination } from "@/app/components/dashboard/live";
+import { SectionCard, LiveBadge, MiniPagination } from "@/app/components/dashboard/live";
 import { Dropdown } from "@/app/pages/rdu-dashboard/_components/Dropdown";
 import { CategoryPicker } from "./_components/CategoryPicker";
 import { exportToExcel } from "@/lib/exportExcel";
@@ -270,7 +270,10 @@ export default function PtIpdRegisterPage() {
         const byTag = new Map<string, number>();
         // ข้อความรายละเอียดการให้บริการดิบ — รวมข้อความที่ต่างกันแค่ช่องว่าง/ตัวพิมพ์
         const byText = new Map<string, { label: string; count: number }>();
-        const byStaff = new Map<string, { count: number; isPt: boolean }>();
+        const byStaff = new Map<
+            string,
+            { count: number; isPt: boolean; hn: Set<string>; an: Set<string> }
+        >();
         const an = new Set<string>();
         const hn = new Set<string>();
         const losByAn = new Map<string, number>();
@@ -302,9 +305,16 @@ export default function PtIpdRegisterPage() {
             }
 
             if (r.staffName) {
-                const st = byStaff.get(r.staffName) ?? { count: 0, isPt: false };
+                const st = byStaff.get(r.staffName) ?? {
+                    count: 0,
+                    isPt: false,
+                    hn: new Set<string>(),
+                    an: new Set<string>(),
+                };
                 st.count += 1;
                 st.isPt = st.isPt || r.staffIsPt;
+                if (r.hn) st.hn.add(r.hn);
+                if (r.an) st.an.add(r.an);
                 byStaff.set(r.staffName, st);
             }
 
@@ -352,7 +362,14 @@ export default function PtIpdRegisterPage() {
                 return {
                     unset: all.length > 0 && pt.length === 0,
                     list: use
-                        .map(([label, v]) => ({ label, count: v.count }))
+                        .map(([label, v]) => ({
+                            label,
+                            count: v.count,
+                            patients: v.hn.size,
+                            admissions: v.an.size,
+                            // เกณฑ์เดียวกับ dashboard กายภาพ: ชื่อมีคำว่า "ผู้ช่วย" = PTA
+                            role: label.includes("ผู้ช่วย") ? "PTA" : "PT",
+                        }))
                         .sort((a, b) => b.count - a.count || a.label.localeCompare(b.label, "th")),
                 };
             })(),
@@ -877,12 +894,47 @@ export default function PtIpdRegisterPage() {
                             </p>
                         ) : (
                             <>
-                                <HBarList
-                                    data={stats.byStaff.list.slice(0, 10)}
-                                    colors={[MINT[500]]}
-                                    total={stats.total}
-                                    labelWidth={170}
-                                />
+                                {/* ตารางแบบเดียวกับ "สรุปรายบุคคล" ในหน้า dashboard กายภาพ */}
+                                <div className="overflow-x-auto rounded-xl border border-gray-200">
+                                    <table className="min-w-full text-sm border-collapse">
+                                        <thead>
+                                            <tr>
+                                                <Th>ชื่อ</Th>
+                                                <Th>ประเภท</Th>
+                                                <Th right>ผู้ป่วย</Th>
+                                                <Th right>AN</Th>
+                                                <Th right>ครั้ง</Th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {stats.byStaff.list.slice(0, 10).map((st, i) => (
+                                                <tr
+                                                    key={st.label}
+                                                    className={`border-b border-gray-100 ${i % 2 ? "bg-gray-50" : "bg-white"} hover:bg-[#f0faf4]`}
+                                                >
+                                                    <td className="px-3 py-2 text-gray-800 whitespace-nowrap">{st.label}</td>
+                                                    <td className="px-3 py-2">
+                                                        <span
+                                                            className="inline-block px-2 py-0.5 rounded-full text-[10px] font-bold"
+                                                            style={
+                                                                st.role === "PT"
+                                                                    ? { backgroundColor: "#E6F1FB", color: "#185FA5" }
+                                                                    : { backgroundColor: "#FAEEDA", color: "#854F0B" }
+                                                            }
+                                                        >
+                                                            {st.role}
+                                                        </span>
+                                                    </td>
+                                                    <td className="px-3 py-2 text-right text-gray-600 tabular-nums">{fmt(st.patients)}</td>
+                                                    <td className="px-3 py-2 text-right text-gray-600 tabular-nums">{fmt(st.admissions)}</td>
+                                                    <td className="px-3 py-2 text-right font-bold tabular-nums" style={{ color: MINT[800] }}>
+                                                        {fmt(st.count)}
+                                                    </td>
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
+                                </div>
                                 <p className="mt-3 text-[11px] text-gray-400">
                                     {stats.byStaff.unset
                                         ? "* ยังไม่มีใครถูกตั้งตำแหน่งเจ้าหน้าที่กายภาพในทะเบียน doctor — ตอนนี้จึงแสดงทุกคนที่บันทึกไว้"
