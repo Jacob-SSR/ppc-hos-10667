@@ -22,6 +22,7 @@
 
 import { db } from "@/lib/db";
 import { RowDataPacket } from "mysql2";
+import { classifyPtService, PT_SERVICE_BY_KEY } from "@/lib/ptIpdCategories";
 
 const PT_DEPCODE = process.env.PT_DEPCODE ?? "033";
 const DISCHARGED_STATUS = ["99", "98"];
@@ -86,8 +87,96 @@ const PT_SERVICE_TIME_EXPR = `
           o.vsttime
         )`;
 
+// ── "หัตถการ" = รายละเอียดการให้บริการที่นักกายภาพบันทึกไว้ ──────────────────
+//
+// เดิมช่องหัตถการดึงจาก doctor_operation.icd9 ซึ่งห้องกายภาพไม่ได้ลงเป็นประจำ
+// (ส่วนใหญ่ว่าง หรือเป็นรหัสของแพทย์) → เปลี่ยนมาใช้ "รายละเอียดการให้บริการ"
+// ที่นักกายภาพพิมพ์เอง แบบเดียวกับทะเบียนผู้ป่วยในงานกายภาพ (physic_main_ipd)
+//   - ชื่อหัตถการ (procedure_name) = ข้อความที่บันทึกไว้ทั้งประโยค
+//   - ตัวหัตถการ (procedure)       = หมวดของข้อความนั้น (ใช้จัดกลุ่ม/นับอันดับ)
+//   - ถ้า visit นั้นไม่มีบันทึกกายภาพ → ใช้ icd9 แบบเดิมเป็นตัวสำรอง ข้อมูลไม่หาย
+//
+// ชื่อตารางฝั่ง OPD ไม่เท่ากันทุก HOSxP (physic_main_opd / physic_main) และบางที่
+// ไม่มีเลย จึงหาจาก information_schema ตอน runtime แล้วจำไว้ ถ้าไม่เจอก็ข้ามไป
+// ใช้ icd9 เหมือนเดิม (ไม่ทำให้ dashboard พังเพราะตารางไม่มีจริง)
+const PHYSIC_OPD_CANDIDATES = ["physic_main_opd", "physic_main"];
+
+interface SchemaRow extends RowDataPacket {
+  TABLE_NAME: string;
+  COLUMN_NAME: string;
+}
+
+/** ตารางบันทึกกายภาพ OPD ที่ใช้ได้จริง (null = ไม่มี → ใช้ icd9 อย่างเดียว) */
+let physicOpdTable: string | null | undefined;
+
+async function resolvePhysicOpdTable(): Promise<string | null> {
+  if (physicOpdTable !== undefined) return physicOpdTable;
+  try {
+    const [rows] = await db.query<SchemaRow[]>(
+      `SELECT TABLE_NAME, COLUMN_NAME
+         FROM information_schema.COLUMNS
+        WHERE TABLE_SCHEMA = DATABASE()
+          AND TABLE_NAME IN (${PHYSIC_OPD_CANDIDATES.map(() => "?").join(",")})
+          AND COLUMN_NAME IN ('vn', 'vstdate', 'service_text')`,
+      PHYSIC_OPD_CANDIDATES,
+    );
+    const cols = new Map<string, Set<string>>();
+    for (const r of rows) {
+      const t = String(r.TABLE_NAME).toLowerCase();
+      if (!cols.has(t)) cols.set(t, new Set());
+      cols.get(t)!.add(String(r.COLUMN_NAME).toLowerCase());
+    }
+    // ต้องมีครบทั้ง 3 คอลัมน์ถึงจะ query ตามช่วงวันแล้วผูกกลับเข้า visit ได้
+    physicOpdTable =
+      PHYSIC_OPD_CANDIDATES.find((t) => {
+        const c = cols.get(t);
+        return c?.has("vn") && c.has("vstdate") && c.has("service_text");
+      }) ?? null;
+  } catch (e) {
+    console.error("resolvePhysicOpdTable failed:", e);
+    physicOpdTable = null;
+  }
+  return physicOpdTable;
+}
+
+interface ServiceTextRow extends RowDataPacket {
+  vn: string;
+  service_text: string | null;
+}
+
+/** vn → รายละเอียดการให้บริการกายภาพของ visit นั้น (หลายรายการต่อกันด้วย " | ") */
+async function fetchPhysicServiceText(
+  start: string,
+  end: string,
+): Promise<Map<string, string>> {
+  const table = await resolvePhysicOpdTable();
+  const out = new Map<string, string>();
+  if (!table) return out;
+  try {
+    const [rows] = await db.query<ServiceTextRow[]>(
+      // ชื่อตารางมาจาก whitelist ในไฟล์นี้เท่านั้น (ไม่ได้มาจาก user input)
+      `SELECT pm.vn AS vn,
+              GROUP_CONCAT(DISTINCT NULLIF(TRIM(pm.service_text), '')
+                           ORDER BY pm.service_text SEPARATOR ' | ') AS service_text
+         FROM ${table} pm
+        WHERE pm.vstdate BETWEEN ? AND ?
+          AND pm.vn IS NOT NULL AND pm.vn <> ''
+        GROUP BY pm.vn`,
+      [start, end],
+    );
+    for (const r of rows) {
+      const text = (r.service_text ?? "").trim();
+      if (text) out.set(String(r.vn), text);
+    }
+  } catch (e) {
+    console.error("fetchPhysicServiceText failed:", e);
+  }
+  return out;
+}
+
 // ─── Types ────────────────────────────────────────────────────────────────────
 interface RecordQueryRow extends RowDataPacket {
+  vn: string;
   date: string;
   vsttime: string;
   svc_time: string;
@@ -122,8 +211,12 @@ export interface PtRecord {
   staff_name: string;
   role: "pt" | "pta";
   right: string;
+  /** หมวดของรายละเอียดการให้บริการ (สำรอง: รหัส icd9 เดิม) */
   procedure: string;
+  /** รายละเอียดการให้บริการที่นักกายภาพบันทึก (สำรอง: ชื่อ icd9 เดิม) */
   procedure_name: string;
+  /** ข้อความรายละเอียดการให้บริการดิบ ("" = visit นั้นไม่มีบันทึก) */
+  service_text: string;
   income: number; // = charge_total (รวมทั้ง visit) เพื่อ backward-compat
   physioCharge: number; // c13
   drugCharge: number; // c14
@@ -184,6 +277,7 @@ export async function getPtDashboard(
     SELECT x.*, d2.name AS staff_name
     FROM (
       SELECT
+        v.vn                                       AS vn,
         v.vstdate                                  AS date,
         o.vsttime,
         ${PT_SERVICE_TIME_EXPR}                    AS svc_time,
@@ -220,22 +314,32 @@ export async function getPtDashboard(
     [start, end],
   );
 
-  const records: PtRecord[] = rows.map((r) => ({
-    date: r.date,
-    shift: classifyShift(r.svc_time),
-    staff_id: r.staff_id || "ไม่ระบุ",
-    staff_name: (r.staff_name || r.staff_id || "ไม่ระบุ").trim(),
-    role: classifyRole(r.staff_id, r.staff_name),
-    right: classifyRight(r.pcode),
-    procedure: r.procedure_code || "-",
-    procedure_name: r.procedure_name || r.procedure_code || "-",
-    income: Number(r.charge_total) || 0,
-    physioCharge: Number(r.charge_physio) || 0,
-    drugCharge: Number(r.charge_drug) || 0,
-    otherCharge: Number(r.charge_other) || 0,
-    hn: r.hn,
-    patient_name: r.patient_name,
-  }));
+  // รายละเอียดการให้บริการของแต่ละ visit — ใช้แทน "หัตถการ" (ดูหมายเหตุด้านบน)
+  const serviceTextByVn = await fetchPhysicServiceText(start, end);
+
+  const records: PtRecord[] = rows.map((r) => {
+    const detail = serviceTextByVn.get(String(r.vn)) ?? "";
+    const cat = detail ? classifyPtService(detail).primary : "";
+    return {
+      date: r.date,
+      shift: classifyShift(r.svc_time),
+      staff_id: r.staff_id || "ไม่ระบุ",
+      staff_name: (r.staff_name || r.staff_id || "ไม่ระบุ").trim(),
+      role: classifyRole(r.staff_id, r.staff_name),
+      right: classifyRight(r.pcode),
+      procedure: cat
+        ? (PT_SERVICE_BY_KEY.get(cat)?.label ?? cat)
+        : r.procedure_code || "-",
+      procedure_name: detail || r.procedure_name || r.procedure_code || "-",
+      service_text: detail,
+      income: Number(r.charge_total) || 0,
+      physioCharge: Number(r.charge_physio) || 0,
+      drugCharge: Number(r.charge_drug) || 0,
+      otherCharge: Number(r.charge_other) || 0,
+      hn: r.hn,
+      patient_name: r.patient_name,
+    };
+  });
 
   // 2) คิว ณ ปัจจุบัน — ovst.oqueue เฉพาะวันนี้ของแผนก ที่ยังไม่จำหน่าย
   //    (คงพฤติกรรมเดิม: แสดงผู้รอคิวทุกคน ไม่กรองตามบุคลากร, ยังใช้ main_dep)

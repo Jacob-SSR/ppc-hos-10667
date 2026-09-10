@@ -28,8 +28,12 @@ interface PtRecord {
     staff_name: string;
     role: "pt" | "pta";
     right: string;
+    /** หมวดของรายละเอียดการให้บริการ (สำรอง: รหัส icd9 เดิม) */
     procedure: string;
+    /** รายละเอียดการให้บริการที่นักกายภาพบันทึก (สำรอง: ชื่อ icd9 เดิม) */
     procedure_name: string;
+    /** ข้อความรายละเอียดการให้บริการดิบ ("" = visit นั้นไม่มีบันทึก) */
+    service_text?: string;
     income: number;
     hn: string;
     patient_name: string;
@@ -327,7 +331,8 @@ export default function PtDashboardPage() {
                     const mq = !ql ||
                         r.hn.toLowerCase().includes(ql) ||
                         r.patient_name.toLowerCase().includes(ql) ||
-                        r.procedure.toLowerCase().includes(ql);
+                        r.procedure.toLowerCase().includes(ql) ||
+                        r.procedure_name.toLowerCase().includes(ql);
                     const mr = !fRight || r.right === fRight;
                     const ms = !fShift || r.shift === fShift;
                     return mq && mr && ms;
@@ -389,8 +394,8 @@ export default function PtDashboardPage() {
                 ประเภท: r.role === "pt" ? "PT" : "PTA",
                 HN: r.hn,
                 ชื่อผู้ป่วย: r.patient_name,
-                หัตถการ: r.procedure,
-                ชื่อหัตถการ: r.procedure_name,
+                หมวดการให้บริการ: r.procedure,
+                รายละเอียดการให้บริการ: r.procedure_name,
                 สิทธิ์: r.right,
                 รายได้: r.income,
             })),
@@ -704,7 +709,7 @@ export default function PtDashboardPage() {
                                 <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
                                 <input
                                     type="text"
-                                    placeholder="ค้นหา HN / ชื่อ / หัตถการ..."
+                                    placeholder="ค้นหา HN / ชื่อ / รายละเอียดการให้บริการ..."
                                     value={q}
                                     onChange={(e) => setQ(e.target.value)}
                                     className="w-full border-2 border-gray-200 rounded-full pl-9 pr-4 py-2 text-sm text-gray-800 bg-white focus:outline-none focus:border-[#7ec8a0] transition-colors"
@@ -767,7 +772,7 @@ export default function PtDashboardPage() {
                                                                     <thead>
                                                                         <tr>
                                                                             <Th>วันที่</Th><Th>HN</Th><Th>ชื่อผู้ป่วย</Th>
-                                                                            <Th className="text-center">หัตถการ</Th><Th>เวร</Th><Th>สิทธิ์</Th>
+                                                                            <Th>หัตถการ / รายละเอียดการให้บริการ</Th><Th>เวร</Th><Th>สิทธิ์</Th>
                                                                             <Th className="text-right">รายได้</Th>
                                                                         </tr>
                                                                     </thead>
@@ -777,11 +782,16 @@ export default function PtDashboardPage() {
                                                                                 <td className="px-3 py-2 text-gray-600 whitespace-nowrap">{formatThaiDate(r.date)}</td>
                                                                                 <td className="px-3 py-2 font-mono text-gray-500">{r.hn}</td>
                                                                                 <td className="px-3 py-2 text-gray-800">{r.patient_name}</td>
-                                                                                <td className="px-3 py-2 text-center">
-                                                                                    <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold" title={r.procedure_name}
+                                                                                <td className="px-3 py-2 max-w-[260px]">
+                                                                                    <span className="inline-block px-2 py-0.5 rounded-full text-[10px] font-semibold" title={r.procedure_name}
                                                                                         style={{ backgroundColor: MINT[50], color: MINT[800] }}>
                                                                                         {r.procedure}
                                                                                     </span>
+                                                                                    {r.procedure_name && r.procedure_name !== r.procedure && (
+                                                                                        <span className="block text-[10px] text-gray-400 truncate" title={r.procedure_name}>
+                                                                                            {r.procedure_name}
+                                                                                        </span>
+                                                                                    )}
                                                                                 </td>
                                                                                 <td className="px-3 py-2"><ShiftBadge shift={r.shift} /></td>
                                                                                 <td className="px-3 py-2 font-semibold" style={{ color: RIGHT_COLOR[r.right] ?? "#374151" }}>{r.right}</td>
@@ -873,7 +883,7 @@ export default function PtDashboardPage() {
                                                             </div>
                                                             {/* top procs */}
                                                             <div>
-                                                                <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400 mb-2">หัตถการ Top 5</p>
+                                                                <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400 mb-2">บริการที่ทำบ่อย Top 5</p>
                                                                 <div className="flex flex-wrap gap-1.5">
                                                                     {topProcs.length ? topProcs.map(([c, n]) => (
                                                                         <span key={c} className="px-2 py-0.5 rounded-full text-[11px] font-medium"
@@ -930,9 +940,9 @@ export default function PtDashboardPage() {
                     </SectionCard>
 
                     {/* proc chart */}
-                    <SectionCard title="หัตถการที่ใช้มากที่สุด" icon={Activity} titleColor={MINT[800]}>
+                    <SectionCard title="หัตถการ / บริการที่ทำมากที่สุด" icon={Activity} titleColor={MINT[800]}>
                         {procTop.length ? (
-                            <HBarList data={procTop} colors={[MINT[500]]} labelWidth={130} />
+                            <HBarList data={procTop} colors={[MINT[500]]} labelWidth={170} />
                         ) : (
                             <p className="text-center text-gray-400 py-8 text-sm">ยังไม่มีข้อมูล</p>
                         )}
