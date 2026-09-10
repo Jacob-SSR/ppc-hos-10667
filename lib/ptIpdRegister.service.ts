@@ -98,6 +98,10 @@ export interface PtIpdRow {
   /** กลุ่มโรคจากการวินิจฉัย (key ใน PT_DX_GROUPS) — ใช้เป็นกราฟประกอบ */
   dxGroupKey: string;
   dxGroupLabel: string;
+  /** ผู้ให้บริการที่บันทึกไว้ ("" = ตารางไม่ได้เก็บ/ไม่ได้ลง) */
+  staffName: string;
+  /** true = เป็นเจ้าหน้าที่กายภาพตามทะเบียน doctor (position_id = 9) */
+  staffIsPt: boolean;
 }
 
 export interface PtIpdCategoryItem {
@@ -135,6 +139,10 @@ export interface PtIpdRegisterData {
     byMonth: { month: string; count: number; admissions: number }[];
     /** นับทุกหมวดที่จับได้ (1 ครั้งนับได้หลายหมวด) → รวมกันเกินจำนวนครั้งได้ */
     byServiceTag: { key: string; label: string; count: number }[];
+    /** ผู้ให้บริการ (เฉพาะเจ้าหน้าที่กายภาพ) — ว่างถ้าทะเบียนไม่ได้เก็บผู้ลงบันทึก */
+    byStaff: { name: string; count: number; admissions: number }[];
+    /** true = มีชื่อผู้ให้บริการ แต่ไม่มีใครถูกตั้ง position กายภาพในทะเบียน doctor */
+    staffPositionUnset: boolean;
     /** แยกตามกลุ่มโรค (ICD-10) — กราฟประกอบ */
     byDxGroup: { key: string; label: string; count: number; admissions: number }[];
     byPdx: { code: string; name: string; count: number }[];
@@ -142,6 +150,8 @@ export interface PtIpdRegisterData {
 }
 
 interface QueryRow extends RowDataPacket {
+  staff_name: string | null;
+  staff_position: string | number | null;
   an: string;
   hn: string;
   service_date: string | Date | null;
@@ -207,6 +217,44 @@ export function defaultFiscalRange(): { start: string; end: string } {
   return { start: `${fyStartYear}-10-01`, end: `${fyStartYear + 1}-09-30` };
 }
 
+// ─── ผู้ให้บริการกายภาพ ───────────────────────────────────────────────────────
+//
+// physic_main_ipd เก็บ "คนที่ลงบันทึก" ไว้คนละชื่อคอลัมน์ในแต่ละ HOSxP
+// (staff / doctor / …) และบางที่ก็ไม่มีเลย → หาจาก information_schema ตอน runtime
+// แล้วจำไว้ ถ้าไม่เจอก็ปล่อยว่าง (หน้าเว็บจะไม่แสดงการ์ดผู้ให้บริการ) ไม่ทำให้ query พัง
+//
+// เจ้าของงานนับเป็น "คนกายภาพ" เมื่อ doctor.position_id อยู่ใน PT_POSITION_IDS
+// (เกณฑ์เดียวกับ lib/pt.service.ts: 9 = เจ้าหน้าที่กายภาพ PT/PTA)
+const STAFF_COLUMN_CANDIDATES = ["staff", "doctor", "physic_staff", "staff_id", "user"];
+const PT_POSITION_IDS = ["9"];
+
+interface SchemaRow extends RowDataPacket {
+  COLUMN_NAME: string;
+}
+
+/** คอลัมน์ผู้ให้บริการที่ใช้ได้จริง (null = ตารางนี้ไม่ได้เก็บไว้) */
+let staffColumn: string | null | undefined;
+
+async function resolveStaffColumn(): Promise<string | null> {
+  if (staffColumn !== undefined) return staffColumn;
+  try {
+    const [rows] = await db.query<SchemaRow[]>(
+      `SELECT COLUMN_NAME
+         FROM information_schema.COLUMNS
+        WHERE TABLE_SCHEMA = DATABASE()
+          AND TABLE_NAME = 'physic_main_ipd'
+          AND COLUMN_NAME IN (${STAFF_COLUMN_CANDIDATES.map(() => "?").join(",")})`,
+      STAFF_COLUMN_CANDIDATES,
+    );
+    const found = new Set(rows.map((r) => String(r.COLUMN_NAME).toLowerCase()));
+    staffColumn = STAFF_COLUMN_CANDIDATES.find((c) => found.has(c)) ?? null;
+  } catch (e) {
+    console.error("resolveStaffColumn failed:", e);
+    staffColumn = null;
+  }
+  return staffColumn;
+}
+
 // ─── Main ─────────────────────────────────────────────────────────────────────
 
 /**
@@ -220,9 +268,20 @@ export async function getPtIpdRegister(
   end: string,
   catKeys: string[] = [],
 ): Promise<PtIpdRegisterData> {
+  // ชื่อคอลัมน์มาจาก whitelist ในไฟล์นี้เท่านั้น (ไม่ได้มาจาก user input)
+  const staffCol = await resolveStaffColumn();
+  const staffSelect = staffCol
+    ? `COALESCE(NULLIF(TRIM(dpt.name), ''), NULLIF(TRIM(pmi.${staffCol}), ''), '') AS staff_name,
+       COALESCE(dpt.position_id, '')                                              AS staff_position`
+    : `'' AS staff_name, '' AS staff_position`;
+  const staffJoin = staffCol
+    ? `LEFT JOIN doctor dpt ON dpt.code = pmi.${staffCol}`
+    : "";
+
   const [raw] = await db.query<QueryRow[]>(
     `
     SELECT
+      ${staffSelect},
       pmi.an                                        AS an,
       pmi.hn                                        AS hn,
       DATE(pmi.vstdate)                             AS service_date,
@@ -248,6 +307,7 @@ export async function getPtIpdRegister(
       COALESCE(p.moopart, '')                       AS moopart,
       COALESCE(t.full_name, '')                     AS address_full
     FROM physic_main_ipd pmi
+    ${staffJoin}
     INNER JOIN an_stat a      ON a.an = pmi.an
     LEFT  JOIN patient p      ON p.hn = pmi.hn
     LEFT  JOIN pttype py      ON py.pttype = a.pttype
@@ -303,6 +363,8 @@ export async function getPtIpdRegister(
       serviceTags: service.tags,
       dxGroupKey,
       dxGroupLabel: PT_DX_GROUP_BY_KEY.get(dxGroupKey)?.label ?? dxGroupKey,
+      staffName: (r.staff_name ?? "").trim(),
+      staffIsPt: PT_POSITION_IDS.includes(String(r.staff_position ?? "").trim()),
     };
   });
 
@@ -348,6 +410,7 @@ function buildSummary(rows: PtIpdRow[]): PtIpdRegisterData["summary"] {
   const byMonth = new Map<string, { count: number; an: Set<string> }>();
   const byTag = new Map<string, number>();
   const byDx = new Map<string, { count: number; an: Set<string> }>();
+  const byStaff = new Map<string, { count: number; an: Set<string>; isPt: boolean }>();
   const byPdx = new Map<string, { name: string; count: number }>();
   const anSet = new Set<string>();
   const hnSet = new Set<string>();
@@ -374,6 +437,18 @@ function buildSummary(rows: PtIpdRow[]): PtIpdRegisterData["summary"] {
     if (r.an) g.an.add(r.an);
     byDx.set(r.dxGroupKey, g);
 
+    if (r.staffName) {
+      const st = byStaff.get(r.staffName) ?? {
+        count: 0,
+        an: new Set<string>(),
+        isPt: false,
+      };
+      st.count += 1;
+      if (r.an) st.an.add(r.an);
+      st.isPt = st.isPt || r.staffIsPt;
+      byStaff.set(r.staffName, st);
+    }
+
     if (r.pdx) {
       const p = byPdx.get(r.pdx) ?? { name: r.pdxName, count: 0 };
       p.count += 1;
@@ -386,6 +461,12 @@ function buildSummary(rows: PtIpdRow[]): PtIpdRegisterData["summary"] {
     }
     if (r.hn) hnSet.add(r.hn);
   }
+
+  // เอาเฉพาะเจ้าหน้าที่กายภาพ — แต่ถ้าทั้งทะเบียนยังไม่มีใครถูกตั้ง position กายภาพ
+  // ก็แสดงทุกคนที่บันทึกไว้แทน (พร้อมธง staffPositionUnset ให้หน้าเว็บบอกผู้ใช้)
+  const ptStaff = [...byStaff.entries()].filter(([, v]) => v.isPt);
+  const staffPositionUnset = byStaff.size > 0 && ptStaff.length === 0;
+  const staffEntries = staffPositionUnset ? [...byStaff.entries()] : ptStaff;
 
   const losValues = [...losByAn.values()];
   const avgLos = losValues.length
@@ -418,6 +499,10 @@ function buildSummary(rows: PtIpdRow[]): PtIpdRegisterData["summary"] {
     }))
       .filter((c) => c.count > 0)
       .sort((a, b) => b.count - a.count),
+    byStaff: staffEntries
+      .map(([name, v]) => ({ name, count: v.count, admissions: v.an.size }))
+      .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name, "th")),
+    staffPositionUnset,
     byDxGroup: PT_DX_GROUPS.map((g) => ({
       key: g.key,
       label: g.label,

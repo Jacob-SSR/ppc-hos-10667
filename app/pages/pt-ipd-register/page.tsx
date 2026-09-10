@@ -1,7 +1,7 @@
 "use client";
 
 // รายงาน "ทะเบียนผู้ป่วยในสำหรับงานกายภาพ"
-// filter: ช่วงวัน (เลือกเอง) / ปีงบประมาณ / รายเดือน /
+// filter: ช่วงวัน (เลือกเอง) / ปีงบประมาณ / รายเดือน / เวร (เช้า-บ่าย-ดึก) /
 //         หมวดหมู่รายละเอียดการให้บริการ (เลือกได้หลายหมวด + ค้นหาได้)
 // ข้อมูลจาก /api/pt-ipd-register — ดึงทั้งช่วงมาครั้งเดียว แล้วกรองหมวด/คำค้นฝั่ง client
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -14,7 +14,8 @@ import { th } from "date-fns/locale";
 import "react-datepicker/dist/react-datepicker.css";
 import {
     Activity, BedDouble, ClipboardList, Clock, Download, Dumbbell, HeartPulse,
-    Layers, PieChart as PieIcon, RefreshCw, Search, Stethoscope, TrendingUp, Users,
+    Layers, PieChart as PieIcon, RefreshCw, Search, Stethoscope, TrendingUp,
+    UserRound, Users,
 } from "lucide-react";
 import ThaiDateInput from "@/app/components/ThaiDateInput";
 import { SectionCard, LiveBadge, HBarList, MiniPagination } from "@/app/components/dashboard/live";
@@ -50,6 +51,41 @@ const MODES: { key: Mode; label: string }[] = [
     { key: "month", label: "รายเดือน" },
     { key: "custom", label: "เลือกวันเอง" },
 ];
+
+// ─── เวร (จัดจากเวลาที่ให้บริการกายภาพ physic_main_ipd.service_time) ─────────
+// ขอบเขตเดียวกับ lib/servicetime.queries.ts และหน้า "สถิติเวร":
+// เช้า 08:30–16:30 · บ่าย 16:30–00:30 · ดึก 00:30–08:30 (ดึกคาบเที่ยงคืน จึง +1440)
+type Shift = "all" | "morning" | "evening" | "night";
+const SHIFT_OPTIONS: { key: Shift; label: string }[] = [
+    { key: "all", label: "ทุกเวร" },
+    { key: "morning", label: "เวรเช้า (08:30–16:30)" },
+    { key: "evening", label: "เวรบ่าย (16:30–00:30)" },
+    { key: "night", label: "เวรดึก (00:30–08:30)" },
+];
+const SHIFT_NAME: Record<string, string> = { morning: "เช้า", evening: "บ่าย", night: "ดึก" };
+const SHIFT_STYLE: Record<string, { color: string; bg: string }> = {
+    morning: { color: "#854F0B", bg: "#FAEEDA" },
+    evening: { color: "#185FA5", bg: "#E6F1FB" },
+    night: { color: "#7C3AED", bg: "#EDE9FE" },
+};
+const SHIFT_KEYS = ["morning", "evening", "night"] as const;
+
+/** "HH:MM" → เวรที่ตรงกับเวลานั้น (null = ไม่ได้บันทึกเวลา) */
+function shiftOf(t: string): "morning" | "evening" | "night" | null {
+    const [h, m] = (t ?? "").split(":").map(Number);
+    if (!Number.isFinite(h) || !Number.isFinite(m)) return null;
+    const min = h * 60 + m;
+    const mm = min < 510 ? min + 1440 : min; // ก่อน 08:30 = ช่วงดึกของ "วันถัดไป"
+    if (mm < 990) return "morning";
+    if (mm < 1470) return "evening";
+    return "night";
+}
+
+/** "HH:MM" → "เช้า"/"บ่าย"/"ดึก" (ว่าง = ไม่มีเวลา) */
+function shiftLabelOf(t: string): string {
+    const sh = shiftOf(t);
+    return sh ? SHIFT_NAME[sh] : "";
+}
 
 // สีโดนัท "สิทธิ์การรักษา" — ชุดเดียวกับหน้าหัตถการ ER (ผ่านเกณฑ์ตาบอดสีทุกคู่ที่ติดกัน)
 const PTTYPE_COLORS = ["#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#e87ba4", "#008300"];
@@ -136,6 +172,7 @@ export default function PtIpdRegisterPage() {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [picked, setPicked] = useState<string[]>([]); // หมวดที่เลือก (ว่าง = ทุกหมวด)
+    const [shift, setShift] = useState<Shift>("all");
     const [keyword, setKeyword] = useState("");
 
     // เดือนที่เลือกอาจไม่มีในปีงบใหม่ (เช่นสลับมาปีงบปัจจุบันที่ยังไม่ถึงเดือนนั้น)
@@ -186,21 +223,44 @@ export default function PtIpdRegisterPage() {
                 r.an.toLowerCase().includes(kw) ||
                 r.pdx.toLowerCase().includes(kw) ||
                 r.pdxName.toLowerCase().includes(kw) ||
-                r.serviceText.toLowerCase().includes(kw),
+                r.serviceText.toLowerCase().includes(kw) ||
+                r.staffName.toLowerCase().includes(kw),
         );
     }, [data, keyword]);
 
-    const catCounts = useMemo(() => {
-        const m = new Map<string, number>();
-        for (const r of baseRows) m.set(r.categoryKey, (m.get(r.categoryKey) ?? 0) + 1);
-        return m;
-    }, [baseRows]);
-
-    // ── กรองหมวด ──
-    const rows = useMemo(() => {
+    // แถวหลังกรองหมวด (ยังไม่กรองเวร) — ใช้นับยอดของแต่ละเวร
+    const catRows = useMemo(() => {
         const set = new Set(picked);
         return set.size ? baseRows.filter((r) => set.has(r.categoryKey)) : baseRows;
     }, [baseRows, picked]);
+
+    // แถวหลังกรองเวร (ยังไม่กรองหมวด) — ใช้นับยอดของแต่ละหมวด
+    const shiftRows = useMemo(
+        () => (shift === "all" ? baseRows : baseRows.filter((r) => shiftOf(r.serviceTime) === shift)),
+        [baseRows, shift],
+    );
+
+    // ยอดของแต่ละหมวด/เวร คิดจากอีกฝั่งที่กรองแล้วเสมอ → กดสลับได้โดยยังเห็นยอดตัวอื่น
+    const catCounts = useMemo(() => {
+        const m = new Map<string, number>();
+        for (const r of shiftRows) m.set(r.categoryKey, (m.get(r.categoryKey) ?? 0) + 1);
+        return m;
+    }, [shiftRows]);
+
+    const shiftCounts = useMemo(() => {
+        const m = new Map<string, number>();
+        for (const r of catRows) {
+            const sh = shiftOf(r.serviceTime);
+            if (sh) m.set(sh, (m.get(sh) ?? 0) + 1);
+        }
+        return m;
+    }, [catRows]);
+
+    // ── แถวที่ผ่านทุก filter (ตาราง/KPI/กราฟ ใช้ชุดนี้) ──
+    const rows = useMemo(
+        () => (shift === "all" ? catRows : catRows.filter((r) => shiftOf(r.serviceTime) === shift)),
+        [catRows, shift],
+    );
 
     // ── สรุปจากแถวที่กรองแล้ว (KPI/กราฟจึงตรงกับ filter เสมอ) ────────────────
     const stats = useMemo(() => {
@@ -210,7 +270,7 @@ export default function PtIpdRegisterPage() {
         const byTag = new Map<string, number>();
         // ข้อความรายละเอียดการให้บริการดิบ — รวมข้อความที่ต่างกันแค่ช่องว่าง/ตัวพิมพ์
         const byText = new Map<string, { label: string; count: number }>();
-        const byDx = new Map<string, { label: string; count: number }>();
+        const byStaff = new Map<string, { count: number; isPt: boolean }>();
         const an = new Set<string>();
         const hn = new Set<string>();
         const losByAn = new Map<string, number>();
@@ -241,9 +301,12 @@ export default function PtIpdRegisterPage() {
                 byText.set(key, e);
             }
 
-            const g = byDx.get(r.dxGroupKey) ?? { label: r.dxGroupLabel, count: 0 };
-            g.count += 1;
-            byDx.set(r.dxGroupKey, g);
+            if (r.staffName) {
+                const st = byStaff.get(r.staffName) ?? { count: 0, isPt: false };
+                st.count += 1;
+                st.isPt = st.isPt || r.staffIsPt;
+                byStaff.set(r.staffName, st);
+            }
 
             if (r.an) {
                 an.add(r.an);
@@ -280,9 +343,19 @@ export default function PtIpdRegisterPage() {
             byServiceTag: [...byTag.entries()]
                 .map(([key, count]) => ({ label: SERVICE_LABEL.get(key) ?? key, count }))
                 .sort((a, b) => b.count - a.count),
-            byDxGroup: [...byDx.values()]
-                .map((g) => ({ label: g.label, count: g.count }))
-                .sort((a, b) => b.count - a.count),
+            // เฉพาะเจ้าหน้าที่กายภาพ — ถ้าทั้งช่วงยังไม่มีใครถูกตั้งตำแหน่งกายภาพใน
+            // ทะเบียน doctor ก็แสดงทุกคนที่บันทึกไว้แทน พร้อมหมายเหตุใต้กราฟ
+            byStaff: (() => {
+                const all = [...byStaff.entries()];
+                const pt = all.filter(([, v]) => v.isPt);
+                const use = pt.length ? pt : all;
+                return {
+                    unset: all.length > 0 && pt.length === 0,
+                    list: use
+                        .map(([label, v]) => ({ label, count: v.count }))
+                        .sort((a, b) => b.count - a.count || a.label.localeCompare(b.label, "th")),
+                };
+            })(),
         };
     }, [rows, data]);
 
@@ -296,34 +369,35 @@ export default function PtIpdRegisterPage() {
         [data, catCounts],
     );
 
-    // แนวโน้มรายเดือน — นับจาก rows (ตรงกับตารางเสมอ) ทั้งจำนวนครั้งและจำนวน AN
-    const monthly = useMemo(() => {
-        const m = new Map<string, { count: number; an: Set<string> }>();
-        for (const r of rows) {
+    // แนวโน้มรายเดือนแยกเวร — นับจาก catRows เพื่อให้เทียบ 3 เวรกันได้
+    // (เลือกเวรใดเวรหนึ่งอยู่ → แสดงเฉพาะแท่งนั้น ตัวเลขตรงกับตารางเสมอ)
+    const monthShift = useMemo(() => {
+        const m = new Map<string, { morning: number; evening: number; night: number }>();
+        for (const r of catRows) {
             const key = r.serviceDate.slice(0, 7);
             if (!key) continue;
-            const cur = m.get(key) ?? { count: 0, an: new Set<string>() };
-            cur.count += 1;
-            if (r.an) cur.an.add(r.an);
+            const sh = shiftOf(r.serviceTime);
+            if (!sh) continue;
+            const cur = m.get(key) ?? { morning: 0, evening: 0, night: 0 };
+            cur[sh] += 1;
             m.set(key, cur);
         }
         return [...m.entries()]
             .sort((a, b) => a[0].localeCompare(b[0]))
-            .map(([month, v]) => ({
-                month,
-                label: monthLabel(month),
-                count: v.count,
-                admissions: v.an.size,
-            }));
-    }, [rows]);
+            .map(([month, v]) => ({ month, label: monthLabel(month), ...v }));
+    }, [catRows]);
 
-    const busiestMonth = useMemo(
-        () => monthly.reduce<{ label: string; count: number } | null>(
-            (best, m) => (!best || m.count > best.count ? { label: m.label, count: m.count } : best),
-            null,
-        ),
-        [monthly],
-    );
+    const shownShifts = shift === "all" ? [...SHIFT_KEYS] : [shift];
+
+    // เวรที่ให้บริการมากที่สุดตลอดช่วง — ใช้พาดหัวการ์ดให้ตอบได้โดยไม่ต้องอ่านกราฟ
+    const busiestShift = useMemo(() => {
+        let best: { key: string; n: number } | null = null;
+        for (const k of SHIFT_KEYS) {
+            const n = shiftCounts.get(k) ?? 0;
+            if (!best || n > best.n) best = { key: k, n };
+        }
+        return best && best.n > 0 ? best : null;
+    }, [shiftCounts]);
 
     // โดนัทสิทธิ์การรักษา — 5 อันดับแรก + รวมที่เหลือเป็น "อื่นๆ" (ไม่เกิน 6 ชิ้น)
     const pttypeSlices = useMemo(() => {
@@ -354,6 +428,7 @@ export default function PtIpdRegisterPage() {
                 "ลำดับ": i + 1,
                 "วันที่ให้บริการ": formatThaiDate(r.serviceDate),
                 "เวลา": r.serviceTime || "",
+                "เวร": shiftLabelOf(r.serviceTime),
                 AN: r.an,
                 HN: r.hn,
                 "ชื่อ-นามสกุล": r.patientName,
@@ -370,6 +445,7 @@ export default function PtIpdRegisterPage() {
                 "วันที่จำหน่าย": r.dchdate ? formatThaiDate(r.dchdate) : "",
                 "วันนอน": r.los ?? "",
                 "รายละเอียดการให้บริการ": r.serviceText,
+                "ผู้ทำหัตถการ": r.staffName,
                 "ที่อยู่": r.address,
             })),
             { filePrefix: "ทะเบียนผู้ป่วยในงานกายภาพ", sheetName: "PT IPD Register" },
@@ -464,6 +540,8 @@ export default function PtIpdRegisterPage() {
                             onChange={setPicked}
                             disabled={!data}
                         />
+
+                        <Dropdown<Shift> value={shift} options={SHIFT_OPTIONS} onChange={setShift} />
                     </div>
                 </div>
 
@@ -507,7 +585,43 @@ export default function PtIpdRegisterPage() {
                 </div>
             )}
 
-            {/* ── หมวดหมู่เฉพาะงานกายภาพ (กดเพื่อกรองได้ กดซ้ำ = เอาออก) ── */}
+            {/* ── แยกตามเวร (กดเพื่อกรองได้ กดซ้ำ = ทุกเวร) ── */}
+            {data && (
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    {SHIFT_OPTIONS.filter((o) => o.key !== "all").map((o) => {
+                        const n = shiftCounts.get(o.key) ?? 0;
+                        const st = SHIFT_STYLE[o.key];
+                        const active = shift === o.key;
+                        const pct = catRows.length ? Math.round((n / catRows.length) * 100) : 0;
+                        return (
+                            <button
+                                key={o.key}
+                                onClick={() => setShift(active ? "all" : o.key)}
+                                className={`text-left rounded-2xl border px-4 py-3 transition-all ${active ? "shadow-sm" : "border-gray-200 bg-white hover:border-gray-300"}`}
+                                style={active ? { backgroundColor: st.bg, borderColor: st.color } : undefined}
+                            >
+                                <div className="flex items-center justify-between gap-2">
+                                    <span className="text-xs font-bold" style={{ color: st.color }}>
+                                        {o.label}
+                                    </span>
+                                    <span className="text-[10px] text-gray-400">{pct}%</span>
+                                </div>
+                                <div className="flex items-end gap-1.5 mt-1">
+                                    <span className="text-2xl font-extrabold tabular-nums" style={{ color: st.color }}>
+                                        {fmt(n)}
+                                    </span>
+                                    <span className="text-[11px] text-gray-400 mb-1">ครั้ง</span>
+                                </div>
+                                <div className="mt-2 h-1.5 rounded-full bg-gray-100 overflow-hidden">
+                                    <div className="h-full rounded-full" style={{ width: `${pct}%`, backgroundColor: st.color }} />
+                                </div>
+                            </button>
+                        );
+                    })}
+                </div>
+            )}
+
+            {/* ── หมวดหมู่รายละเอียดการให้บริการ (กดเพื่อกรองได้ กดซ้ำ = เอาออก) ── */}
             {data && categoryCards.length > 0 && (
                 <SectionCard
                     title="หมวดหมู่รายละเอียดการให้บริการ (จากบันทึกของนักกายภาพ)"
@@ -561,27 +675,25 @@ export default function PtIpdRegisterPage() {
                     <div className="lg:col-span-2">
                         <SectionCard
                             // พาดหัวสรุป "เดือนไหนเยอะสุด" ให้เลย ไม่ต้องอ่านกราฟก่อน
-                            title={`แนวโน้มการให้บริการรายเดือน${busiestMonth ? ` — ${busiestMonth.label} มากที่สุด ${fmt(busiestMonth.count)} ครั้ง` : ""}`}
+                            title={`แนวโน้มรายเดือน แยกตามเวร${shift === "all" && busiestShift ? ` — เวร${SHIFT_NAME[busiestShift.key]}ให้บริการมากที่สุด ${fmt(busiestShift.n)} ครั้ง` : ""}`}
                             icon={TrendingUp}
                             titleColor={MINT[800]}
                         >
-                            {monthly.length === 0 ? (
+                            {monthShift.length === 0 ? (
                                 <p className="text-xs text-gray-400 text-center py-10">ไม่พบข้อมูลในช่วงเวลานี้</p>
                             ) : (
                                 <>
                                     <div className="flex items-center gap-4 mb-2">
-                                        <span className="flex items-center gap-1.5 text-xs text-gray-600">
-                                            <span className="w-2.5 h-2.5 rounded-sm" style={{ backgroundColor: MINT[500] }} />
-                                            จำนวนครั้ง
-                                        </span>
-                                        <span className="flex items-center gap-1.5 text-xs text-gray-600">
-                                            <span className="w-2.5 h-2.5 rounded-sm" style={{ backgroundColor: "#185FA5" }} />
-                                            จำนวน AN
-                                        </span>
+                                        {shownShifts.map((k) => (
+                                            <span key={k} className="flex items-center gap-1.5 text-xs text-gray-600">
+                                                <span className="w-2.5 h-2.5 rounded-sm" style={{ backgroundColor: SHIFT_STYLE[k].color }} />
+                                                เวร{SHIFT_NAME[k]}
+                                            </span>
+                                        ))}
                                     </div>
                                     <ResponsiveContainer width="100%" height={260}>
                                         <BarChart
-                                            data={monthly}
+                                            data={monthShift}
                                             margin={{ top: 8, right: 16, left: -14, bottom: 0 }}
                                             barGap={2}
                                             barCategoryGap="22%"
@@ -591,11 +703,19 @@ export default function PtIpdRegisterPage() {
                                             <YAxis tick={{ fontSize: 11, fill: "#6b7280" }} axisLine={false} tickLine={false} allowDecimals={false} />
                                             <Tooltip
                                                 cursor={{ fill: "#f6f8f7" }}
-                                                formatter={(v: number | undefined, n) => [fmt(v ?? 0), n]}
+                                                formatter={(v: number | undefined, n) => [`${fmt(v ?? 0)} ครั้ง`, n]}
                                                 contentStyle={{ fontSize: 12, borderRadius: 8, border: "1px solid #e5e7eb" }}
                                             />
-                                            <Bar dataKey="count" name="จำนวนครั้ง" fill={MINT[500]} radius={[4, 4, 0, 0]} maxBarSize={22} />
-                                            <Bar dataKey="admissions" name="จำนวน AN" fill="#185FA5" radius={[4, 4, 0, 0]} maxBarSize={22} />
+                                            {shownShifts.map((k) => (
+                                                <Bar
+                                                    key={k}
+                                                    dataKey={k}
+                                                    name={`เวร${SHIFT_NAME[k]}`}
+                                                    fill={SHIFT_STYLE[k].color}
+                                                    radius={[4, 4, 0, 0]}
+                                                    maxBarSize={22}
+                                                />
+                                            ))}
                                         </BarChart>
                                     </ResponsiveContainer>
                                 </>
@@ -744,20 +864,28 @@ export default function PtIpdRegisterPage() {
                         )}
                     </SectionCard>
 
-                    {/* กลุ่มโรคเป็นข้อมูลประกอบ — ตัวกรองหลักคือหมวดรายละเอียดการให้บริการ */}
-                    <SectionCard title="กลุ่มโรคของผู้ป่วยที่ได้รับกายภาพ" icon={Stethoscope} titleColor={MINT[800]}>
-                        {stats.byDxGroup.length === 0 ? (
-                            <p className="text-xs text-gray-400 text-center py-10">ไม่พบข้อมูล</p>
+                    {/* ผู้ทำหัตถการ — เฉพาะเจ้าหน้าที่กายภาพ (ตำแหน่งกายภาพในทะเบียน doctor) */}
+                    <SectionCard
+                        title={`ผู้ทำหัตถการ${stats.byStaff.list.length > 10 ? " (10 อันดับแรก)" : ""}`}
+                        icon={UserRound}
+                        titleColor={MINT[800]}
+                    >
+                        {stats.byStaff.list.length === 0 ? (
+                            <p className="text-xs text-gray-400 text-center py-10">
+                                ทะเบียนไม่ได้บันทึกผู้ทำหัตถการไว้
+                            </p>
                         ) : (
                             <>
                                 <HBarList
-                                    data={stats.byDxGroup}
+                                    data={stats.byStaff.list.slice(0, 10)}
                                     colors={[MINT[500]]}
                                     total={stats.total}
-                                    labelWidth={190}
+                                    labelWidth={170}
                                 />
                                 <p className="mt-3 text-[11px] text-gray-400">
-                                    * จัดกลุ่มจากรหัส ICD-10 ของการวินิจฉัย (pdx ก่อน ถ้าจัดไม่ได้จึงดู dx0–dx5)
+                                    {stats.byStaff.unset
+                                        ? "* ยังไม่มีใครถูกตั้งตำแหน่งเจ้าหน้าที่กายภาพในทะเบียน doctor — ตอนนี้จึงแสดงทุกคนที่บันทึกไว้"
+                                        : "* นับเฉพาะเจ้าหน้าที่กายภาพ"}
                                 </p>
                             </>
                         )}
@@ -778,7 +906,7 @@ export default function PtIpdRegisterPage() {
                             <input
                                 value={keyword}
                                 onChange={(e) => setKeyword(e.target.value)}
-                                placeholder="ค้นหา ชื่อ / HN / AN / การวินิจฉัย / รายละเอียด"
+                                placeholder="ค้นหา ชื่อ / HN / AN / การวินิจฉัย / รายละเอียด / ผู้ทำหัตถการ"
                                 className="w-full border border-gray-300 rounded-lg pl-9 pr-3 py-2 text-sm outline-none focus:border-green-700 placeholder:text-gray-300"
                             />
                         </div>
@@ -803,6 +931,7 @@ export default function PtIpdRegisterPage() {
                                             <Th right>ลำดับ</Th>
                                             <Th>วันที่ให้บริการ</Th>
                                             <Th>เวลา</Th>
+                                            <Th>เวร</Th>
                                             <Th>AN</Th>
                                             <Th>HN</Th>
                                             <Th>ชื่อ-นามสกุล</Th>
@@ -814,6 +943,7 @@ export default function PtIpdRegisterPage() {
                                             <Th>รับไว้ / จำหน่าย</Th>
                                             <Th right>วันนอน</Th>
                                             <Th>รายละเอียดการให้บริการ</Th>
+                                            <Th>ผู้ทำหัตถการ</Th>
                                         </tr>
                                     </thead>
                                     <tbody>
@@ -829,6 +959,7 @@ export default function PtIpdRegisterPage() {
                                                     </td>
                                                     <td className="px-3 py-2 whitespace-nowrap text-gray-700">{formatThaiDate(r.serviceDate)}</td>
                                                     <td className="px-3 py-2 text-gray-500">{r.serviceTime || "-"}</td>
+                                                    <td className="px-3 py-2"><ShiftBadge time={r.serviceTime} /></td>
                                                     <td className="px-3 py-2 font-mono text-gray-700">{r.an}</td>
                                                     <td className="px-3 py-2 font-mono text-gray-700">{r.hn}</td>
                                                     <td className="px-3 py-2 text-gray-800 whitespace-nowrap">{r.patientName || "-"}</td>
@@ -877,6 +1008,9 @@ export default function PtIpdRegisterPage() {
                                                             </span>
                                                         )}
                                                     </td>
+                                                    <td className="px-3 py-2 text-gray-700 whitespace-nowrap">
+                                                        {r.staffName || <span className="text-gray-300">-</span>}
+                                                    </td>
                                                 </tr>
                                             );
                                         })}
@@ -906,11 +1040,21 @@ export default function PtIpdRegisterPage() {
                                 จำนวนครั้ง: c.count,
                                 จำนวน_AN: c.admissions,
                             })),
-                            รายเดือน: monthly.map((m) => ({
+                            รายเดือนแยกเวร: monthShift.map((m) => ({
                                 เดือน: m.label,
-                                จำนวนครั้ง: m.count,
-                                จำนวน_AN: m.admissions,
+                                เช้า: m.morning,
+                                บ่าย: m.evening,
+                                ดึก: m.night,
+                                รวม: m.morning + m.evening + m.night,
                             })),
+                            เวรที่เลือก: SHIFT_OPTIONS.find((o) => o.key === shift)?.label ?? "ทุกเวร",
+                            แยกตามเวร: SHIFT_OPTIONS.filter((o) => o.key !== "all").map((o) => ({
+                                เวร: SHIFT_NAME[o.key],
+                                จำนวนครั้ง: shiftCounts.get(o.key) ?? 0,
+                            })),
+                            เวรที่ให้บริการมากที่สุด: busiestShift
+                                ? `เวร${SHIFT_NAME[busiestShift.key]} (${busiestShift.n} ครั้ง)`
+                                : "-",
                             การวินิจฉัยหลัก: stats.byPdx.map((p) => ({
                                 รหัส: p.code,
                                 ชื่อ: p.name,
@@ -924,9 +1068,9 @@ export default function PtIpdRegisterPage() {
                                 หมวด: t.label,
                                 จำนวนครั้ง: t.count,
                             })),
-                            กลุ่มโรค: stats.byDxGroup.map((g) => ({
-                                กลุ่มโรค: g.label,
-                                จำนวนครั้ง: g.count,
+                            ผู้ทำหัตถการ: stats.byStaff.list.slice(0, 10).map((st) => ({
+                                ชื่อ: st.label,
+                                จำนวนครั้ง: st.count,
                             })),
                             แยกตามสิทธิ์การรักษา: pttypeSlices.map((sl) => ({
                                 สิทธิ์: sl.name,
@@ -939,6 +1083,21 @@ export default function PtIpdRegisterPage() {
                 disabled={!data}
             />
         </div>
+    );
+}
+
+// ─── ป้ายเวร ─────────────────────────────────────────────────────────────────
+function ShiftBadge({ time }: { time: string }) {
+    const sh = shiftOf(time);
+    if (!sh) return <span className="text-gray-300">-</span>;
+    const st = SHIFT_STYLE[sh];
+    return (
+        <span
+            className="inline-block px-2 py-0.5 rounded-full text-[11px] font-semibold whitespace-nowrap"
+            style={{ backgroundColor: st.bg, color: st.color }}
+        >
+            {SHIFT_NAME[sh]}
+        </span>
     );
 }
 
