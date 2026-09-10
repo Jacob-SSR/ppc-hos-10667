@@ -132,7 +132,12 @@ export const FEATURE_PATHS = {
   ],
 
   // กายภาพบำบัด
-  PT: ["/pages/pt-dashboard", "/api/pt-dashboard"],
+  PT: [
+    "/pages/pt-dashboard",
+    "/api/pt-dashboard",
+    "/pages/pt-ipd-register",
+    "/api/pt-ipd-register",
+  ],
 
   // ทันตกรรม
   DENTAL: [

@@ -86,6 +86,12 @@ export const DASHBOARD_GROUPS: SidebarSubGroup[] = [
         group: "main",
       },
       {
+        label: "ทะเบียนผู้ป่วยในงานกายภาพ",
+        href: "/pages/pt-ipd-register",
+        icon: ClipboardList,
+        group: "main",
+      },
+      {
         label: "ตรวจสุขภาพประจำปี",
         href: "/pages/health-checkup",
         icon: HeartPulse,

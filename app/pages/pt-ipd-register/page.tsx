@@ -1,0 +1,878 @@
+"use client";
+
+// รายงาน "ทะเบียนผู้ป่วยในสำหรับงานกายภาพ"
+// filter: ช่วงวัน (เลือกเอง) / ปีงบประมาณ / รายเดือน / หมวดหมู่กายภาพ (เลือกได้หลายหมวด)
+// ข้อมูลจาก /api/pt-ipd-register — ดึงทั้งช่วงมาครั้งเดียว แล้วกรองหมวด/คำค้นฝั่ง client
+import { useCallback, useEffect, useMemo, useState } from "react";
+import {
+    Bar, BarChart, CartesianGrid, Cell, LabelList, Pie, PieChart,
+    ResponsiveContainer, Tooltip, XAxis, YAxis,
+} from "recharts";
+import DatePicker from "react-datepicker";
+import { th } from "date-fns/locale";
+import "react-datepicker/dist/react-datepicker.css";
+import {
+    Activity, BedDouble, ClipboardList, Clock, Download, Dumbbell, HeartPulse,
+    Layers, PieChart as PieIcon, RefreshCw, Search, Stethoscope, TrendingUp, Users,
+} from "lucide-react";
+import ThaiDateInput from "@/app/components/ThaiDateInput";
+import { SectionCard, LiveBadge, HBarList, MiniPagination } from "@/app/components/dashboard/live";
+import { Dropdown } from "@/app/pages/rdu-dashboard/_components/Dropdown";
+import { CategoryPicker } from "./_components/CategoryPicker";
+import { exportToExcel } from "@/lib/exportExcel";
+import { formatThaiDate } from "@/lib/dateUtils";
+import {
+    fmtDate, getBangkokToday, getCurrentFiscalYear, recentFiscalYears,
+    THAI_MONTHS_SHORT, toThaiDateLabel,
+} from "@/lib/thaiDate";
+import { usePagination } from "@/hooks/usePagination";
+import type { PtIpdRegisterData, PtIpdRow } from "@/lib/ptIpdRegister.service";
+import { PT_ACTIVITIES } from "@/lib/ptIpdCategories";
+import AiSummaryCard from "@/app/components/ai/AiSummaryCard";
+
+// ─── ธีมมิ้นต์ (เดียวกับทั้งเว็บ) ──────────────────────────────────────────────
+const MINT = { 300: "#7ec8a0", 500: "#3aa36a", 700: "#236b43", 800: "#1a5233" };
+
+const fmt = (n: number) => n.toLocaleString("th-TH");
+const sexLabel = (s: string) => (s === "1" ? "ชาย" : s === "2" ? "หญิง" : "-");
+const PAGE_SIZE = 25;
+
+// ชื่อกิจกรรมกายภาพ (จับจาก service_text) — ใช้ทั้งกราฟ ตาราง และ Excel
+const ACTIVITY_LABEL = new Map(PT_ACTIVITIES.map((a) => [a.key, a.label]));
+
+// ─── ตัวเลือกช่วงเวลา ─────────────────────────────────────────────────────────
+type Mode = "fiscal" | "month" | "custom";
+const MODES: { key: Mode; label: string }[] = [
+    { key: "fiscal", label: "ทั้งปีงบประมาณ" },
+    { key: "month", label: "รายเดือน" },
+    { key: "custom", label: "เลือกวันเอง" },
+];
+
+// สีโดนัท "สิทธิ์การรักษา" — ชุดเดียวกับหน้าหัตถการ ER (ผ่านเกณฑ์ตาบอดสีทุกคู่ที่ติดกัน)
+const PTTYPE_COLORS = ["#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#e87ba4", "#008300"];
+const PTTYPE_TOP = 5;
+
+/** เดือนที่ i ของปีงบ (0 = ต.ค. … 11 = ก.ย.) ของปีงบ พ.ศ. ที่ระบุ */
+function fiscalMonth(fyBE: number, i: number): { year: number; month: number } {
+    const ceEnd = fyBE - 543;          // ปี ค.ศ. ที่ปีงบสิ้นสุด (ก.ย.)
+    const abs = 9 + i;                 // ต.ค. = index 9 ของปีปฏิทิน
+    return { year: ceEnd - 1 + Math.floor(abs / 12), month: abs % 12 };
+}
+
+/** ช่วงวันของ mode ปัจจุบัน — ตัดปลายไม่ให้เกินวันนี้ */
+function rangeOf(
+    mode: Mode, fyBE: number, monthIdx: number, cStart: Date, cEnd: Date,
+): { start: Date; end: Date } {
+    const today = getBangkokToday();
+    if (mode === "custom") return { start: cStart, end: cEnd };
+
+    if (mode === "month") {
+        const { year, month } = fiscalMonth(fyBE, monthIdx);
+        const start = new Date(year, month, 1);
+        const end = new Date(year, month + 1, 0); // วันสุดท้ายของเดือน
+        return { start, end: end > today ? today : end };
+    }
+
+    const ceEnd = fyBE - 543;
+    const end = new Date(ceEnd, 8, 30); // 30 ก.ย.
+    return { start: new Date(ceEnd - 1, 9, 1), end: end > today ? today : end };
+}
+
+/** index (0-11 แบบปีงบ) ของเดือนปัจจุบัน — ต.ค. = 0 */
+function currentFiscalMonthIdx(): number {
+    return (getBangkokToday().getMonth() + 3) % 12; // ต.ค.(9) → 0, พ.ย.(10) → 1, ม.ค.(0) → 3
+}
+
+/** เดือนของปีงบที่ "เริ่มแล้ว" — ปีงบปัจจุบันจะยังไม่ครบ 12 เดือน */
+function monthOptionsOf(fyBE: number): { key: string; label: string }[] {
+    const today = getBangkokToday();
+    const out: { key: string; label: string }[] = [];
+    for (let i = 0; i < 12; i++) {
+        const { year, month } = fiscalMonth(fyBE, i);
+        if (new Date(year, month, 1) > today) break;
+        out.push({ key: String(i), label: `${THAI_MONTHS_SHORT[month]} ${year + 543}` });
+    }
+    return out;
+}
+
+/** "2026-03" → "มี.ค. 69" (แกน x ของกราฟแนวโน้ม) */
+function monthLabel(ym: string): string {
+    const [y, m] = ym.split("-").map(Number);
+    if (!y || !m) return ym;
+    return `${THAI_MONTHS_SHORT[m - 1]} ${String((y + 543) % 100).padStart(2, "0")}`;
+}
+
+/** "3 ปี 2 เดือน" — เด็กเล็กต้องเห็นเดือนด้วย ผู้ใหญ่แสดงแค่ปี */
+function ageLabel(y: number, m: number): string {
+    if (!y && !m) return "-";
+    return y < 5 && m ? `${y} ปี ${m} ด.` : `${y} ปี`;
+}
+
+function Th({ children, right = false }: { children: React.ReactNode; right?: boolean }) {
+    return (
+        <th
+            className={`text-white px-3 py-2.5 text-xs font-semibold whitespace-nowrap border-r border-[#a8d5ba] ${right ? "text-right" : "text-left"}`}
+            style={{ backgroundColor: MINT[300] }}
+        >
+            {children}
+        </th>
+    );
+}
+
+// ─── Page ────────────────────────────────────────────────────────────────────
+export default function PtIpdRegisterPage() {
+    const [mode, setMode] = useState<Mode>("fiscal");
+    const [fiscalYear, setFiscalYear] = useState<number>(() => getCurrentFiscalYear());
+    const [monthIdx, setMonthIdx] = useState<string>(() => String(currentFiscalMonthIdx()));
+    const [customStart, setCustomStart] = useState<Date>(
+        () => rangeOf("fiscal", getCurrentFiscalYear(), 0, new Date(), new Date()).start,
+    );
+    const [customEnd, setCustomEnd] = useState<Date>(() => getBangkokToday());
+
+    const [data, setData] = useState<PtIpdRegisterData | null>(null);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState<string | null>(null);
+    const [picked, setPicked] = useState<string[]>([]); // หมวดที่เลือก (ว่าง = ทุกหมวด)
+    const [keyword, setKeyword] = useState("");
+
+    // เดือนที่เลือกอาจไม่มีในปีงบใหม่ (เช่นสลับมาปีงบปัจจุบันที่ยังไม่ถึงเดือนนั้น)
+    const monthOptions = useMemo(() => monthOptionsOf(fiscalYear), [fiscalYear]);
+    const effMonthIdx = monthOptions.some((o) => o.key === monthIdx)
+        ? monthIdx
+        : (monthOptions[monthOptions.length - 1]?.key ?? "0");
+
+    const range = useMemo(
+        () => rangeOf(mode, fiscalYear, Number(effMonthIdx), customStart, customEnd),
+        [mode, fiscalYear, effMonthIdx, customStart, customEnd],
+    );
+
+    const fetchData = useCallback(async () => {
+        setLoading(true);
+        setError(null);
+        try {
+            const res = await fetch(
+                `/api/pt-ipd-register?start=${fmtDate(range.start)}&end=${fmtDate(range.end)}`,
+                { credentials: "include" },
+            );
+            if (!res.ok) {
+                const j = await res.json().catch(() => ({}));
+                throw new Error(j.error ?? `HTTP ${res.status}`);
+            }
+            setData(await res.json());
+        } catch (err) {
+            setError((err as Error).message);
+            setData(null);
+        } finally {
+            setLoading(false);
+        }
+    }, [range]);
+
+    useEffect(() => {
+        fetchData();
+    }, [fetchData]);
+
+    // ── กรองฝั่ง client: คำค้นอย่างเดียว (ยังไม่กรองหมวด) ───────────────────
+    // แยกสองชั้นเพื่อให้การ์ดหมวดยังเห็นยอดของหมวดที่ไม่ได้เลือกอยู่
+    const baseRows = useMemo(() => {
+        const kw = keyword.trim().toLowerCase();
+        if (!kw) return data?.rows ?? [];
+        return (data?.rows ?? []).filter(
+            (r) =>
+                r.patientName.toLowerCase().includes(kw) ||
+                r.hn.toLowerCase().includes(kw) ||
+                r.an.toLowerCase().includes(kw) ||
+                r.pdx.toLowerCase().includes(kw) ||
+                r.pdxName.toLowerCase().includes(kw) ||
+                r.serviceText.toLowerCase().includes(kw),
+        );
+    }, [data, keyword]);
+
+    const catCounts = useMemo(() => {
+        const m = new Map<string, number>();
+        for (const r of baseRows) m.set(r.categoryKey, (m.get(r.categoryKey) ?? 0) + 1);
+        return m;
+    }, [baseRows]);
+
+    // ── กรองหมวด ──
+    const rows = useMemo(() => {
+        const set = new Set(picked);
+        return set.size ? baseRows.filter((r) => set.has(r.categoryKey)) : baseRows;
+    }, [baseRows, picked]);
+
+    // ── สรุปจากแถวที่กรองแล้ว (KPI/กราฟจึงตรงกับ filter เสมอ) ────────────────
+    const stats = useMemo(() => {
+        const byCat = new Map<string, { count: number; an: Set<string> }>();
+        const byPttype = new Map<string, number>();
+        const byPdx = new Map<string, { code: string; name: string; count: number }>();
+        const byActivity = new Map<string, number>();
+        const an = new Set<string>();
+        const hn = new Set<string>();
+        const losByAn = new Map<string, number>();
+
+        for (const r of rows) {
+            const c = byCat.get(r.categoryKey) ?? { count: 0, an: new Set<string>() };
+            c.count += 1;
+            if (r.an) c.an.add(r.an);
+            byCat.set(r.categoryKey, c);
+
+            const pt = r.pttypeName || "ไม่ระบุสิทธิ์";
+            byPttype.set(pt, (byPttype.get(pt) ?? 0) + 1);
+
+            if (r.pdx) {
+                const p = byPdx.get(r.pdx) ?? { code: r.pdx, name: r.pdxName, count: 0 };
+                p.count += 1;
+                byPdx.set(r.pdx, p);
+            }
+
+            for (const a of r.activities) byActivity.set(a, (byActivity.get(a) ?? 0) + 1);
+
+            if (r.an) {
+                an.add(r.an);
+                if (r.los != null) losByAn.set(r.an, r.los); // วันนอนนับ 1 ครั้งต่อ 1 AN
+            }
+            if (r.hn) hn.add(r.hn);
+        }
+
+        const los = [...losByAn.values()];
+        const catMeta = new Map((data?.categories ?? []).map((c) => [c.key, c]));
+
+        return {
+            total: rows.length,
+            admissions: an.size,
+            patients: hn.size,
+            avgPerAdmission: an.size ? Math.round((rows.length / an.size) * 10) / 10 : 0,
+            avgLos: los.length ? Math.round((los.reduce((s, v) => s + v, 0) / los.length) * 10) / 10 : 0,
+            byCategory: [...byCat.entries()]
+                .map(([key, v]) => ({
+                    key,
+                    label: catMeta.get(key)?.label ?? key,
+                    color: catMeta.get(key)?.color ?? MINT[500],
+                    count: v.count,
+                    admissions: v.an.size,
+                }))
+                .sort((a, b) => b.count - a.count),
+            byPttype: [...byPttype.entries()]
+                .map(([name, count]) => ({ name, count }))
+                .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name, "th")),
+            byPdx: [...byPdx.values()].sort((a, b) => b.count - a.count).slice(0, 10),
+            byActivity: [...byActivity.entries()]
+                .map(([key, count]) => ({ label: ACTIVITY_LABEL.get(key) ?? key, count }))
+                .sort((a, b) => b.count - a.count),
+        };
+    }, [rows, data]);
+
+    // การ์ดหมวด — แสดงเฉพาะหมวดที่มีข้อมูลในช่วงนี้ (หมวดยอด 0 ยังเลือกได้จาก dropdown)
+    const categoryCards = useMemo(
+        () =>
+            (data?.categories ?? [])
+                .map((c) => ({ ...c, count: catCounts.get(c.key) ?? 0 }))
+                .filter((c) => c.count > 0)
+                .sort((a, b) => b.count - a.count),
+        [data, catCounts],
+    );
+
+    // แนวโน้มรายเดือน — นับจาก rows (ตรงกับตารางเสมอ) ทั้งจำนวนครั้งและจำนวน AN
+    const monthly = useMemo(() => {
+        const m = new Map<string, { count: number; an: Set<string> }>();
+        for (const r of rows) {
+            const key = r.serviceDate.slice(0, 7);
+            if (!key) continue;
+            const cur = m.get(key) ?? { count: 0, an: new Set<string>() };
+            cur.count += 1;
+            if (r.an) cur.an.add(r.an);
+            m.set(key, cur);
+        }
+        return [...m.entries()]
+            .sort((a, b) => a[0].localeCompare(b[0]))
+            .map(([month, v]) => ({
+                month,
+                label: monthLabel(month),
+                count: v.count,
+                admissions: v.an.size,
+            }));
+    }, [rows]);
+
+    const busiestMonth = useMemo(
+        () => monthly.reduce<{ label: string; count: number } | null>(
+            (best, m) => (!best || m.count > best.count ? { label: m.label, count: m.count } : best),
+            null,
+        ),
+        [monthly],
+    );
+
+    // โดนัทสิทธิ์การรักษา — 5 อันดับแรก + รวมที่เหลือเป็น "อื่นๆ" (ไม่เกิน 6 ชิ้น)
+    const pttypeSlices = useMemo(() => {
+        const all = stats.byPttype;
+        const top = all.slice(0, PTTYPE_TOP);
+        const restTotal = all.slice(PTTYPE_TOP).reduce((sum, x) => sum + x.count, 0);
+        const slices = top.map((x) => ({ name: x.name, count: x.count }));
+        if (restTotal > 0) {
+            slices.push({ name: `อื่นๆ (${all.length - PTTYPE_TOP} สิทธิ์)`, count: restTotal });
+        }
+        return slices;
+    }, [stats]);
+
+    const { page, setPage, totalPages, paged } = usePagination(rows, PAGE_SIZE);
+
+    const rangeLabel = data ? toThaiDateLabel(data.start, data.end) : "";
+    const updatedAt = data
+        ? new Date(data.updatedAt).toLocaleString("th-TH", {
+            timeZone: "Asia/Bangkok", day: "2-digit", month: "short",
+            year: "2-digit", hour: "2-digit", minute: "2-digit",
+        })
+        : "";
+
+    const exportRows = () => {
+        if (!rows.length) return;
+        exportToExcel(
+            rows.map((r: PtIpdRow, i) => ({
+                "ลำดับ": i + 1,
+                "วันที่ให้บริการ": formatThaiDate(r.serviceDate),
+                "เวลา": r.serviceTime || "",
+                AN: r.an,
+                HN: r.hn,
+                "ชื่อ-นามสกุล": r.patientName,
+                "อายุ": ageLabel(r.ageY, r.ageM),
+                "เพศ": sexLabel(r.sex),
+                "สิทธิ์การรักษา": r.pttypeName,
+                "หมวดหมู่งานกายภาพ": r.categoryLabel,
+                "การวินิจฉัยหลัก (pdx)": r.pdx,
+                "ชื่อการวินิจฉัยหลัก": r.pdxName,
+                "การวินิจฉัยอื่น (dx0-dx5)": r.dxList.join(", "),
+                "วันที่รับไว้": r.regdate ? formatThaiDate(r.regdate) : "",
+                "วันที่จำหน่าย": r.dchdate ? formatThaiDate(r.dchdate) : "",
+                "วันนอน": r.los ?? "",
+                "กิจกรรมกายภาพ": r.activities.map((a) => ACTIVITY_LABEL.get(a) ?? a).join(", "),
+                "รายละเอียดการให้บริการ": r.serviceText,
+                "ที่อยู่": r.address,
+            })),
+            { filePrefix: "ทะเบียนผู้ป่วยในงานกายภาพ", sheetName: "PT IPD Register" },
+        );
+    };
+
+    const pickedLabel =
+        picked.length === 0
+            ? "ทุกหมวดหมู่"
+            : picked
+                .map((k) => data?.categories.find((c) => c.key === k)?.label ?? k)
+                .join(", ");
+
+    return (
+        <div className="space-y-4 text-gray-800">
+            {/* ── Header + filter ── */}
+            <div className="bg-white border border-gray-200 rounded-2xl shadow-sm px-6 py-4">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                        <div className="flex items-center gap-2">
+                            <Dumbbell size={18} style={{ color: MINT[800] }} />
+                            <h1 className="text-lg font-bold text-gray-800">
+                                ทะเบียนผู้ป่วยในสำหรับงานกายภาพ
+                            </h1>
+                            <LiveBadge />
+                        </div>
+                        <p className="text-xs text-gray-400 mt-0.5 flex items-center flex-wrap gap-2">
+                            <span>ผู้ป่วยในที่ได้รับบริการกายภาพบำบัด (นับ 1 ครั้งที่ให้บริการ ต่อ 1 แถว)</span>
+                            {data && (
+                                <>
+                                    <span>·</span>
+                                    <Clock size={11} />
+                                    <span>{rangeLabel}</span>
+                                </>
+                            )}
+                        </p>
+                    </div>
+
+                    <div className="flex items-center gap-2 flex-wrap justify-end">
+                        {data && (
+                            <span className="flex items-center gap-1.5 text-xs bg-green-50 border border-green-200 text-gray-500 px-3 py-1.5 rounded-full whitespace-nowrap">
+                                <span className="w-2 h-2 rounded-full bg-green-500 shadow-[0_0_0_3px_rgba(22,163,74,.2)]" />
+                                update ล่าสุด · {updatedAt}
+                            </span>
+                        )}
+
+                        <Dropdown<Mode> value={mode} options={MODES} onChange={setMode} />
+
+                        {mode !== "custom" && (
+                            <Dropdown<string>
+                                value={String(fiscalYear)}
+                                options={recentFiscalYears(5).map((y) => ({
+                                    key: String(y),
+                                    label: `ปีงบประมาณ ${y}`,
+                                }))}
+                                onChange={(v) => setFiscalYear(Number(v))}
+                            />
+                        )}
+
+                        {mode === "month" && (
+                            <Dropdown<string>
+                                value={effMonthIdx}
+                                options={monthOptions}
+                                onChange={setMonthIdx}
+                            />
+                        )}
+
+                        {mode === "custom" && (
+                            <>
+                                <DatePicker
+                                    selected={customStart}
+                                    onChange={(d: Date | null) => { if (d) setCustomStart(d); }}
+                                    dateFormat="dd/MM/yyyy" locale={th}
+                                    showMonthDropdown showYearDropdown dropdownMode="select"
+                                    yearDropdownItemNumber={20}
+                                    customInput={<ThaiDateInput />}
+                                />
+                                <DatePicker
+                                    selected={customEnd}
+                                    onChange={(d: Date | null) => { if (d) setCustomEnd(d); }}
+                                    dateFormat="dd/MM/yyyy" locale={th}
+                                    showMonthDropdown showYearDropdown dropdownMode="select"
+                                    yearDropdownItemNumber={20}
+                                    customInput={<ThaiDateInput />}
+                                />
+                            </>
+                        )}
+
+                        <CategoryPicker
+                            categories={data?.categories ?? []}
+                            selected={picked}
+                            onChange={setPicked}
+                            disabled={!data}
+                        />
+                    </div>
+                </div>
+
+                {picked.length > 0 && (
+                    <p className="mt-2 text-xs text-gray-500 flex items-start gap-1.5">
+                        <Layers size={13} className="mt-0.5 flex-shrink-0" style={{ color: MINT[500] }} />
+                        <span>
+                            <span className="font-semibold text-gray-600">หมวดหมู่ที่เลือก:</span> {pickedLabel}
+                        </span>
+                    </p>
+                )}
+
+                {error && (
+                    <div className="mt-3 bg-red-50 border border-red-200 rounded-xl p-3 text-sm text-red-700 flex items-center gap-2">
+                        <RefreshCw size={14} className="flex-shrink-0" />
+                        <span>ดึงข้อมูลไม่สำเร็จ: {error}</span>
+                        <button onClick={fetchData} className="ml-auto underline font-semibold">
+                            ลองใหม่
+                        </button>
+                    </div>
+                )}
+            </div>
+
+            {/* ── Loading ── */}
+            {loading && !data && (
+                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+                    {Array.from({ length: 5 }).map((_, i) => (
+                        <div key={i} className="h-[120px] rounded-2xl bg-gray-100 animate-pulse" />
+                    ))}
+                </div>
+            )}
+
+            {/* ── KPI ── */}
+            {data && (
+                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+                    <KpiBox Icon={Activity} label="ให้บริการกายภาพ" value={fmt(stats.total)} sub="ครั้ง" color={MINT[800]} bg="#EAF3DE" />
+                    <KpiBox Icon={BedDouble} label="ผู้ป่วยใน (AN)" value={fmt(stats.admissions)} sub="admission ที่ได้รับกายภาพ" color="#185FA5" bg="#E6F1FB" />
+                    <KpiBox Icon={Users} label="ผู้ป่วย" value={fmt(stats.patients)} sub="คน (HN ไม่ซ้ำ)" color="#6B21A8" bg="#F3E8FF" />
+                    <KpiBox Icon={Dumbbell} label="เฉลี่ยต่อ 1 AN" value={fmt(stats.avgPerAdmission)} sub="ครั้ง/admission" color="#854F0B" bg="#FAEEDA" />
+                    <KpiBox Icon={HeartPulse} label="วันนอนเฉลี่ย" value={fmt(stats.avgLos)} sub="วัน (เฉพาะที่จำหน่ายแล้ว)" color="#A32D2D" bg="#FCEBEB" />
+                </div>
+            )}
+
+            {/* ── หมวดหมู่เฉพาะงานกายภาพ (กดเพื่อกรองได้ กดซ้ำ = เอาออก) ── */}
+            {data && categoryCards.length > 0 && (
+                <SectionCard
+                    title="หมวดหมู่เฉพาะงานกายภาพ (จัดจากการวินิจฉัย ICD-10)"
+                    icon={Layers}
+                    titleColor={MINT[800]}
+                >
+                    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+                        {categoryCards.map((c) => {
+                            const active = picked.includes(c.key);
+                            const pct = baseRows.length ? Math.round((c.count / baseRows.length) * 100) : 0;
+                            return (
+                                <button
+                                    key={c.key}
+                                    onClick={() =>
+                                        setPicked(active ? picked.filter((k) => k !== c.key) : [...picked, c.key])
+                                    }
+                                    title={`ICD-10: ${c.hint}`}
+                                    className={`text-left rounded-2xl border px-4 py-3 transition-all ${active ? "shadow-sm" : "border-gray-200 bg-white hover:border-gray-300"}`}
+                                    style={active ? { backgroundColor: c.bg, borderColor: c.color } : undefined}
+                                >
+                                    <div className="flex items-start justify-between gap-2">
+                                        <span className="text-xs font-bold leading-snug" style={{ color: c.color }}>
+                                            {c.label}
+                                        </span>
+                                        <span className="text-[10px] text-gray-400 flex-shrink-0">{pct}%</span>
+                                    </div>
+                                    <div className="flex items-end gap-1.5 mt-1">
+                                        <span className="text-2xl font-extrabold tabular-nums" style={{ color: c.color }}>
+                                            {fmt(c.count)}
+                                        </span>
+                                        <span className="text-[11px] text-gray-400 mb-1">ครั้ง · {fmt(c.admissions)} AN</span>
+                                    </div>
+                                    <div className="mt-2 h-1.5 rounded-full bg-gray-100 overflow-hidden">
+                                        <div className="h-full rounded-full" style={{ width: `${pct}%`, backgroundColor: c.color }} />
+                                    </div>
+                                </button>
+                            );
+                        })}
+                    </div>
+                </SectionCard>
+            )}
+
+            {/* ── กราฟ: แนวโน้มรายเดือน + สิทธิ์การรักษา ── */}
+            {data && (
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+                    <div className="lg:col-span-2">
+                        <SectionCard
+                            // พาดหัวสรุป "เดือนไหนเยอะสุด" ให้เลย ไม่ต้องอ่านกราฟก่อน
+                            title={`แนวโน้มการให้บริการรายเดือน${busiestMonth ? ` — ${busiestMonth.label} มากที่สุด ${fmt(busiestMonth.count)} ครั้ง` : ""}`}
+                            icon={TrendingUp}
+                            titleColor={MINT[800]}
+                        >
+                            {monthly.length === 0 ? (
+                                <p className="text-xs text-gray-400 text-center py-10">ไม่พบข้อมูลในช่วงเวลานี้</p>
+                            ) : (
+                                <>
+                                    <div className="flex items-center gap-4 mb-2">
+                                        <span className="flex items-center gap-1.5 text-xs text-gray-600">
+                                            <span className="w-2.5 h-2.5 rounded-sm" style={{ backgroundColor: MINT[500] }} />
+                                            จำนวนครั้ง
+                                        </span>
+                                        <span className="flex items-center gap-1.5 text-xs text-gray-600">
+                                            <span className="w-2.5 h-2.5 rounded-sm" style={{ backgroundColor: "#185FA5" }} />
+                                            จำนวน AN
+                                        </span>
+                                    </div>
+                                    <ResponsiveContainer width="100%" height={260}>
+                                        <BarChart
+                                            data={monthly}
+                                            margin={{ top: 8, right: 16, left: -14, bottom: 0 }}
+                                            barGap={2}
+                                            barCategoryGap="22%"
+                                        >
+                                            <CartesianGrid vertical={false} stroke="#eef2f7" />
+                                            <XAxis dataKey="label" tick={{ fontSize: 11, fill: "#6b7280" }} axisLine={false} tickLine={false} />
+                                            <YAxis tick={{ fontSize: 11, fill: "#6b7280" }} axisLine={false} tickLine={false} allowDecimals={false} />
+                                            <Tooltip
+                                                cursor={{ fill: "#f6f8f7" }}
+                                                formatter={(v: number | undefined, n) => [fmt(v ?? 0), n]}
+                                                contentStyle={{ fontSize: 12, borderRadius: 8, border: "1px solid #e5e7eb" }}
+                                            />
+                                            <Bar dataKey="count" name="จำนวนครั้ง" fill={MINT[500]} radius={[4, 4, 0, 0]} maxBarSize={22} />
+                                            <Bar dataKey="admissions" name="จำนวน AN" fill="#185FA5" radius={[4, 4, 0, 0]} maxBarSize={22} />
+                                        </BarChart>
+                                    </ResponsiveContainer>
+                                </>
+                            )}
+                        </SectionCard>
+                    </div>
+
+                    {/* โดนัทสัดส่วนสิทธิ์การรักษา — จำกัด 6 ชิ้น พร้อมตัวเลขกำกับในคำอธิบาย */}
+                    <SectionCard title="สัดส่วนสิทธิ์การรักษา" icon={PieIcon} titleColor={MINT[800]}>
+                        {pttypeSlices.length === 0 ? (
+                            <p className="text-xs text-gray-400 text-center py-10">ไม่พบข้อมูล</p>
+                        ) : (
+                            <>
+                                <div className="relative">
+                                    <ResponsiveContainer width="100%" height={190}>
+                                        <PieChart>
+                                            <Pie
+                                                data={pttypeSlices}
+                                                dataKey="count"
+                                                nameKey="name"
+                                                innerRadius={58}
+                                                outerRadius={86}
+                                                paddingAngle={2}
+                                                stroke="#ffffff"
+                                                strokeWidth={2}
+                                                isAnimationActive={false}
+                                            >
+                                                {pttypeSlices.map((_, i) => (
+                                                    <Cell key={i} fill={PTTYPE_COLORS[i % PTTYPE_COLORS.length]} />
+                                                ))}
+                                            </Pie>
+                                            <Tooltip
+                                                formatter={(v: number | undefined, n) => [`${fmt(v ?? 0)} ครั้ง`, n]}
+                                                contentStyle={{ fontSize: 12, borderRadius: 8, border: "1px solid #e5e7eb" }}
+                                            />
+                                        </PieChart>
+                                    </ResponsiveContainer>
+                                    <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+                                        <span className="text-xl font-extrabold tabular-nums text-gray-700">{fmt(stats.total)}</span>
+                                        <span className="text-[10px] text-gray-400">ครั้ง</span>
+                                    </div>
+                                </div>
+                                <ul className="mt-3 space-y-1.5">
+                                    {pttypeSlices.map((sl, i) => (
+                                        <li key={sl.name} className="flex items-center gap-2 text-xs">
+                                            <span
+                                                className="w-2.5 h-2.5 rounded-sm flex-shrink-0"
+                                                style={{ backgroundColor: PTTYPE_COLORS[i % PTTYPE_COLORS.length] }}
+                                            />
+                                            <span className="flex-1 min-w-0 truncate text-gray-600" title={sl.name}>
+                                                {sl.name}
+                                            </span>
+                                            <span className="font-bold text-gray-700 tabular-nums">{fmt(sl.count)}</span>
+                                            <span className="text-gray-400 tabular-nums w-9 text-right">
+                                                {stats.total ? Math.round((sl.count / stats.total) * 100) : 0}%
+                                            </span>
+                                        </li>
+                                    ))}
+                                </ul>
+                            </>
+                        )}
+                    </SectionCard>
+                </div>
+            )}
+
+            {/* ── การวินิจฉัยหลัก + กิจกรรมกายภาพ ── */}
+            {data && (
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                    <SectionCard
+                        title={`การวินิจฉัยหลัก${stats.byPdx.length >= 10 ? " (10 อันดับแรก)" : ""}`}
+                        icon={Stethoscope}
+                        titleColor={MINT[800]}
+                    >
+                        {stats.byPdx.length === 0 ? (
+                            <p className="text-xs text-gray-400 text-center py-10">ไม่พบข้อมูล</p>
+                        ) : (
+                            <ResponsiveContainer width="100%" height={Math.max(220, stats.byPdx.length * 34)}>
+                                <BarChart
+                                    data={stats.byPdx.map((p) => ({
+                                        ...p,
+                                        label: p.name ? `${p.code} ${p.name}` : p.code,
+                                    }))}
+                                    layout="vertical"
+                                    margin={{ top: 4, right: 40, left: 12, bottom: 4 }}
+                                >
+                                    <CartesianGrid horizontal={false} stroke="#eef2f7" />
+                                    <XAxis type="number" tick={{ fontSize: 11, fill: "#6b7280" }} axisLine={false} tickLine={false} allowDecimals={false} />
+                                    <YAxis
+                                        type="category" dataKey="label" width={190}
+                                        tick={{ fontSize: 11, fill: "#4b5563" }} axisLine={false} tickLine={false}
+                                    />
+                                    <Tooltip
+                                        formatter={(v: number | undefined) => [`${fmt(v ?? 0)} ครั้ง`, "จำนวน"]}
+                                        contentStyle={{ fontSize: 12, borderRadius: 8, border: "1px solid #e5e7eb" }}
+                                    />
+                                    <Bar dataKey="count" radius={[0, 4, 4, 0]} barSize={18} fill={MINT[500]}>
+                                        <LabelList dataKey="count" position="right" style={{ fontSize: 11, fill: "#4b5563" }} />
+                                    </Bar>
+                                </BarChart>
+                            </ResponsiveContainer>
+                        )}
+                    </SectionCard>
+
+                    {/* กิจกรรมกายภาพอ่านจากข้อความอิสระ → บอกไว้ตรง ๆ ว่าเป็นตัวเลขประมาณการ */}
+                    <SectionCard title="กิจกรรมกายภาพที่ให้บริการ" icon={ClipboardList} titleColor={MINT[800]}>
+                        {stats.byActivity.length === 0 ? (
+                            <p className="text-xs text-gray-400 text-center py-10">
+                                ไม่พบรายละเอียดการให้บริการที่จับหมวดกิจกรรมได้
+                            </p>
+                        ) : (
+                            <>
+                                <HBarList
+                                    data={stats.byActivity}
+                                    colors={[MINT[500]]}
+                                    total={stats.total}
+                                    labelWidth={180}
+                                />
+                                <p className="mt-3 text-[11px] text-gray-400">
+                                    * จับหมวดจากข้อความที่นักกายภาพบันทึกไว้ (service_text) —
+                                    1 ครั้งอยู่ได้หลายกิจกรรม ผลรวมจึงมากกว่าจำนวนครั้งทั้งหมดได้
+                                </p>
+                            </>
+                        )}
+                    </SectionCard>
+                </div>
+            )}
+
+            {/* ── ตารางทะเบียน ── */}
+            {data && (
+                <SectionCard
+                    title={`ทะเบียนผู้ป่วยใน — ${fmt(rows.length)}${rows.length !== data.rows.length ? `/${fmt(data.rows.length)}` : ""} ครั้ง`}
+                    icon={ClipboardList}
+                    titleColor={MINT[800]}
+                >
+                    <div className="flex flex-wrap justify-end items-center gap-2 mb-3">
+                        <div className="relative flex-1 min-w-[200px] max-w-[340px]">
+                            <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-300" />
+                            <input
+                                value={keyword}
+                                onChange={(e) => setKeyword(e.target.value)}
+                                placeholder="ค้นหา ชื่อ / HN / AN / การวินิจฉัย / รายละเอียด"
+                                className="w-full border border-gray-300 rounded-lg pl-9 pr-3 py-2 text-sm outline-none focus:border-green-700 placeholder:text-gray-300"
+                            />
+                        </div>
+                        <button
+                            onClick={exportRows}
+                            disabled={!rows.length}
+                            className="flex items-center gap-1.5 text-white text-sm font-semibold px-4 py-2 rounded-lg shadow-sm disabled:opacity-40"
+                            style={{ backgroundColor: MINT[300] }}
+                        >
+                            <Download size={15} /> Export Excel
+                        </button>
+                    </div>
+
+                    {rows.length === 0 ? (
+                        <p className="text-center text-gray-400 py-8 text-sm">ไม่พบข้อมูล</p>
+                    ) : (
+                        <>
+                            <div className="overflow-x-auto rounded-xl border border-gray-200">
+                                <table className="min-w-full text-sm border-collapse">
+                                    <thead className="sticky top-0">
+                                        <tr>
+                                            <Th right>ลำดับ</Th>
+                                            <Th>วันที่ให้บริการ</Th>
+                                            <Th>เวลา</Th>
+                                            <Th>AN</Th>
+                                            <Th>HN</Th>
+                                            <Th>ชื่อ-นามสกุล</Th>
+                                            <Th right>อายุ</Th>
+                                            <Th>เพศ</Th>
+                                            <Th>สิทธิ์</Th>
+                                            <Th>หมวดหมู่กายภาพ</Th>
+                                            <Th>การวินิจฉัยหลัก</Th>
+                                            <Th>รับไว้ / จำหน่าย</Th>
+                                            <Th right>วันนอน</Th>
+                                            <Th>รายละเอียดการให้บริการ</Th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {paged.map((r, i) => {
+                                            const cat = data.categories.find((c) => c.key === r.categoryKey);
+                                            return (
+                                                <tr
+                                                    key={`${r.an}-${r.serviceDate}-${r.serviceTime}-${i}`}
+                                                    className={`border-b border-gray-100 ${i % 2 ? "bg-gray-50" : "bg-white"} hover:bg-[#f0faf4]`}
+                                                >
+                                                    <td className="px-3 py-2 text-right text-gray-400 tabular-nums">
+                                                        {(page - 1) * PAGE_SIZE + i + 1}
+                                                    </td>
+                                                    <td className="px-3 py-2 whitespace-nowrap text-gray-700">{formatThaiDate(r.serviceDate)}</td>
+                                                    <td className="px-3 py-2 text-gray-500">{r.serviceTime || "-"}</td>
+                                                    <td className="px-3 py-2 font-mono text-gray-700">{r.an}</td>
+                                                    <td className="px-3 py-2 font-mono text-gray-700">{r.hn}</td>
+                                                    <td className="px-3 py-2 text-gray-800 whitespace-nowrap">{r.patientName || "-"}</td>
+                                                    <td className="px-3 py-2 text-right text-gray-600 whitespace-nowrap">{ageLabel(r.ageY, r.ageM)}</td>
+                                                    <td className="px-3 py-2 text-gray-600">{sexLabel(r.sex)}</td>
+                                                    <td className="px-3 py-2 text-gray-500 whitespace-nowrap">{r.pttypeName || "-"}</td>
+                                                    <td className="px-3 py-2">
+                                                        <span
+                                                            className="inline-block px-2 py-0.5 rounded-full text-[11px] font-semibold whitespace-nowrap"
+                                                            style={{ backgroundColor: cat?.bg ?? "#F3F4F6", color: cat?.color ?? "#6B7280" }}
+                                                            title={r.categoryCode ? `จัดหมวดจากรหัส ${r.categoryCode}` : undefined}
+                                                        >
+                                                            {r.categoryLabel}
+                                                        </span>
+                                                    </td>
+                                                    <td className="px-3 py-2 max-w-[220px]">
+                                                        {r.pdx ? (
+                                                            <>
+                                                                <span className="font-mono font-semibold text-gray-700">{r.pdx}</span>
+                                                                {r.pdxName && (
+                                                                    <span className="block text-[11px] text-gray-400 truncate" title={r.pdxName}>
+                                                                        {r.pdxName}
+                                                                    </span>
+                                                                )}
+                                                            </>
+                                                        ) : (
+                                                            <span className="text-gray-300">-</span>
+                                                        )}
+                                                    </td>
+                                                    <td className="px-3 py-2 text-[11px] text-gray-500 whitespace-nowrap">
+                                                        {r.regdate ? formatThaiDate(r.regdate) : "-"}
+                                                        <span className="block text-gray-400">
+                                                            {r.dchdate ? formatThaiDate(r.dchdate) : "ยังไม่จำหน่าย"}
+                                                        </span>
+                                                    </td>
+                                                    <td className="px-3 py-2 text-right text-gray-600 tabular-nums">
+                                                        {r.los ?? "-"}
+                                                    </td>
+                                                    <td className="px-3 py-2 text-gray-600 max-w-[280px]">
+                                                        <span className="block truncate" title={r.serviceText}>
+                                                            {r.serviceText || "-"}
+                                                        </span>
+                                                        {r.activities.length > 0 && (
+                                                            <span className="block text-[10px] text-gray-400 truncate">
+                                                                {r.activities.map((a) => ACTIVITY_LABEL.get(a) ?? a).join(" · ")}
+                                                            </span>
+                                                        )}
+                                                    </td>
+                                                </tr>
+                                            );
+                                        })}
+                                    </tbody>
+                                </table>
+                            </div>
+                            <MiniPagination page={page} totalPages={totalPages} onChange={setPage} count={rows.length} />
+                        </>
+                    )}
+                </SectionCard>
+            )}
+
+            {/* ── AI ── */}
+            <AiSummaryCard
+                summary={
+                    data
+                        ? {
+                            ช่วงข้อมูล: rangeLabel,
+                            หมวดหมู่ที่เลือก: pickedLabel,
+                            จำนวนครั้งที่ให้บริการกายภาพ: stats.total,
+                            จำนวน_admission_AN: stats.admissions,
+                            จำนวนผู้ป่วย_HN: stats.patients,
+                            ครั้งเฉลี่ยต่อ_admission: stats.avgPerAdmission,
+                            วันนอนเฉลี่ย: stats.avgLos,
+                            แยกตามหมวดหมู่กายภาพ: stats.byCategory.map((c) => ({
+                                หมวดหมู่: c.label,
+                                จำนวนครั้ง: c.count,
+                                จำนวน_AN: c.admissions,
+                            })),
+                            รายเดือน: monthly.map((m) => ({
+                                เดือน: m.label,
+                                จำนวนครั้ง: m.count,
+                                จำนวน_AN: m.admissions,
+                            })),
+                            การวินิจฉัยหลัก: stats.byPdx.map((p) => ({
+                                รหัส: p.code,
+                                ชื่อ: p.name,
+                                จำนวนครั้ง: p.count,
+                            })),
+                            กิจกรรมกายภาพ: stats.byActivity.map((a) => ({
+                                กิจกรรม: a.label,
+                                จำนวนครั้ง: a.count,
+                            })),
+                            แยกตามสิทธิ์การรักษา: pttypeSlices.map((sl) => ({
+                                สิทธิ์: sl.name,
+                                จำนวนครั้ง: sl.count,
+                            })),
+                        }
+                        : null
+                }
+                context="ทะเบียนผู้ป่วยในสำหรับงานกายภาพบำบัด โรงพยาบาลพลับพลาชัย — นับจากบันทึกการให้บริการกายภาพของผู้ป่วยใน (physic_main_ipd) แยกหมวดหมู่เฉพาะงานกายภาพจากรหัสวินิจฉัย ICD-10 และจับกิจกรรมกายภาพจากข้อความที่นักกายภาพบันทึกไว้"
+                disabled={!data}
+            />
+        </div>
+    );
+}
+
+// ─── KPI box ─────────────────────────────────────────────────────────────────
+function KpiBox({ Icon, label, value, sub, color, bg }: {
+    Icon: React.ElementType; label: string; value: string; sub: string; color: string; bg: string;
+}) {
+    return (
+        <div className="rounded-2xl p-4 flex flex-col gap-1.5" style={{ backgroundColor: bg }}>
+            <div className="w-9 h-9 rounded-xl flex items-center justify-center" style={{ backgroundColor: color + "22" }}>
+                <Icon size={18} style={{ color }} strokeWidth={1.8} />
+            </div>
+            <p className="text-[11px] font-bold leading-snug" style={{ color }}>{label}</p>
+            <p className="text-2xl font-extrabold tabular-nums" style={{ color }}>{value}</p>
+            <p className="text-[10px]" style={{ color: color + "99" }}>{sub}</p>
+        </div>
+    );
+}
