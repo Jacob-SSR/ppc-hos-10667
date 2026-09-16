@@ -36,6 +36,8 @@ export const FEATURE_PATHS = {
     "/api/dept-status",
     "/pages/shift-stats",
     "/api/shift-stats",
+    "/pages/servicetime-dashboard",
+    "/api/servicetime",
     "/pages/ip-homeward-dashboard",
     "/api/ip-homeward-sheets",
     "/pages/settings",
@@ -47,8 +49,6 @@ export const FEATURE_PATHS = {
   NURSING_OPD: [
     "/pages/productivity-opd",
     "/api/productivity-opd",
-    "/pages/servicetime-dashboard",
-    "/api/servicetime",
     "/pages/health-checkup",
   ],
 
