@@ -158,6 +158,7 @@ export const FEATURE_PATHS = {
 
   // งานเคลม / การเงิน / งานประกัน
   CLAIM: [
+    "/pages/chart-tracking",
     "/pages/anc-dashboard",
     "/api/anc-sheets",
     "/pages/billing-dashboard",

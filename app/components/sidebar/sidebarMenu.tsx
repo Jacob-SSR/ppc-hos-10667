@@ -170,6 +170,12 @@ export const DASHBOARD_GROUPS: SidebarSubGroup[] = [
     title: "งานเคลม / การเงิน",
     items: [
       {
+        label: "ระบบติดตามสถานะชาร์ท",
+        href: "/pages/chart-tracking",
+        icon: ClipboardList,
+        group: "claim",
+      },
+      {
         label: "งานเคลม ANC ฝากครรภ์",
         href: "/pages/anc-dashboard",
         icon: Baby,
