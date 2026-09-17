@@ -3,6 +3,9 @@
 // พอร์ตจากต้นฉบับ d506_demo.html มาเป็น React + recharts และดึงข้อมูลจริงผ่าน /api/d506-report
 "use client";
 
+import { createPortal } from "react-dom";
+import Form506 from "./Form506";
+import type { D506FormExtra } from "@/lib/d506Form.service";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   BarChart, Bar, Cell, XAxis, YAxis, Tooltip, CartesianGrid,
@@ -10,7 +13,7 @@ import {
 } from "recharts";
 import {
   Users, Mars, Venus, Skull, Activity, RefreshCw, FileDown, Search,
-  ClipboardList, TrendingUp, Trophy, Layers,
+  ClipboardList, TrendingUp, Trophy, Layers, Printer, X,
 } from "lucide-react";
 import { exportToExcel } from "@/lib/exportExcel";
 import { fmtDate, getBangkokToday, THAI_MONTHS_SHORT } from "@/lib/thaiDate";
@@ -134,6 +137,31 @@ export default function D506ReportPage() {
   const [dedup, setDedup] = useState(false); // ตัดซ้ำในตารางหลัก
   const [ptTab, setPtTab] = useState<"list" | "dups">("list"); // แท็บ: รายชื่อ / รายการซ้ำ
   const [keyIds, setKeyIds] = useState<string[]>(DEFAULT_KEYS); // คีย์ตัดซ้ำที่ติ๊กเลือก
+
+  const [printRow, setPrintRow] = useState<D506PatientRow | null>(null);
+  // ข้อมูลเสริมจาก HOSxP สำหรับ auto-fill แบบ รง.506 (ภาวะสมรส/สัญชาติ/อาชีพ/วันตาย…)
+  const [printExtra, setPrintExtra] = useState<D506FormExtra | null>(null);
+  const [extraLoading, setExtraLoading] = useState(false);
+  // modal พิมพ์ต้อง portal ออกไปนอก layout (main มี overflow-auto/h-screen ครอบอยู่
+  // ถ้าพิมพ์ทั้งที่ยังอยู่ในนั้น เบราว์เซอร์จะ clip เนื้อหาทิ้ง → ได้กระดาษเปล่า)
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
+
+  // เปิดแบบฟอร์ม → ดึงข้อมูลผู้ป่วยจาก HOSxP มาเติมข้อมูลเสริมในแบบฟอร์ม
+  useEffect(() => {
+    const hn = printRow?.hn?.trim();
+    if (!hn) { setPrintExtra(null); return; }
+    let cancelled = false;
+    setExtraLoading(true);
+    setPrintExtra(null);
+    const qs = new URLSearchParams({ hn, reportDate: printRow?.reportDate ?? "" });
+    fetch(`/api/d506-form?${qs}`, { credentials: "include" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((j) => { if (!cancelled) setPrintExtra(j?.error ? null : j); })
+      .catch(() => { if (!cancelled) setPrintExtra(null); })
+      .finally(() => { if (!cancelled) setExtraLoading(false); });
+    return () => { cancelled = true; };
+  }, [printRow]);
 
   // รับ start/end ระบุตรง ๆ ได้ เพื่อให้เลือกวันแล้วดึงทันที (ไม่ต้องรอ state update)
   async function load(qs: string = start, qe: string = end) {
@@ -560,6 +588,7 @@ export default function D506ReportPage() {
               <table className="text-xs whitespace-nowrap" style={{ minWidth: "100%" }}>
                 <thead className="sticky top-0 z-10">
                   <tr className="text-white" style={{ backgroundColor: "#143f28" }}>
+                    <th className="px-2.5 py-2 font-semibold">พิมพ์</th>
                     {PT_COLUMNS.map((c) => (
                       <th key={c.header} className="px-2.5 py-2 font-semibold">{c.header}</th>
                     ))}
@@ -567,11 +596,18 @@ export default function D506ReportPage() {
                 </thead>
                 <tbody>
                   {paged.length === 0 ? (
-                    <tr><td colSpan={PT_COLUMNS.length} className="text-center py-10 text-gray-400">ไม่พบข้อมูล</td></tr>
+                    <tr><td colSpan={PT_COLUMNS.length + 1} className="text-center py-10 text-gray-400">ไม่พบข้อมูล</td></tr>
                   ) : paged.map((p, i) => {
                     const no = (page - 1) * 20 + i + 1;
                     return (
                       <tr key={`${p.hn}-${i}`} className="border-b border-gray-50 hover:bg-[#f0faf4]">
+                        <td className="px-2.5 py-1.5">
+                          <button onClick={() => setPrintRow(p)}
+                            className="flex items-center gap-1 px-2 py-1 rounded border text-[11px] font-semibold hover:brightness-95"
+                            style={{ backgroundColor: "#f0faf4", color: MINT, borderColor: MINT_BORDER }}>
+                            <Printer size={12} /> พิมพ์
+                          </button>
+                        </td>
                         {PT_COLUMNS.map((c) => {
                           const v = c.value(p, no);
                           return (
@@ -599,6 +635,72 @@ export default function D506ReportPage() {
           </div>
         </>
       )}
+      {/* Print modal — portal ไปที่ <body> ตรง ๆ ไม่งั้นตอนพิมพ์จะโดน main ที่
+          overflow-auto/h-screen ครอบไว้ตัดเนื้อหาทิ้งจนได้กระดาษเปล่า */}
+      {mounted && printRow && createPortal(
+        <div className="print-modal fixed inset-0 z-[1000] bg-black/55 overflow-y-auto p-4 flex items-start justify-center"
+          onClick={(e) => { if (e.target === e.currentTarget) setPrintRow(null); }}>
+          <div className="print-sheet bg-white rounded-xl w-full max-w-4xl shadow-2xl">
+            <div className="no-print flex items-center justify-between px-5 py-3.5 border-b border-gray-200 bg-gray-50 rounded-t-xl">
+              <span className="flex items-center gap-2 font-bold text-gray-700">
+                <Printer size={16} /> แบบรายงานโรค 506
+                <span className="text-xs font-normal text-gray-400">
+                  {extraLoading
+                    ? "· กำลังดึงข้อมูลจาก HOSxP…"
+                    : printExtra?.found
+                      ? "· เติมข้อมูลจาก HOSxP แล้ว"
+                      : "· ไม่มีข้อมูลเสริม (ใช้ข้อมูลจากรายงาน HOSxP)"}
+                </span>
+              </span>
+              <div className="flex gap-2">
+                <button onClick={() => window.print()} disabled={extraLoading}
+                  className="flex items-center gap-1.5 px-4 py-1.5 rounded-lg text-white text-sm font-bold hover:brightness-110 disabled:opacity-50"
+                  style={{ backgroundColor: MINT }}><Printer size={14} /> พิมพ์</button>
+                <button onClick={() => setPrintRow(null)}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-gray-200 text-gray-600 text-sm hover:bg-gray-50"><X size={14} /> ปิด</button>
+              </div>
+            </div>
+            <div id="form506" className="p-5">
+              <Form506 row={printRow} extra={printExtra} />
+            </div>
+          </div>
+        </div>,
+        document.body,
+      )}
+
+      {/* print CSS: ตอนสั่งพิมพ์ให้เหลือเฉพาะแบบฟอร์ม
+          ใช้ display:none กับพี่น้องของ modal (ไม่ใช่ visibility:hidden) เพราะ
+          visibility ยังกินเนื้อที่/ยังโดน ancestor ที่ overflow ซ่อนอยู่ตัดทิ้งได้ */}
+      <style jsx global>{`
+        @media print {
+          html, body {
+            height: auto !important;
+            overflow: visible !important;
+            background: #fff !important;
+          }
+          body > *:not(.print-modal) { display: none !important; }
+          .print-modal {
+            position: static !important;
+            inset: auto !important;
+            display: block !important;
+            overflow: visible !important;
+            background: none !important;
+            padding: 0 !important;
+            z-index: auto !important;
+            -webkit-print-color-adjust: exact;
+            print-color-adjust: exact;
+          }
+          .print-sheet {
+            box-shadow: none !important;
+            border-radius: 0 !important;
+            max-width: 100% !important;
+            width: 100% !important;
+          }
+          #form506 { padding: 0 !important; }
+          .no-print { display: none !important; }
+          @page { size: A4 portrait; margin: 8mm; }
+        }
+      `}</style>
     </div>
   );
 }

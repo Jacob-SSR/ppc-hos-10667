@@ -1,8 +1,8 @@
-// app/pages/d506-dashboard/Form506.tsx
+// app/pages/d506-report/Form506.tsx
 // แบบรายงานผู้ป่วย รง.506 (พิมพ์ได้) — พอร์ตจาก openPrintForm() ใน D506_Dashboard.html
 "use client";
 
-import type { D506Row } from "@/lib/d506Sheets.service";
+import type { D506PatientRow } from "@/lib/d506.service";
 import type { D506FormExtra } from "@/lib/d506Form.service";
 
 // checkbox: ☑ ถ้า code506 ตรงกับรหัสของโรคนั้น
@@ -12,14 +12,17 @@ function useChk(code: string) {
 }
 
 const parts = (s: string) => {
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s || "")) {
+    const [y, m, d] = s.split("-");
+    return { d, m, y: String(Number(y) + 543) };
+  }
   const [d = "", m = "", y = ""] = (s || "").split("/");
   return { d, m, y };
 };
 
-/** ช่องที่ HOSxP เป็นเจ้าของข้อมูล (ที่อยู่ วันเกิด รหัสโรค ฯลฯ) — เอา HOSxP ก่อน
- *  เพราะทะเบียนในชีตกรอกมือ สลับคอลัมน์/พิมพ์ตกได้ ส่วนชีตเป็นตัวสำรอง */
-const hos = (hosxp: string | undefined, sheet: string | undefined) =>
-  (hosxp || "").trim() || (sheet || "").trim();
+/** ใช้ข้อมูลเสริมจาก HOSxP หากมี และใช้แถวรายงานเป็นตัวสำรอง */
+const hos = (hosxp: string | undefined, report: string | undefined) =>
+  (hosxp || "").trim() || (report || "").trim();
 
 /** เดาเพศจากคำนำหน้าชื่อ — ทะเบียนบางแถวเว้นช่องเพศไว้ แต่คำนำหน้าบอกอยู่แล้ว
  *  ลำดับสำคัญ: "นางสาว"/"น.ส." ต้องตรวจก่อน "นาง" ไม่งั้นจับเป็นหญิงมีสามีหมด
@@ -53,13 +56,13 @@ export default function Form506({
   row,
   extra,
 }: {
-  row: D506Row;
-  /** ข้อมูลจาก HOSxP (/api/d506-form) — ใช้เติมช่องที่ทะเบียนในชีตไม่มี */
+  row: D506PatientRow;
+  /** ข้อมูลจาก HOSxP (/api/d506-form) — ใช้เติมช่องที่รายงานไม่มี */
   extra?: D506FormExtra | null;
 }) {
   const code = hos(extra?.code506, row.code506);
   const chk = useChk(code);
-  // เพศ: ใช้ช่องในชีตก่อน → ไม่มีค่อยเดาจากคำนำหน้า → ท้ายสุดใช้ patient.sex ของ HOSxP
+  // เพศ: ใช้ช่องในรายงานก่อน → ไม่มีค่อยเดาจากคำนำหน้า → ท้ายสุดใช้ patient.sex ของ HOSxP
   const sexRaw = (row.sex || "").trim();
   const sex =
     /^(ช|ชาย|M|1)$/i.test(sexRaw) ? "ชาย" :
@@ -71,9 +74,8 @@ export default function Form506({
   const sexF = sex === "หญิง";
   const ptype = hos(extra?.ptype, row.ptype).toUpperCase();
   const status = hos(extra?.status, row.status);
-  const outcome = (row.outcome || "").trim();
 
-  // ช่องวันที่: ชีตเป็นหลัก ว่างแล้วใช้ HOSxP (ทั้งคู่รูปแบบ DD/MM/ปี)
+  // รองรับวันที่จากรายงาน (YYYY-MM-DD) และข้อมูลเสริม (DD/MM/พ.ศ.)
   const dobStr = hos(extra?.dob, row.dob);
   const dob = parts(dobStr);
   const ons = parts(hos(extra?.onsetDate, row.onsetDate));
@@ -88,14 +90,14 @@ export default function Form506({
   const muni = extra?.municipality ?? "";
   const dead =
     status.includes("เสียชีวิต") || status.includes("ตาย") ||
-    row.death === "ใช่" || Boolean(extra?.deathDate);
+    row.death || Boolean(extra?.deathDate);
 
   const fullName = `${row.prefix || ""}${row.fname || ""} ${row.lname || ""}`.trim();
   const disease = (row.disease || "").trim();
   const icd10 = hos(extra?.icd10, row.icd10);
   const addr = hos(
     [extra?.house, extra?.moo && `หมู่ ${extra.moo}`].filter(Boolean).join(" "),
-    row.addr,
+    [row.house, row.moo && `หมู่ ${row.moo}`].filter(Boolean).join(" "),
   );
   const tambon = hos(extra?.tambon, row.tambon);
   const amphoe = hos(extra?.amphoe, row.amphoe);
@@ -328,7 +330,7 @@ export default function Form506({
           <tr>
             <td style={{ ...cell, width: 180 }}>
               <b>สภาพผู้ป่วย</b><br />
-              {outcome.includes("หาย") || outcome.includes("ดีขึ้น") || status.includes("หาย")
+              {status.includes("หาย")
                 ? "☑" : "☐"} หาย &nbsp; {status.includes("ไม่ทราบ") ? "☑" : "☐"} ไม่ทราบ<br />
               {dead ? "☑" : "☐"} ตาย &nbsp; {!dead && status.includes("มีชีวิต") ? "☑" : "☐"} ยังมีชีวิตอยู่<br />
               {status.includes("รักษาอยู่") || status.includes("ยังรักษา") ? "☑" : "☐"} ยังรักษาอยู่
@@ -369,7 +371,7 @@ export default function Form506({
       </div>
 
       <div style={{ textAlign: "right", fontSize: 10, color: "#888", marginTop: 4 }}>
-        พิมพ์จาก D506 Dashboard · {printedOn}
+        พิมพ์จาก D506 Report · {printedOn}
       </div>
     </div>
   );
