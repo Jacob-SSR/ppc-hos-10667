@@ -1,0 +1,32 @@
+.range {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 44px;
+  margin: 0;
+  appearance: none;
+  background: transparent;
+  pointer-events: none;
+}
+.range::-webkit-slider-thumb {
+  appearance: none;
+  width: 24px;
+  height: 24px;
+  border: 3px solid #166534;
+  border-radius: 50%;
+  background: #f0fdf4;
+  pointer-events: auto;
+  cursor: grab;
+}
+.range::-moz-range-thumb {
+  width: 18px;
+  height: 18px;
+  border: 3px solid #166534;
+  border-radius: 50%;
+  background: #f0fdf4;
+  pointer-events: auto;
+  cursor: grab;
+}
+.range:focus-visible { outline: none; z-index: 3; }
+.range:focus-visible::-webkit-slider-thumb { outline: 3px solid #2563eb; outline-offset: 3px; }
+.range:focus-visible::-moz-range-thumb { outline: 3px solid #2563eb; outline-offset: 3px; }

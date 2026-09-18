@@ -193,6 +193,8 @@ export const FEATURE_PATHS = {
 
   // ปฐมภูมิ
   PRIMARY_CARE: [
+    "/pages/population-report",
+    "/api/population-report",
     "/pages/fall-report",
     "/api/fall-report",
     "/pages/patient-no-person",

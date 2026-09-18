@@ -37,20 +37,28 @@ export default function PpaTable({
     const [sortKey, setSortKey] = useState<string | null>(null);
     const [sortAsc, setSortAsc] = useState(true);
     const [page, setPage] = useState(1);
+    const [error, setError] = useState(false);
 
     useEffect(() => {
+        const controller = new AbortController();
         (async () => {
             try {
-                const res = await fetch(apiPath, { credentials: "include" });
+                const res = await fetch(apiPath, { credentials: "include", signal: controller.signal });
                 if (!res.ok) throw new Error(`HTTP ${res.status}`);
                 const json: unknown = await res.json();
+                if (controller.signal.aborted) return;
+                setError(false);
                 setData(Array.isArray(json) ? (json as Record<string, unknown>[]) : []);
             } catch {
+                if (controller.signal.aborted) return;
+                setData([]);
+                setError(true);
                 toast.error("โหลดข้อมูลไม่สำเร็จ");
             } finally {
-                setLoading(false);
+                if (!controller.signal.aborted) setLoading(false);
             }
         })();
+        return () => controller.abort();
     }, [apiPath]);
 
     const searched = useMemo(
@@ -150,7 +158,11 @@ export default function PpaTable({
                         </motion.div>
                     )}
 
-                    {!loading && sorted.length === 0 && (
+                    {!loading && error && (
+                        <p role="alert" className="py-8 text-center text-red-700">โหลดข้อมูลไม่สำเร็จ กรุณาลองโหลดรายงานอีกครั้ง</p>
+                    )}
+
+                    {!loading && !error && sorted.length === 0 && (
                         <motion.div key="empty" variants={fadeSlide} initial="hidden" animate="visible" exit="exit">
                             <EmptyState variant="noData" />
                         </motion.div>
