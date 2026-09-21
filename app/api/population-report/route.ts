@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { parseAgeRange, POPULATION_REPORT_SQL } from "@/lib/population-report";
+import { parseAgeRange, POPULATION_REPORT_SQL, POPULATION_VILLAGES_SQL } from "@/lib/population-report";
 
 export async function GET(req: NextRequest) {
   let ages: [number, number];
@@ -14,7 +14,8 @@ export async function GET(req: NextRequest) {
   }
   try {
     const [rows] = await db.query(POPULATION_REPORT_SQL, ages);
-    return NextResponse.json(rows, { headers: { "Cache-Control": "no-store" } });
+    const [villages] = await db.query(POPULATION_VILLAGES_SQL);
+    return NextResponse.json({ rows, villages }, { headers: { "Cache-Control": "no-store" } });
   } catch {
     return NextResponse.json({ error: "โหลดรายงานไม่สำเร็จ กรุณาลองใหม่" }, { status: 500 });
   }

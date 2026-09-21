@@ -1,4 +1,4 @@
-export const POPULATION_REPORT_TITLE = "ประชากรในเขตรับผิดชอบ Type 1,3 (กำหนดอายุ)";
+export const POPULATION_REPORT_TITLE = "ค้นหาประชากรในกลุ่มเป้าหมาย";
 export const MIN_AGE = 0;
 export const MAX_AGE = 120;
 export const DEFAULT_AGE_RANGE = [1, 100] as const;
@@ -22,6 +22,8 @@ export function parseAgeRange(params: URLSearchParams): [number, number] {
 // person_discharge_id = 9 is the active status used by getDeathNotDischarged.
 export const POPULATION_REPORT_SQL = `
   SELECT p.patient_hn AS HN, p.cid AS CID,
+    p.village_id AS villageId,
+    CASE WHEN p.sex = '1' THEN 'ชาย' WHEN p.sex = '2' THEN 'หญิง' ELSE 'ไม่ระบุ' END AS "เพศ",
     CONCAT(COALESCE(p.pname, ''), COALESCE(p.fname, ''), ' ', COALESCE(p.lname, '')) AS "ชื่อ-นามสกุล",
     p.age_y AS "อายุ (ปี)", p.age_m AS "อายุ (เดือน)",
     p.house_regist_type_id AS "ประเภททะเบียน",
@@ -38,4 +40,10 @@ export const POPULATION_REPORT_SQL = `
     AND COALESCE(p.death, 'N') <> 'Y'
     AND p.person_discharge_id = '9'
   ORDER BY CAST(v.village_moo AS UNSIGNED), p.fname, p.lname, p.person_id
+`;
+
+export const POPULATION_VILLAGES_SQL = `
+  SELECT village_id AS id, village_moo AS moo, village_name AS name
+  FROM village WHERE village_id IN (1,2,3,4,5,6,7,8,9,10,11,12,14)
+  ORDER BY CAST(village_moo AS UNSIGNED), village_id
 `;

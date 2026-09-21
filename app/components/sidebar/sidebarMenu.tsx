@@ -382,7 +382,7 @@ export const REPORT_ITEMS: SidebarItem[] = [
 // =========================
 export const PRIMARY_CARE_ITEMS: SidebarItem[] = [
   {
-    label: "ประชากรในเขตรับผิดชอบ Type 1,3 (กำหนดอายุ)",
+    label: "ค้นหาประชากรในกลุ่มเป้าหมาย",
     href: "/pages/population-report",
     icon: Users,
     group: "primarycare",

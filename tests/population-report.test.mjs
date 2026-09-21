@@ -22,12 +22,12 @@ test("report query excludes dead/discharged/outside population and includes both
   // deployment still needs validation against the hospital's MySQL schema.
   const db = new DatabaseSync(":memory:");
   try {
-    db.exec(`CREATE TABLE person (person_id, patient_hn, cid, pname, fname, lname, age_y, age_m, house_regist_type_id, house_id, village_id, death, person_discharge_id);
+    db.exec(`CREATE TABLE person (person_id, patient_hn, cid, pname, fname, lname, age_y, age_m, house_regist_type_id, house_id, village_id, death, person_discharge_id, sex);
       CREATE TABLE house (house_id, address, road);
       CREATE TABLE village (village_id, village_moo, village_name, address_id);
       CREATE TABLE thaiaddress (addressid, full_name);
       INSERT INTO village VALUES (1, '2', 'fixture', 1), (14, '10', 'fixture', 1);`);
-    const insert = db.prepare("INSERT INTO person VALUES (?, ?, '', '', 'Test', 'Person', ?, 0, ?, NULL, ?, ?, ?)");
+    const insert = db.prepare("INSERT INTO person VALUES (?, ?, '', '', 'Test', 'Person', ?, 0, ?, NULL, ?, ?, ?, '1')");
     const cases = [
       [1, 20, '1', 1, 'N', '9'], [2, 60, '3', 14, null, '9'],
       [3, 19, '1', 1, 'N', '9'], [4, 61, '1', 1, 'N', '9'],
@@ -39,6 +39,10 @@ test("report query excludes dead/discharged/outside population and includes both
     assert.deepEqual(db.prepare(POPULATION_REPORT_SQL).all(20, 60).map(r => r.HN), ['1', '2']);
     assert.deepEqual(db.prepare(POPULATION_REPORT_SQL).all(60, 60).map(r => r.HN), ['2']);
     assert.equal(db.prepare(POPULATION_REPORT_SQL).all(100, 120).length, 0);
+    db.exec("UPDATE person SET sex = '2' WHERE person_id = 2");
+    assert.deepEqual(db.prepare(POPULATION_REPORT_SQL).all(20, 60).map(r => r['เพศ']), ['ชาย', 'หญิง']);
+    db.exec("UPDATE person SET sex = NULL WHERE person_id = 2");
+    assert.equal(db.prepare(POPULATION_REPORT_SQL).all(60, 60)[0]['เพศ'], 'ไม่ระบุ');
   } finally { db.close(); }
 });
 
