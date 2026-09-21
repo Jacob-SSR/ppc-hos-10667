@@ -18,12 +18,14 @@ import {
 } from "lucide-react";
 
 import NavGroup from "./NavGroup";
+import MenuSearch, { type SearchItem } from "./MenuSearch";
 
 import {
   DASHBOARD_GROUPS,
   REPORT_ITEMS,
   PPA_ITEMS,
   PRIMARY_CARE_ITEMS,
+  SETTINGS_ITEMS,
 } from "./sidebarMenu";
 
 import { SidebarItem } from "./types";
@@ -55,6 +57,7 @@ const isInGroup = (
 
 export default function Sidebar() {
   const pathname = usePathname();
+  const [searchQuery, setSearchQuery] = useState("");
 
   const { darkMode, setDarkMode } =
     useSettings();
@@ -165,6 +168,28 @@ export default function Sidebar() {
     );
 
   // =========================
+  // Search only the entries available in this user's sidebar.
+  // =========================
+  const searchItems: SearchItem[] = [
+    ...(isGuest
+      ? GUEST_DASHBOARD_ITEMS.map((item) => ({ ...item, category: "Dashboard · ภาพรวม" }))
+      : visibleDashboardGroups.flatMap((group) =>
+          group.items.map((item) => ({ ...item, category: `Dashboard · ${group.title}` }))
+        )),
+    ...(!isGuest ? [
+      ...visibleReportItems.map((item) => ({ ...item, category: "รายงาน" })),
+      ...visiblePrimaryCareItems.map((item) => ({ ...item, category: "ปฐมภูมิ" })),
+      ...visiblePpaItems.map((item) => ({ ...item, category: "PPA" })),
+      ...SETTINGS_ITEMS.map((item) => ({ ...item, category: "ตั้งค่า" })),
+      ...(isIT ? [
+        { label: "บันทึกงาน IT", href: "/pages/it-worklog-form", icon: FilePen, desc: "กรอกงานประจำวัน", category: "ระบบงาน IT" },
+        { label: "สถานะเซิร์ฟเวอร์", href: "/pages/server-status", icon: Server, desc: "RAM / Harddisk เครื่องแม่ข่าย", category: "ระบบงาน IT" },
+      ] : []),
+      { label: "ค้นหาพิกัดหลังคาเรือน", href: "https://pikad-phlapphla-chai.vercel.app/", icon: MapPinned, desc: "ระบบค้นหาพิกัด", category: "ระบบงาน", external: true },
+    ] : []),
+  ];
+
+  // =========================
   // Collapse State
   // =========================
   const [
@@ -260,10 +285,11 @@ export default function Sidebar() {
 
   return (
     <aside className="flex flex-col w-60 h-full bg-white border-r-2 shadow-[2px_0_12px_rgba(0,0,0,0.06)] overflow-hidden" style={{ borderColor: "#d6f0e0" }}>
+      <MenuSearch items={searchItems} query={searchQuery} onQueryChange={setSearchQuery} pathname={pathname} />
       {/* ========================= */}
       {/* Menu */}
       {/* ========================= */}
-      <nav className="flex-1 px-4 py-6 space-y-1 overflow-y-auto min-h-0 text-sm">
+      <nav aria-label="เมนูหลัก" className={`${searchQuery.trim() ? "hidden" : ""} flex-1 px-4 py-2 space-y-1 overflow-y-auto min-h-0 text-sm`}>
 
         {/* Dashboard */}
         <NavGroup
