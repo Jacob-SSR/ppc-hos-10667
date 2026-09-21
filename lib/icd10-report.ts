@@ -1,6 +1,6 @@
 export const ICD10_TITLE = "Dashboard สถิติผู้ป่วยตามกลุ่มโรค (ICD-10)";
 export const ICD10_LIMIT = 100000;
-export type IcdFilters = { icd_from: string; icd_to: string; age_from: number; age_to: number; date_from: string; date_to: string; mode: "all" | "pdx" };
+export type IcdFilters = { icd_from: string; icd_to: string; age_from: number; age_to: number; date_from: string; date_to: string; mode: "all" | "pdx"; diag_text: string };
 export type IcdVisit = { vn: string; hn: string; vstdate: string; age_y: number; ptname: string; pdx: string; dname: string; dxlist: string; diag_text: string };
 
 export function parseIcdFilters(p: URLSearchParams): IcdFilters {
@@ -22,7 +22,9 @@ export function parseIcdFilters(p: URLSearchParams): IcdFilters {
   };
   const mode = p.get("mode");
   if (mode !== "all" && mode !== "pdx") throw new Error("ขอบเขตการค้นหารหัสโรคไม่ถูกต้อง");
-  const f = { icd_from: code("icd_from"), icd_to: code("icd_to"), age_from: age("age_from"), age_to: age("age_to"), date_from: date("date_from"), date_to: date("date_to"), mode };
+  const diag_text = (p.get("diag_text") ?? "").trim();
+  if (diag_text.length > 200) throw new Error("ข้อความวินิจฉัยต้องไม่เกิน 200 ตัวอักษร");
+  const f = { icd_from: code("icd_from"), icd_to: code("icd_to"), age_from: age("age_from"), age_to: age("age_to"), date_from: date("date_from"), date_to: date("date_to"), mode, diag_text };
   if (f.icd_from > f.icd_to || f.age_from > f.age_to || f.date_from > f.date_to) throw new Error("ค่าเริ่มต้นต้องไม่มากกว่าค่าสิ้นสุด");
   return f as IcdFilters;
 }
@@ -30,6 +32,8 @@ export function parseIcdFilters(p: URLSearchParams): IcdFilters {
 export function icdQuery(f: IcdFilters) {
   const columns = f.mode === "pdx" ? ["pdx"] : ["pdx", "dx0", "dx1", "dx2", "dx3", "dx4", "dx5"];
   const predicate = columns.map(c => `UPPER(REPLACE(v.${c}, '.', '')) BETWEEN ? AND ?`).join(" OR ");
+  // Treat wildcard characters as literal text; bind the pattern as a SQL parameter.
+  const diagPattern = f.diag_text ? `%${f.diag_text.replace(/[!%_]/g, "!$&")}%` : null;
   return {
     sql: `SELECT v.vn, v.hn, DATE_FORMAT(v.vstdate, '%Y-%m-%d') AS vstdate, v.age_y,
       CONCAT_WS(' ', p.pname, p.fname, p.lname) AS ptname, v.pdx,
@@ -40,9 +44,9 @@ export function icdQuery(f: IcdFilters) {
       LEFT JOIN patient p ON p.hn = v.hn
       LEFT JOIN ovst o ON o.vn = v.vn
       LEFT JOIN icd101 i ON i.code = v.pdx
-      WHERE v.vstdate BETWEEN ? AND ? AND v.age_y BETWEEN ? AND ? AND (${predicate})
+      WHERE v.vstdate BETWEEN ? AND ? AND v.age_y BETWEEN ? AND ? AND (${predicate})${diagPattern ? " AND LOWER(COALESCE(o.diag_text, '')) LIKE LOWER(?) ESCAPE '!'" : ""}
       ORDER BY v.vstdate DESC, v.vn DESC LIMIT ${ICD10_LIMIT + 1}`,
-    values: [f.date_from, f.date_to, f.age_from, f.age_to, ...columns.flatMap(() => [f.icd_from, f.icd_to.padEnd(7, "Z")])],
+    values: [f.date_from, f.date_to, f.age_from, f.age_to, ...columns.flatMap(() => [f.icd_from, f.icd_to.padEnd(7, "Z")]), ...(diagPattern ? [diagPattern] : [])],
   };
 }
 
