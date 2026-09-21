@@ -176,6 +176,8 @@ export const FEATURE_PATHS = {
 
   // รายงานเวชระเบียน / สิทธิ์การรักษา
   REPORT: [
+    "/pages/icd10-report",
+    "/api/icd10-report",
     "/pages/report",
     "/api/report",
     "/pages/no-endpoint",

@@ -328,6 +328,12 @@ export const DASHBOARD_GROUPS: SidebarSubGroup[] = [
 // =========================
 export const REPORT_ITEMS: SidebarItem[] = [
   {
+    label: "สถิติผู้ป่วยตามกลุ่มโรค (ICD-10)",
+    href: "/pages/icd10-report",
+    icon: BarChart3,
+    group: "report",
+  },
+  {
     label: "แก้ไขสิทธิ์หลัก 10667 เป็น CUP Split",
     href: "/pages/report",
     icon: FileEdit,
