@@ -7,6 +7,10 @@ import { canAccessPath } from "../lib/permissions.ts";
 const defaults = { icd_from: "a00", icd_to: "a99", age_from: "1", age_to: "100", date_from: "2025-10-01", date_to: "2026-09-02", mode: "all" };
 const parse = (changes = {}) => parseIcdFilters(new URLSearchParams({ ...defaults, ...changes }));
 test("validates and normalizes codes, age and calendar dates", () => {
+  assert.equal(parse().diag_text, "");
+  assert.equal(parse({ diag_text: "  ไข้  " }).diag_text, "ไข้");
+  assert.equal(parse({ diag_text: "   " }).diag_text, "");
+  assert.throws(() => parse({ diag_text: "a".repeat(201) }));
   assert.equal(parse().icd_from, "A00");
   assert.equal(parse({ icd_from: "A00.0" }).icd_from, "A000");
   for (const changes of [{ mode: "bad" }, { age_from: "" }, { age_from: "1.5" }, { age_to: "151" }, { age_from: "101" }, { icd_from: "A00' OR 1=1" }, { icd_to: "A0" }, { date_from: "2026-02-30" }, { date_to: "2024-01-01" }, { icd_from: "B00" }]) assert.throws(() => parse(changes));
@@ -38,6 +42,24 @@ test("query includes secondary DX5 and upper chapter descendants without leaking
     assert.equal(result.rows[0].age_y, 100);
     const pdx = icdQuery(parse({ mode: "pdx" }));
     assert.deepEqual(db.prepare(pdx.sql).all(...pdx.values).map(r => r.vn), ["01"]);
+    const find = (diag_text, changes = {}) => {
+      const query = icdQuery(parse({ diag_text, ...changes }));
+      return db.prepare(query.sql).all(...query.values);
+    };
+    assert.deepEqual(find("LATEST").map(r => r.vn), ["02"]);
+    assert.deepEqual(find("older").map(r => r.vn), ["01"]);
+    assert.equal(summarizeIcd(find("older")).rows[0].vn, "01");
+    assert.equal(find("latest", { mode: "pdx" }).length, 0);
+    assert.equal(find("missing").length, 0);
+    assert.equal(find("' OR 1=1 --").length, 0);
+    db.prepare("UPDATE ovst SET diag_text = ? WHERE vn = '01'").run("ไข้สูง 100% A_B ! C\\D");
+    for (const text of ["ไข้", "100%", "A_B", "!", "C\\D"]) {
+      assert.deepEqual(find(text).map(r => r.vn), ["01"]);
+    }
+    assert.equal(find("100_").length, 0);
+    db.exec("UPDATE ovst SET diag_text = NULL WHERE vn = '01'");
+    assert.equal(find("ไข้").length, 0);
+    assert.equal(find(" ").length, 2);
   } finally { db.close(); }
 });
 
