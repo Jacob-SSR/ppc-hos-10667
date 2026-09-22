@@ -13,7 +13,7 @@ test("validates and normalizes codes, age and calendar dates", () => {
   assert.throws(() => parse({ diag_text: "a".repeat(201) }));
   assert.equal(parse().icd_from, "A00");
   assert.equal(parse({ icd_from: "A00.0" }).icd_from, "A000");
-  for (const changes of [{ mode: "bad" }, { age_from: "" }, { age_from: "1.5" }, { age_to: "151" }, { age_from: "101" }, { icd_from: "A00' OR 1=1" }, { icd_to: "A0" }, { date_from: "2026-02-30" }, { date_to: "2024-01-01" }, { icd_from: "B00" }]) assert.throws(() => parse(changes));
+  for (const changes of [{ mode: "bad" }, { age_from: "" }, { age_from: "1.5" }, { age_to: "151" }, { age_from: "101" }, { icd_from: "A00' OR 1=1" }, { icd_to: "A0" }, { date_from: "2026-02-30" }, { date_to: "2024-01-01" }]) assert.throws(() => parse(changes));
 });
 
 test("query includes secondary DX5 and upper chapter descendants without leaking unrelated diagnoses", () => {
@@ -87,4 +87,19 @@ test("page and API share existing report permissions", () => {
     assert.ok(canAccessPath(role, "/api/icd10-report"));
   }
   assert.equal(canAccessPath("USER", "/api/icd10-report"), false);
+});
+
+
+test("reversed ICD endpoints produce the same query and metadata as ascending endpoints", () => {
+  for (const mode of ["all", "pdx"]) {
+    for (const [a, b] of [["M54", "A05.2"], ["A99", "A00"], ["M54", "M54"]]) {
+      const forward = parse({icd_from:a, icd_to:b, mode});
+      const backward = parse({icd_from:b, icd_to:a, mode});
+      assert.deepEqual(forward, backward);
+      assert.deepEqual(icdQuery(forward), icdQuery(backward));
+    }
+  }
+  const filters = parse({icd_from:"m54",icd_to:"a05.2"});
+  assert.equal(filters.icd_from,"A052");
+  assert.equal(filters.icd_to,"M54");
 });
