@@ -5,6 +5,7 @@ import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGri
 import { ArrowRight, CalendarDays, ChevronLeft, ChevronRight, Download, FileSearch, ListFilter, LoaderCircle, Printer, RotateCcw, Search, SlidersHorizontal, X, AlertCircle } from "lucide-react";
 import { icdCsv, parseIcdFilters, type IcdFilters, type summarizeIcd } from "@/lib/icd10-report";
 import { currentReportYear, reportDateRange, type ReportPeriod } from "@/lib/report-period";
+import type { IcdDisease } from "@/lib/icd-disease-search";
 import DiseaseSearch from "./DiseaseSearch";
 import IcdCodeName from "./IcdCodeName";
 import styles from "./report.module.css";
@@ -28,7 +29,15 @@ const PAGE_SIZE = 50;
 export default function Icd10ReportPage() {
   const [filters, setFilters] = useState(initial);
   const [searchVersion, setSearchVersion] = useState(0);
-  const [diseaseQuery, setDiseaseQuery] = useState("");
+  const [fromQuery, setFromQuery] = useState("");
+  const [toQuery, setToQuery] = useState("");
+  const diseaseQuery = fromQuery.trim() || toQuery.trim();
+  const [fromDisease, setFromDisease] = useState<IcdDisease | null>(null);
+  const [toDisease, setToDisease] = useState<IcdDisease | null>(null);
+  const [explicitEnd, setExplicitEnd] = useState(false);
+  function clearDiseaseSelections() {
+    setFromQuery(""); setToQuery(""); setFromDisease(null); setToDisease(null); setExplicitEnd(false); setSearchVersion(v => v + 1);
+  }
   const [period, setPeriod] = useState<ReportPeriod>("year");
   const [periodYear, setPeriodYear] = useState(() => currentReportYear("year").year);
   const [periodMonth, setPeriodMonth] = useState(() => currentReportYear("month").month);
@@ -64,7 +73,7 @@ export default function Icd10ReportPage() {
     if (next !== "custom") setFilters(f => ({ ...f, ...reportDateRange(next, year, month) }));
   }
   function reset() {
-    setRequest(null); setResult(null); setError(""); setLoading(false); setPage(1); setFilters(initial); setSearchVersion(v => v + 1); setDiseaseQuery(""); setPeriod("year"); setPeriodYear(currentReportYear("year").year); setPeriodMonth(currentReportYear("month").month);
+    setRequest(null); setResult(null); setError(""); setLoading(false); setPage(1); setFilters(initial); clearDiseaseSelections(); setPeriod("year"); setPeriodYear(currentReportYear("year").year); setPeriodMonth(currentReportYear("month").month);
   }
   function download() {
     if (!result) return;
@@ -98,20 +107,33 @@ export default function Icd10ReportPage() {
       </div>
       <div className={styles.filterBody}>
         <div className={styles.filterSection}>
-          <DiseaseSearch key={searchVersion} onQueryChange={setDiseaseQuery} onSelect={disease => {
-            const code = disease.code.trim().toUpperCase().replace(/\./g, "");
-            setFilters(f => ({ ...f, icd_from: code, icd_to: code }));
-          }} />
+          <div className={styles.diseaseRange}>
+            <DiseaseSearch key={"from-" + searchVersion} label="จากโรค" selected={fromDisease} onQueryChange={setFromQuery} onSelect={disease => {
+              const code = disease.code.trim().toUpperCase().replace(/\./g, "");
+              setFromDisease(disease);
+              setFilters(f => ({ ...f, icd_from: code, icd_to: explicitEnd ? f.icd_to : code }));
+            }} />
+            <DiseaseSearch key={"to-" + searchVersion} label="ถึงโรค (ไม่บังคับ)" selected={toDisease} onQueryChange={setToQuery} onSelect={disease => {
+              const code = disease.code.trim().toUpperCase().replace(/\./g, "");
+              setToDisease(disease); setExplicitEnd(true);
+              setFilters(f => ({ ...f, icd_from: fromDisease ? f.icd_from : code, icd_to: code }));
+              if (!fromDisease) setFromDisease(disease);
+            }} onClear={() => {
+              setToDisease(null); setExplicitEnd(false);
+              setFilters(f => ({ ...f, icd_to: f.icd_from }));
+            }} />
+          </div>
+          <p className={styles.help}>เลือกเฉพาะ “จากโรค” เพื่อค้นหาโรคนั้น หรือเลือก “ถึงโรค” เพิ่มเพื่อค้นหาทุกโรคในช่วงรหัส</p>
           <label className={styles.field}>หรือเลือกกลุ่มโรค
             <select value={selectedGroup?.[0] ?? ""} onChange={e => {
               if (!e.target.value) return;
-              const [from, to] = e.target.value.split("-"); setFilters(f => ({ ...f, icd_from: from, icd_to: to }));
+              clearDiseaseSelections(); const [from, to] = e.target.value.split("-"); setFilters(f => ({ ...f, icd_from: from, icd_to: to }));
             }}><option value="">กำหนดช่วงรหัสเอง</option>{groups.map(([range, name]) => <option key={range} value={range}>{name} ({range})</option>)}</select>
           </label>
           <div className={styles.pair}>
-            <label className={styles.field}>จากโรค / รหัสเริ่มต้น<input type="text" required value={filters.icd_from} onChange={e => update("icd_from", e.target.value)} placeholder="A00" autoCapitalize="characters" /><IcdCodeName code={filters.icd_from} /></label>
+            <label className={styles.field}>จากโรค / รหัสเริ่มต้น<input type="text" required value={filters.icd_from} onChange={e => { clearDiseaseSelections(); update("icd_from", e.target.value); }} placeholder="A00" autoCapitalize="characters" /><IcdCodeName code={filters.icd_from} /></label>
             <ArrowRight size={16} className={styles.rangeArrow} aria-hidden="true" />
-            <label className={styles.field}>ถึงโรค / รหัสสิ้นสุด<input type="text" required value={filters.icd_to} onChange={e => update("icd_to", e.target.value)} placeholder="A99" autoCapitalize="characters" /><IcdCodeName code={filters.icd_to} /></label>
+            <label className={styles.field}>ถึงโรค / รหัสสิ้นสุด<input type="text" required value={filters.icd_to} onChange={e => { clearDiseaseSelections(); setExplicitEnd(true); update("icd_to", e.target.value); }} placeholder="A99" autoCapitalize="characters" /><IcdCodeName code={filters.icd_to} /></label>
           </div>
           <label className={styles.field} htmlFor="diag-text">ข้อความวินิจฉัย <span className={styles.optional}>ไม่บังคับ</span></label>
           <div className={styles.searchField}>
