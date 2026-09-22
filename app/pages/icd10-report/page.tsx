@@ -5,6 +5,8 @@ import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGri
 import { ArrowRight, CalendarDays, ChevronLeft, ChevronRight, Download, FileSearch, ListFilter, LoaderCircle, Printer, RotateCcw, Search, SlidersHorizontal, X, AlertCircle } from "lucide-react";
 import { icdCsv, parseIcdFilters, type IcdFilters, type summarizeIcd } from "@/lib/icd10-report";
 import { currentReportYear, reportDateRange, type ReportPeriod } from "@/lib/report-period";
+import DiseaseSearch from "./DiseaseSearch";
+import IcdCodeName from "./IcdCodeName";
 import styles from "./report.module.css";
 
 type Result = ReturnType<typeof summarizeIcd> & { meta: IcdFilters };
@@ -25,6 +27,8 @@ const PAGE_SIZE = 50;
 
 export default function Icd10ReportPage() {
   const [filters, setFilters] = useState(initial);
+  const [searchVersion, setSearchVersion] = useState(0);
+  const [diseaseQuery, setDiseaseQuery] = useState("");
   const [period, setPeriod] = useState<ReportPeriod>("year");
   const [periodYear, setPeriodYear] = useState(() => currentReportYear("year").year);
   const [periodMonth, setPeriodMonth] = useState(() => currentReportYear("month").month);
@@ -60,7 +64,7 @@ export default function Icd10ReportPage() {
     if (next !== "custom") setFilters(f => ({ ...f, ...reportDateRange(next, year, month) }));
   }
   function reset() {
-    setRequest(null); setResult(null); setError(""); setLoading(false); setPage(1); setFilters(initial); setPeriod("year"); setPeriodYear(currentReportYear("year").year); setPeriodMonth(currentReportYear("month").month);
+    setRequest(null); setResult(null); setError(""); setLoading(false); setPage(1); setFilters(initial); setSearchVersion(v => v + 1); setDiseaseQuery(""); setPeriod("year"); setPeriodYear(currentReportYear("year").year); setPeriodMonth(currentReportYear("month").month);
   }
   function download() {
     if (!result) return;
@@ -82,6 +86,7 @@ export default function Icd10ReportPage() {
 
     <form className={styles.filters} onSubmit={e => {
       e.preventDefault();
+      if (diseaseQuery.trim()) return;
       try {
         const params = new URLSearchParams(filters); parseIcdFilters(params);
         setResult(null); setError(""); setLoading(true); setPage(1); setRequest(params.toString()); setRevision(r => r + 1);
@@ -93,16 +98,20 @@ export default function Icd10ReportPage() {
       </div>
       <div className={styles.filterBody}>
         <div className={styles.filterSection}>
-          <label className={styles.field}>กลุ่มโรค
+          <DiseaseSearch key={searchVersion} onQueryChange={setDiseaseQuery} onSelect={disease => {
+            const code = disease.code.trim().toUpperCase().replace(/\./g, "");
+            setFilters(f => ({ ...f, icd_from: code, icd_to: code }));
+          }} />
+          <label className={styles.field}>หรือเลือกกลุ่มโรค
             <select value={selectedGroup?.[0] ?? ""} onChange={e => {
               if (!e.target.value) return;
               const [from, to] = e.target.value.split("-"); setFilters(f => ({ ...f, icd_from: from, icd_to: to }));
-            }}><option value="">กำหนดช่วงรหัสเอง</option>{groups.map(([range, name]) => <option key={range} value={range}>{range} · {name}</option>)}</select>
+            }}><option value="">กำหนดช่วงรหัสเอง</option>{groups.map(([range, name]) => <option key={range} value={range}>{name} ({range})</option>)}</select>
           </label>
           <div className={styles.pair}>
-            <label className={styles.field}>รหัสเริ่มต้น<input type="text" required value={filters.icd_from} onChange={e => update("icd_from", e.target.value)} placeholder="A00" autoCapitalize="characters" /></label>
+            <label className={styles.field}>จากโรค / รหัสเริ่มต้น<input type="text" required value={filters.icd_from} onChange={e => update("icd_from", e.target.value)} placeholder="A00" autoCapitalize="characters" /><IcdCodeName code={filters.icd_from} /></label>
             <ArrowRight size={16} className={styles.rangeArrow} aria-hidden="true" />
-            <label className={styles.field}>รหัสสิ้นสุด<input type="text" required value={filters.icd_to} onChange={e => update("icd_to", e.target.value)} placeholder="A99" autoCapitalize="characters" /></label>
+            <label className={styles.field}>ถึงโรค / รหัสสิ้นสุด<input type="text" required value={filters.icd_to} onChange={e => update("icd_to", e.target.value)} placeholder="A99" autoCapitalize="characters" /><IcdCodeName code={filters.icd_to} /></label>
           </div>
           <label className={styles.field} htmlFor="diag-text">ข้อความวินิจฉัย <span className={styles.optional}>ไม่บังคับ</span></label>
           <div className={styles.searchField}>
@@ -135,8 +144,8 @@ export default function Icd10ReportPage() {
         </div>
       </div>
       <div className={styles.filterFooter}>
-        <p>{dirty ? "มีการเปลี่ยนเงื่อนไข กดค้นหาเพื่ออัปเดตผลลัพธ์" : "เลือกเงื่อนไข แล้วค้นหาเพื่อดูสถิติและรายชื่อผู้ป่วย"}</p>
-        <button type="submit" disabled={loading} className={styles.primaryButton}>{loading ? <LoaderCircle size={17} className={styles.spin} aria-hidden="true" /> : <Search size={17} aria-hidden="true" />}{loading ? "กำลังค้นหา…" : "ค้นหารายงาน"}{!loading && <ArrowRight size={16} aria-hidden="true" />}</button>
+        <p>{diseaseQuery.trim() ? "เลือกชื่อโรคจากรายการ หรือล้างคำค้นชื่อโรคก่อนค้นหารายงาน" : dirty ? "มีการเปลี่ยนเงื่อนไข กดค้นหาเพื่ออัปเดตผลลัพธ์" : "เลือกเงื่อนไข แล้วค้นหาเพื่อดูสถิติและรายชื่อผู้ป่วย"}</p>
+        <button type="submit" disabled={loading || !!diseaseQuery.trim()} className={styles.primaryButton}>{loading ? <LoaderCircle size={17} className={styles.spin} aria-hidden="true" /> : <Search size={17} aria-hidden="true" />}{loading ? "กำลังค้นหา…" : "ค้นหารายงาน"}{!loading && <ArrowRight size={16} aria-hidden="true" />}</button>
       </div>
     </form>
 
@@ -151,6 +160,7 @@ export default function Icd10ReportPage() {
     {result && <div className={styles.results} aria-busy={loading}>
       <section aria-label="สรุปผล" className={styles.summary}>
         <div className={styles.resultHeading}><div><span className={styles.eyebrow}>ผลการค้นหา</span><h2>{dateLabel(result.meta.date_from)} <span>—</span> {dateLabel(result.meta.date_to)}</h2></div><div className={styles.exportActions}><button className={styles.secondaryButton} disabled={!result.rows.length} onClick={download}><Download size={16} aria-hidden="true" /> ส่งออก CSV</button><button className={styles.iconButton} onClick={() => window.print()} aria-label="พิมพ์รายงาน"><Printer size={17} aria-hidden="true" /></button></div></div>
+        <div className={styles.resultDiseaseNames}><span>จากโรค <IcdCodeName code={result.meta.icd_from} /></span><span>ถึงโรค <IcdCodeName code={result.meta.icd_to} /></span></div>
         <div className={styles.chips}><span>ICD-10 <b>{result.meta.icd_from}–{result.meta.icd_to}</b></span><span>อายุ <b>{result.meta.age_from}–{result.meta.age_to} ปี</b></span><span>{result.meta.mode === "all" ? "โรคหลัก + โรครอง" : "โรคหลัก (PDx)"}</span>{result.meta.diag_text && <span>คำวินิจฉัย <b>“{result.meta.diag_text}”</b></span>}</div>
         {dirty && <p className={styles.help}>ผลลัพธ์นี้เป็นเงื่อนไขที่ค้นหาล่าสุด กดค้นหารายงานเพื่อใช้เงื่อนไขใหม่</p>}
         <dl className={styles.metrics}>
