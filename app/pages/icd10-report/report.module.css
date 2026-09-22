@@ -203,3 +203,8 @@
 .pair:has(.codeName) .rangeArrow { align-self: start; margin-top: 39px; margin-bottom: 0; }
 .resultDiseaseNames { display: flex; flex-wrap: wrap; gap: 12px 32px; margin-top: 12px; font-size: .75rem; color: var(--report-muted); }
 .resultDiseaseNames > span { flex: 1; min-width: 160px; }
+.diseaseRange { display: grid; grid-template-columns: minmax(0,1fr) minmax(0,1fr); gap: 16px; align-items: start; }
+.selectedDisease { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 10px 12px; background: var(--report-soft); border-radius: 8px; color: var(--report-accent); overflow-wrap: anywhere; }
+.selectedDisease strong { display: block; font-size: .8125rem; font-weight: 500; }
+.selectedDisease small { display: block; font-size: .75rem; color: var(--report-muted); }
+@container (max-width: 1000px) { .diseaseRange { grid-template-columns: 1fr; } }

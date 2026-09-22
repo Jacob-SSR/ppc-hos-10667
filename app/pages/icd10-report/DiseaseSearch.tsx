@@ -6,7 +6,7 @@ import type { IcdDisease } from "@/lib/icd-disease-search";
 import styles from "./report.module.css";
 
 type Response = { items: IcdDisease[]; hasMore: boolean };
-export default function DiseaseSearch({ onSelect, onQueryChange }: { onSelect: (disease: IcdDisease) => void; onQueryChange: (query: string) => void }) {
+export default function DiseaseSearch({ onSelect, onQueryChange, label = "ค้นหาชื่อโรคหรืออาการ", selected, onClear }: { onSelect: (disease: IcdDisease) => void; onQueryChange: (query: string) => void; label?: string; selected?: IcdDisease | null; onClear?: () => void }) {
   const id = useId();
   const [query, setQuery] = useState("");
   const [open, setOpen] = useState(false);
@@ -44,7 +44,7 @@ export default function DiseaseSearch({ onSelect, onQueryChange }: { onSelect: (
   return <div className={styles.diseaseSearch} onBlur={event => {
     if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setOpen(false);
   }}>
-    <label className={styles.field} htmlFor={id}>ค้นหาชื่อโรคหรืออาการ</label>
+    <label className={styles.field} htmlFor={id}>{label}</label>
     <div className={styles.searchField}>
       <Search size={17} aria-hidden="true" />
       <input id={id} role="combobox" aria-autocomplete="list" aria-expanded={searching} aria-controls={`${id}-results`} aria-activedescendant={searching && active >= 0 && items[active] ? `${id}-${active}` : undefined}
@@ -65,6 +65,7 @@ export default function DiseaseSearch({ onSelect, onQueryChange }: { onSelect: (
       {loading ? <LoaderCircle size={16} className={styles.spin} aria-hidden="true" /> : query && <button type="button" aria-label="ล้างคำค้นชื่อโรค" onClick={() => { setQuery(""); onQueryChange(""); setActive(-1); }}><X size={16} /></button>}
     </div>
     <p id={`${id}-help`} className={styles.help}>พิมพ์อย่างน้อย 2 ตัวอักษร แล้วเลือกชื่อโรคเพื่อใส่รหัสให้อัตโนมัติ</p>
+    {selected && <div className={styles.selectedDisease}><span><strong>{selected.thai_name || selected.name || selected.code}</strong><small>{selected.code}</small></span>{onClear && <button type="button" className={styles.textButton} onClick={() => { setQuery(""); onQueryChange(""); onClear(); }} aria-label={"ล้าง" + label}><X size={16} /></button>}</div>}
     <div className={styles.diseaseResults} hidden={!searching}>
       <div role="status" className={styles.diseaseStatus}>
         {loading ? "กำลังค้นหาชื่อโรค…" : current?.error ? current.error : items.length ? `พบ ${items.length} รายการ${current?.data?.hasMore ? "ขึ้นไป · ลองพิมพ์ให้เฉพาะเจาะจงขึ้น" : " · เลือกโรคที่ต้องการ"}` : "ไม่พบชื่อโรค ลองใช้คำอื่นหรือชื่อภาษาอังกฤษ"}
