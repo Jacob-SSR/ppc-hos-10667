@@ -25,7 +25,8 @@ export function parseIcdFilters(p: URLSearchParams): IcdFilters {
   const diag_text = (p.get("diag_text") ?? "").trim();
   if (diag_text.length > 200) throw new Error("ข้อความวินิจฉัยต้องไม่เกิน 200 ตัวอักษร");
   const f = { icd_from: code("icd_from"), icd_to: code("icd_to"), age_from: age("age_from"), age_to: age("age_to"), date_from: date("date_from"), date_to: date("date_to"), mode, diag_text };
-  if (f.icd_from > f.icd_to || f.age_from > f.age_to || f.date_from > f.date_to) throw new Error("ค่าเริ่มต้นต้องไม่มากกว่าค่าสิ้นสุด");
+  if (f.icd_from > f.icd_to) [f.icd_from, f.icd_to] = [f.icd_to, f.icd_from];
+  if (f.age_from > f.age_to || f.date_from > f.date_to) throw new Error("ค่าเริ่มต้นต้องไม่มากกว่าค่าสิ้นสุด");
   return f as IcdFilters;
 }
 

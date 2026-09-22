@@ -123,7 +123,7 @@ export default function Icd10ReportPage() {
               setFilters(f => ({ ...f, icd_to: f.icd_from }));
             }} />
           </div>
-          <p className={styles.help}>เลือกเฉพาะ “จากโรค” เพื่อค้นหาโรคนั้น หรือเลือก “ถึงโรค” เพิ่มเพื่อค้นหาทุกโรคในช่วงรหัส</p>
+          <p className={styles.help}>เลือกเฉพาะ “จากโรค” เพื่อค้นหาโรคนั้น หรือเลือก “ถึงโรค” เพิ่มเพื่อค้นหาทุกโรคในช่วงรหัส เลือกสลับลำดับได้</p>
           <label className={styles.field}>หรือเลือกกลุ่มโรค
             <select value={selectedGroup?.[0] ?? ""} onChange={e => {
               if (!e.target.value) return;
