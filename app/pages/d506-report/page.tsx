@@ -698,7 +698,7 @@ export default function D506ReportPage() {
           }
           #form506 { padding: 0 !important; }
           .no-print { display: none !important; }
-          @page { size: A4 portrait; margin: 8mm; }
+          @page { size: A4 portrait; margin: 4mm; }
         }
       `}</style>
     </div>

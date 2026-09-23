@@ -2,6 +2,7 @@
 // แบบรายงานผู้ป่วย รง.506 (พิมพ์ได้) — พอร์ตจาก openPrintForm() ใน D506_Dashboard.html
 "use client";
 
+import { useEffect } from "react";
 import type { D506PatientRow } from "@/lib/d506.service";
 import type { D506FormExtra } from "@/lib/d506Form.service";
 
@@ -60,6 +61,36 @@ export default function Form506({
   /** ข้อมูลจาก HOSxP (/api/d506-form) — ใช้เติมช่องที่รายงานไม่มี */
   extra?: D506FormExtra | null;
 }) {
+  useEffect(() => {
+    const form = document.getElementById("rng506");
+    if (!form) return;
+
+    // Measure at the printable A4 width. Long patient details can add wrapped
+    // lines, so fit the completed form to one page just before opening print.
+    const fitToA4 = () => {
+      form.style.width = "202mm";
+      form.style.zoom = "1";
+      const maxHeight = (289 * 96) / 25.4 - 8; // A4 with 4 mm margins and a small safety gap
+      let zoom = 1;
+      while (form.getBoundingClientRect().height > maxHeight && zoom > 0.5) {
+        zoom = Math.round((zoom - 0.01) * 100) / 100;
+        form.style.zoom = String(zoom);
+      }
+    };
+    const reset = () => {
+      form.style.width = "";
+      form.style.zoom = "";
+    };
+
+    window.addEventListener("beforeprint", fitToA4);
+    window.addEventListener("afterprint", reset);
+    return () => {
+      window.removeEventListener("beforeprint", fitToA4);
+      window.removeEventListener("afterprint", reset);
+      reset();
+    };
+  }, []);
+
   const code = hos(extra?.code506, row.code506);
   const chk = useChk(code);
   // เพศ: ใช้ช่องในรายงานก่อน → ไม่มีค่อยเดาจากคำนำหน้า → ท้ายสุดใช้ patient.sex ของ HOSxP
@@ -112,7 +143,7 @@ export default function Form506({
   const line: React.CSSProperties = { borderBottom: "1px solid #000" };
   const cell: React.CSSProperties = {
     border: "1px solid #000",
-    padding: "3px 5px",
+    padding: "2px 4px",
     verticalAlign: "top",
   };
 
@@ -123,19 +154,19 @@ export default function Form506({
         color: "#000",
         fontFamily:
           "'TH SarabunPSK','Sarabun','Cordia New','Segoe UI',sans-serif",
-        fontSize: 13,
-        lineHeight: 1.5,
+        fontSize: 14,
+        lineHeight: 1.32,
       }}
     >
       {/* HEADER */}
       <div style={{ display: "flex", alignItems: "flex-start", gap: 8, marginBottom: 4 }}>
         <div style={{ flex: 1, textAlign: "center" }}>
-          <div style={{ fontSize: 22, fontWeight: 900, letterSpacing: 1 }}>บัตรรายงานผู้ป่วย</div>
-          <div style={{ fontSize: 17, fontWeight: 700, margin: "2px 0" }}>แบบ รง. 506</div>
-          <div style={{ fontSize: 12 }}>ข่ายงานเฝ้าระวังโรค สำนักระบาดวิทยา กรมควบคุมโรค กระทรวงสาธารณสุข</div>
-          <div style={{ fontSize: 12 }}>โทร. 0-2590-1787 , 0-2590-1785</div>
+          <div style={{ fontSize: 24, fontWeight: 900, letterSpacing: 1 }}>บัตรรายงานผู้ป่วย</div>
+          <div style={{ fontSize: 19, fontWeight: 700, margin: "2px 0" }}>แบบ รง. 506</div>
+          <div style={{ fontSize: 13 }}>ข่ายงานเฝ้าระวังโรค สำนักระบาดวิทยา กรมควบคุมโรค กระทรวงสาธารณสุข</div>
+          <div style={{ fontSize: 13 }}>โทร. 0-2590-1787 , 0-2590-1785</div>
         </div>
-        <div style={{ border: "1px solid #000", padding: "4px 8px", fontSize: 11, minWidth: 180, lineHeight: 1.8 }}>
+        <div style={{ border: "1px solid #000", padding: "4px 8px", fontSize: 12, minWidth: 180, lineHeight: 1.45 }}>
           <div>เลขที่อ้างอิง 0 ของ สสจ. ……………………</div>
           <div>เลขที่อ้างอิง 1 ของ สสจ. ……………………</div>
           <div style={{ borderTop: "1px solid #999", marginTop: 2, paddingTop: 2 }}>เลขที่อ้างอิง 0 ของ สสอ. ……………………</div>
@@ -147,8 +178,8 @@ export default function Form506({
 
       {/* DISEASE GRID */}
       <div style={{ border: "1.5px solid #000", padding: "5px 6px", marginBottom: 5 }}>
-        <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 3 }}>โรค</div>
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "0 6px", fontSize: 11.5, lineHeight: 1.65 }}>
+        <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 3 }}>โรค</div>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: "0 6px", fontSize: 14, lineHeight: 1.38 }}>
           <div>
             {chk("01")} อหิวาตกโรค 01<br />
             {chk("02")} อุจจาระร่วง 02<br />
@@ -205,7 +236,7 @@ export default function Form506({
             {chk("44")} สครับไทฟัส 44<br />
             {chk("45")} แอนแทรกซ์ 45<br />
             {chk("46")} ทริคิโนสิส 46<br />
-            <span style={{ fontSize: 10.5 }}>โรคจากการประกอบอาชีพ</span><br />
+            <span style={{ fontSize: 12 }}>โรคจากการประกอบอาชีพ</span><br />
             □ ถูกพิษสารเคมีกำจัดศัตรูพืช (ระบุ)…47<br />
             □ พิษจากโลหะหนัก (ระบุ)……………48-49<br />
             □ พิษจากสารตัวทำละลาย (ระบุ)…………50<br />
@@ -219,10 +250,10 @@ export default function Form506({
             {chk("72")} Melioidosis 72<br />
             □ โรคอื่น ๆ (ระบุ)……………………<br />
             <br />
-            <div style={{ fontSize: 11, marginTop: 4 }}>
+            <div style={{ fontSize: 12.5, marginTop: 4 }}>
               <b>โรคที่วินิจฉัย:</b> <u>{disease}</u>
             </div>
-            <div style={{ fontSize: 11 }}>
+            <div style={{ fontSize: 12.5 }}>
               <b>รหัส 506:</b> <u>{code}</u> &nbsp; <b>ICD-10:</b> <u>{icd10}</u>
             </div>
           </div>
@@ -230,7 +261,7 @@ export default function Form506({
       </div>
 
       {/* PATIENT INFO */}
-      <div style={{ border: "1.5px solid #000", borderTop: "none", padding: "4px 6px", fontSize: 12 }}>
+      <div style={{ border: "1.5px solid #000", borderTop: "none", padding: "4px 6px", fontSize: 14 }}>
         <div style={{ display: "flex", gap: 4, marginBottom: 3 }}>
           <span>ชื่อผู้ป่วย</span>
           <span style={{ ...line, flex: 1, padding: "0 4px", fontWeight: 700 }}>{fullName}</span>
@@ -244,7 +275,7 @@ export default function Form506({
           <span style={{ ...line, width: 100 }} />
         </div>
 
-        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12, marginBottom: 4 }}>
+        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 14, marginBottom: 4 }}>
           <tbody>
             <tr>
               <td style={{ ...cell, width: 80 }}>
@@ -266,7 +297,7 @@ export default function Form506({
                 <b>สัญชาติ</b><br />
                 {thai === true ? "☑" : "☐"} คนไทย<br />
                 {thai === false ? "☑" : "☐"} คนต่างชาติ ประเภท □1 □2
-                <div style={{ fontSize: 10 }}>
+                <div style={{ fontSize: 12 }}>
                   ระบุสัญชาติ{" "}
                   <u>{thai === false ? extra?.nationalityName || "…………………" : "…………………"}</u>
                 </div>
@@ -281,7 +312,7 @@ export default function Form506({
         </table>
 
         <div style={{ marginBottom: 3 }}><b>ที่อยู่ขณะเริ่มป่วย</b></div>
-        <div style={{ display: "flex", gap: 6, marginBottom: 3, fontSize: 12 }}>
+        <div style={{ display: "flex", gap: 6, marginBottom: 3, fontSize: 14 }}>
           <span>บ้านเลขที่/หมู่</span>
           <span style={{ ...line, flex: 1, padding: "0 4px" }}>{addr}</span>
           <span>ตำบล</span>
@@ -290,7 +321,7 @@ export default function Form506({
           <span style={{ ...line, flex: 1, padding: "0 4px" }}>{amphoe}</span>
           <span>จังหวัด</span>
           <span style={{ ...line, flex: 1, padding: "0 4px" }}>{province}</span>
-          <span style={{ whiteSpace: "nowrap", fontSize: 10 }}>
+          <span style={{ whiteSpace: "nowrap", fontSize: 12 }}>
             {muni === "1" ? "☑" : "□"}1 ในเขตเทศบาล<br />
             {muni === "2" ? "☑" : "□"}2 อบต.
           </span>
@@ -298,7 +329,7 @@ export default function Form506({
       </div>
 
       {/* TREATMENT */}
-      <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12, border: "1.5px solid #000", borderTop: "none" }}>
+      <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 14, border: "1.5px solid #000", borderTop: "none" }}>
         <tbody>
           <tr>
             <td style={{ ...cell, width: 130 }}>
@@ -325,7 +356,7 @@ export default function Form506({
       </table>
 
       {/* OUTCOME */}
-      <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12, border: "1.5px solid #000", borderTop: "none" }}>
+      <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 14, border: "1.5px solid #000", borderTop: "none" }}>
         <tbody>
           <tr>
             <td style={{ ...cell, width: 180 }}>
@@ -355,7 +386,7 @@ export default function Form506({
       </table>
 
       {/* FOOTER STAMPS */}
-      <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 11, border: "1.5px solid #000", borderTop: "none" }}>
+      <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13, border: "1.5px solid #000", borderTop: "none" }}>
         <tbody>
           <tr>
             <td style={cell}><b>วันที่รับรายงานของ สสจ.</b><br />………………(□□□□□□)</td>
@@ -365,12 +396,12 @@ export default function Form506({
         </tbody>
       </table>
 
-      <div style={{ fontSize: 10, color: "#555", marginTop: 6, lineHeight: 1.4 }}>
+      <div style={{ fontSize: 11.5, color: "#555", marginTop: 5, lineHeight: 1.3 }}>
         ให้ทำเครื่องหมาย x ในช่อง □ หน้าข้อความที่ต้องการ และกรอกรายละเอียดในช่องว่างให้ครบถ้วนและชัดเจน ยกเว้นใน □□<br />
         <b>* นิยาม</b> ต่างชาติประเภท 1 คือ ชาวต่างชาติที่เข้ามาขายแรงงานในประเทศไทย ไม่มีใบต่างด้าว / ต่างชาติประเภท 2 คือ ชาวต่างชาติหรือนักท่องเที่ยวต่างชาติที่เข้ามารักษาในประเทศไทย เมื่อหายแล้วกลับประเทศตน
       </div>
 
-      <div style={{ textAlign: "right", fontSize: 10, color: "#888", marginTop: 4 }}>
+      <div style={{ textAlign: "right", fontSize: 11, color: "#888", marginTop: 3 }}>
         พิมพ์จาก D506 Report · {printedOn}
       </div>
     </div>
