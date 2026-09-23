@@ -154,7 +154,7 @@ export default function Form506({
         color: "#000",
         fontFamily:
           "'TH SarabunPSK','Sarabun','Cordia New','Segoe UI',sans-serif",
-        fontSize: 14,
+        fontSize: 16,
         lineHeight: 1.32,
       }}
     >
@@ -166,20 +166,20 @@ export default function Form506({
           <div style={{ fontSize: 13 }}>ข่ายงานเฝ้าระวังโรค สำนักระบาดวิทยา กรมควบคุมโรค กระทรวงสาธารณสุข</div>
           <div style={{ fontSize: 13 }}>โทร. 0-2590-1787 , 0-2590-1785</div>
         </div>
-        <div style={{ border: "1px solid #000", padding: "4px 8px", fontSize: 12, minWidth: 180, lineHeight: 1.45 }}>
-          <div>เลขที่อ้างอิง 0 ของ สสจ. ……………………</div>
-          <div>เลขที่อ้างอิง 1 ของ สสจ. ……………………</div>
-          <div style={{ borderTop: "1px solid #999", marginTop: 2, paddingTop: 2 }}>เลขที่อ้างอิง 0 ของ สสอ. ……………………</div>
-          <div>เลขที่อ้างอิง 1 ของ สสอ. ……………………</div>
-          <div style={{ borderTop: "1px solid #999", marginTop: 2, paddingTop: 2 }}>เลขที่อ้างอิง 0 ของ รพ./สอ. ………………</div>
-          <div>เลขที่อ้างอิง 1 ของ รพ./สอ. ………………</div>
+        <div style={{ border: "1px solid #000", padding: "3px 6px", fontSize: 12, minWidth: 250, lineHeight: 1.3 }}>
+          <div style={{ fontWeight: 700, marginBottom: 2 }}>เลขที่อ้างอิง</div>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1px 6px" }}>
+            <div>สสจ. 0 ………………</div><div>สสจ. 1 ………………</div>
+            <div>สสอ. 0 ………………</div><div>สสอ. 1 ………………</div>
+            <div>รพ./สอ. 0 …………</div><div>รพ./สอ. 1 …………</div>
+          </div>
         </div>
       </div>
 
       {/* DISEASE GRID */}
       <div style={{ border: "1.5px solid #000", padding: "5px 6px", marginBottom: 5 }}>
-        <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 3 }}>โรค</div>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: "0 6px", fontSize: 14, lineHeight: 1.38 }}>
+        <div style={{ fontWeight: 700, fontSize: 16, marginBottom: 3 }}>โรค</div>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: "0 6px", fontSize: 16, lineHeight: 1.22 }}>
           <div>
             {chk("01")} อหิวาตกโรค 01<br />
             {chk("02")} อุจจาระร่วง 02<br />
@@ -261,7 +261,7 @@ export default function Form506({
       </div>
 
       {/* PATIENT INFO */}
-      <div style={{ border: "1.5px solid #000", borderTop: "none", padding: "4px 6px", fontSize: 14 }}>
+      <div style={{ border: "1.5px solid #000", borderTop: "none", padding: "4px 6px", fontSize: 16 }}>
         <div style={{ display: "flex", gap: 4, marginBottom: 3 }}>
           <span>ชื่อผู้ป่วย</span>
           <span style={{ ...line, flex: 1, padding: "0 4px", fontWeight: 700 }}>{fullName}</span>
@@ -275,7 +275,7 @@ export default function Form506({
           <span style={{ ...line, width: 100 }} />
         </div>
 
-        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 14, marginBottom: 4 }}>
+        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 16, marginBottom: 4 }}>
           <tbody>
             <tr>
               <td style={{ ...cell, width: 80 }}>
@@ -312,7 +312,7 @@ export default function Form506({
         </table>
 
         <div style={{ marginBottom: 3 }}><b>ที่อยู่ขณะเริ่มป่วย</b></div>
-        <div style={{ display: "flex", gap: 6, marginBottom: 3, fontSize: 14 }}>
+        <div style={{ display: "flex", gap: 6, marginBottom: 3, fontSize: 16 }}>
           <span>บ้านเลขที่/หมู่</span>
           <span style={{ ...line, flex: 1, padding: "0 4px" }}>{addr}</span>
           <span>ตำบล</span>
@@ -329,7 +329,7 @@ export default function Form506({
       </div>
 
       {/* TREATMENT */}
-      <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 14, border: "1.5px solid #000", borderTop: "none" }}>
+      <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 16, border: "1.5px solid #000", borderTop: "none" }}>
         <tbody>
           <tr>
             <td style={{ ...cell, width: 130 }}>
@@ -356,7 +356,7 @@ export default function Form506({
       </table>
 
       {/* OUTCOME */}
-      <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 14, border: "1.5px solid #000", borderTop: "none" }}>
+      <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 16, border: "1.5px solid #000", borderTop: "none" }}>
         <tbody>
           <tr>
             <td style={{ ...cell, width: 180 }}>
