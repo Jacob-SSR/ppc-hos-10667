@@ -177,7 +177,7 @@ export default function Sidebar() {
           group.items.map((item) => ({ ...item, category: `Dashboard · ${group.title}` }))
         )),
     ...(!isGuest ? [
-      ...visibleReportItems.map((item) => ({ ...item, category: "รายงาน" })),
+      ...visibleReportItems.map((item) => ({ ...item, category: item.href === "/pages/appointment-dashboard" ? "รายงาน · โรคเรื้อรัง" : "รายงาน" })),
       ...visiblePrimaryCareItems.map((item) => ({ ...item, category: "ปฐมภูมิ" })),
       ...visiblePpaItems.map((item) => ({ ...item, category: "PPA" })),
       ...SETTINGS_ITEMS.map((item) => ({ ...item, category: "ตั้งค่า" })),
@@ -332,12 +332,16 @@ export default function Sidebar() {
                 label="รายงาน"
                 icon={FileText}
                 groups={[
-                  {
+                  ...(visibleReportItems.some((item) => item.href !== "/pages/appointment-dashboard") ? [{
                     title:
                       "รายงาน",
                     items:
-                      visibleReportItems,
-                  },
+                      visibleReportItems.filter((item) => item.href !== "/pages/appointment-dashboard"),
+                  }] : []),
+                  ...(visibleReportItems.some((item) => item.href === "/pages/appointment-dashboard") ? [{
+                    title: "โรคเรื้อรัง",
+                    items: visibleReportItems.filter((item) => item.href === "/pages/appointment-dashboard"),
+                  }] : []),
                 ]}
                 isOpen={reportOpen}
                 onToggle={() =>

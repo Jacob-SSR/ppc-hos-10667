@@ -34,6 +34,7 @@ import {
   Activity,
   Gauge,
   ClipboardList,
+  CalendarDays,
 } from "lucide-react";
 
 import { SidebarItem, SidebarGroup, SidebarSubGroup } from "./types";
@@ -327,6 +328,12 @@ export const DASHBOARD_GROUPS: SidebarSubGroup[] = [
 // REPORT
 // =========================
 export const REPORT_ITEMS: SidebarItem[] = [
+  {
+    label: "วิเคราะห์การนัดหมายผู้ป่วย",
+    href: "/pages/appointment-dashboard",
+    icon: CalendarDays,
+    group: "report",
+  },
   {
     label: "สถิติผู้ป่วยตามกลุ่มโรค (ICD-10)",
     href: "/pages/icd10-report",

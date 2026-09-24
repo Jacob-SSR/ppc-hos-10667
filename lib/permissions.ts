@@ -50,6 +50,8 @@ export const FEATURE_PATHS = {
     "/pages/productivity-opd",
     "/api/productivity-opd",
     "/pages/health-checkup",
+    "/pages/appointment-dashboard",
+    "/api/appointment-dashboard",
   ],
 
   // งานการพยาบาลผู้ป่วยใน (IPD)
@@ -176,6 +178,8 @@ export const FEATURE_PATHS = {
 
   // รายงานเวชระเบียน / สิทธิ์การรักษา
   REPORT: [
+    "/pages/appointment-dashboard",
+    "/api/appointment-dashboard",
     "/pages/icd10-report",
     "/api/icd10-report",
     "/pages/report",
