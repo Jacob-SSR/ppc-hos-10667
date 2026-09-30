@@ -15,6 +15,7 @@ import {
   FilePen,
   MapPinned,
   Server,
+  HeartPulse,
 } from "lucide-react";
 
 import NavGroup from "./NavGroup";
@@ -186,6 +187,7 @@ export default function Sidebar() {
         { label: "สถานะเซิร์ฟเวอร์", href: "/pages/server-status", icon: Server, desc: "RAM / Harddisk เครื่องแม่ข่าย", category: "ระบบงาน IT" },
       ] : []),
       { label: "ค้นหาพิกัดหลังคาเรือน", href: "https://pikad-phlapphla-chai.vercel.app/", icon: MapPinned, desc: "ระบบค้นหาพิกัด", category: "ระบบงาน", external: true },
+      { label: "ตารางตรวจสุขภาพบุคลากร", href: "http://192.168.200.54:5600", icon: HeartPulse, desc: "ระบบตารางตรวจสุขภาพ", category: "ระบบงาน", external: true },
     ] : []),
   ];
 
@@ -499,6 +501,31 @@ export default function Sidebar() {
 
                 <div className="text-[10px] text-gray-400">
                   ระบบค้นหาพิกัด
+                </div>
+              </div>
+            </Link>
+
+            <Link
+              href="http://192.168.200.54:5600"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="
+    flex items-center gap-2.5
+    px-3 py-2.5 rounded-lg
+    text-sm font-medium
+    transition-colors
+    text-gray-600 hover:bg-[#e8f5ee]
+  "
+            >
+              <HeartPulse size={16} />
+
+              <div>
+                <div className="text-xs">
+                  ตารางตรวจสุขภาพบุคลากร
+                </div>
+
+                <div className="text-[10px] text-gray-400">
+                  ระบบตารางตรวจสุขภาพ
                 </div>
               </div>
             </Link>
