@@ -50,12 +50,32 @@ const PRESETS: { key: Preset; label: string }[] = [
     { key: "custom", label: "กำหนดเอง" },
 ];
 
-function presetRange(p: Exclude<Preset, "custom">): { start: Date; end: Date } {
+/** ปีงบประมาณ (พ.ศ.) ปัจจุบัน — งบเริ่ม 1 ต.ค. */
+function currentFiscalYearBE(): number {
+    const today = bangkokToday();
+    return (today.getMonth() >= 9 ? today.getFullYear() + 1 : today.getFullYear()) + 543;
+}
+
+/** ปีงบที่เลือกได้: ปีปัจจุบัน + ย้อนหลัง 5 ปี */
+const FISCAL_YEAR_BACK = 5;
+function fiscalYearOptions(): number[] {
+    const cur = currentFiscalYearBE();
+    return Array.from({ length: FISCAL_YEAR_BACK + 1 }, (_, i) => cur - i);
+}
+
+/** ช่วงวันของปีงบ พ.ศ. (1 ต.ค. ปีก่อน – 30 ก.ย.) ไม่เกินวันนี้ */
+function fiscalRange(yearBE: number): { start: Date; end: Date } {
+    const today = bangkokToday();
+    const ce = yearBE - 543;
+    const fyEnd = new Date(ce, 8, 30);
+    return { start: new Date(ce - 1, 9, 1), end: fyEnd > today ? today : fyEnd };
+}
+
+function presetRange(p: Exclude<Preset, "custom">, fiscalYearBE = currentFiscalYearBE()): { start: Date; end: Date } {
     const today = bangkokToday();
     if (p === "today") return { start: today, end: today };
     if (p === "month") return { start: new Date(today.getFullYear(), today.getMonth(), 1), end: today };
-    const fyStart = today.getMonth() >= 9 ? today.getFullYear() : today.getFullYear() - 1;
-    return { start: new Date(fyStart, 9, 1), end: today };
+    return fiscalRange(fiscalYearBE);
 }
 
 type TypeFilter = "ALL" | "OPD" | "IPD";
@@ -69,6 +89,7 @@ function statusOf(r: TransfusionRow): { label: string; cls: string } {
 export default function BloodTransfusionPage() {
     const initial = presetRange("month");
     const [preset, setPreset] = useState<Preset>("month");
+    const [fiscalYear, setFiscalYear] = useState<number>(currentFiscalYearBE);
     const [customStart, setCustomStart] = useState<Date>(initial.start);
     const [customEnd, setCustomEnd] = useState<Date>(initial.end);
     const [range, setRange] = useState({ start: toYmd(initial.start), end: toYmd(initial.end) });
@@ -105,10 +126,10 @@ export default function BloodTransfusionPage() {
         return () => c.abort();
     }, [range, load]);
 
-    function choosePreset(p: Preset) {
+    function choosePreset(p: Preset, fy = fiscalYear) {
         setPreset(p);
         if (p === "custom") return;
-        const r = presetRange(p);
+        const r = presetRange(p, fy);
         setCustomStart(r.start);
         setCustomEnd(r.end);
         setRange({ start: toYmd(r.start), end: toYmd(r.end) });
@@ -222,6 +243,22 @@ export default function BloodTransfusionPage() {
                         </button>
                     ))}
                 </div>
+                {preset === "fiscal" && (
+                    <select
+                        aria-label="ปีงบประมาณ"
+                        value={fiscalYear}
+                        onChange={(e) => {
+                            const fy = Number(e.target.value);
+                            setFiscalYear(fy);
+                            choosePreset("fiscal", fy);
+                        }}
+                        className="rounded-lg border border-gray-300 px-3 py-2 text-sm"
+                    >
+                        {fiscalYearOptions().map((y) => (
+                            <option key={y} value={y}>ปีงบประมาณ {y}</option>
+                        ))}
+                    </select>
+                )}
                 {preset === "custom" && (
                     <div className="flex flex-wrap items-center gap-2">
                         <DatePicker
