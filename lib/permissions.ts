@@ -52,10 +52,17 @@ export const FEATURE_PATHS = {
     "/pages/health-checkup",
     "/pages/appointment-dashboard",
     "/api/appointment-dashboard",
+    "/pages/blood-transfusion",
+    "/api/blood-transfusion",
   ],
 
   // งานการพยาบาลผู้ป่วยใน (IPD)
-  NURSING_IPD: ["/pages/productivity-ipd", "/api/productivity-ipd"],
+  NURSING_IPD: [
+    "/pages/productivity-ipd",
+    "/api/productivity-ipd",
+    "/pages/blood-transfusion",
+    "/api/blood-transfusion",
+  ],
 
   // งานการพยาบาลผู้ป่วยอุบัติเหตุฉุกเฉินและนิติเวช (ER)
   NURSING_ER: ["/pages/productivity-er", "/api/productivity-er"],
@@ -91,6 +98,8 @@ export const FEATURE_PATHS = {
     "/api/high-risk-procedures",
     "/pages/er-procedures",
     "/api/er-procedures",
+    "/pages/blood-transfusion",
+    "/api/blood-transfusion",
   ],
 
   // Sepsis (ทั้ง ER และหน่วยควบคุมการติดเชื้อต้องเห็น)
