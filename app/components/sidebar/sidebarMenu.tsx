@@ -291,6 +291,12 @@ export const DASHBOARD_GROUPS: SidebarSubGroup[] = [
         group: "disease",
       },
       {
+        label: "ผู้ป่วยที่ได้รับเลือด (PRC)",
+        href: "/pages/blood-transfusion",
+        icon: Droplet,
+        group: "disease",
+      },
+      {
         label: "อุบัติเหตุ",
         href: "/pages/accident-dashboard",
         icon: Ambulance,
