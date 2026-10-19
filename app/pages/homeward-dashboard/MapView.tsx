@@ -13,6 +13,9 @@ import {
     BedDouble,
 } from "lucide-react";
 import { useFetchOnce } from "@/app/components/dashboard/live/useFetchOnce";
+import NearbyRadiusPanel, {
+    type NearbyPatient,
+} from "@/app/components/map/NearbyRadiusPanel";
 import { timeAgo } from "@/app/components/dashboard/live/timeAgo";
 import type {
     HomeWardMapData,
@@ -234,6 +237,8 @@ export default function HomeWardMapView() {
             const m = L.marker([p.lat, p.lng], { icon }).bindPopup(popup, {
                 maxWidth: 300,
             });
+            // คลิกหมุด = เลือกผู้ป่วยเป็นจุดศูนย์กลางวงรัศมี
+            m.on("click", () => setSelectedId(p.id));
             m.addTo(layer);
             markerById.current.set(p.id, m);
             bounds.push([p.lat, p.lng]);
@@ -244,6 +249,25 @@ export default function HomeWardMapView() {
         }
     }, [filtered, mapReady]);
 
+
+    // ─── วงรัศมีรอบบ้านผู้ป่วยที่เลือก ───────────────────────────────────────────
+    const centerPoint = useMemo(() => {
+        const p = data?.points.find((x) => x.id === selectedId);
+        return p ? { id: p.id, lat: p.lat, lng: p.lng, fullName: p.name } : null;
+    }, [data, selectedId]);
+
+    const nearbyCandidates = useMemo<NearbyPatient[]>(
+        () =>
+            filtered.map((p) => ({
+                id: p.id,
+                lat: p.lat,
+                lng: p.lng,
+                fullName: p.name,
+                detail: `ต.${p.tambon} · ${p.pdx || "-"}`,
+                color: drugHex(p.drugType),
+            })),
+        [filtered],
+    );
     const focusPoint = (p: HomeWardMapPoint) => {
         setSelectedId(p.id);
         const map = mapRef.current;
@@ -479,6 +503,17 @@ export default function HomeWardMapView() {
                                 <RefreshCw size={16} className="animate-spin" /> กำลังโหลดข้อมูล…
                             </div>
                         </div>
+                    )}
+
+                    {centerPoint && mapReady && (
+                        <NearbyRadiusPanel
+                            L={LRef.current}
+                            map={mapRef.current}
+                            center={centerPoint}
+                            patients={nearbyCandidates}
+                            patientMarkers={markerById.current}
+                            onClose={() => setSelectedId(null)}
+                        />
                     )}
 
                     <div ref={mapElRef} className="w-full h-full" />
