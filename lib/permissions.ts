@@ -76,7 +76,6 @@ export const FEATURE_PATHS = {
     "/api/anc-nursing",
     "/pages/anc-anemia-map",
     "/api/anc-anemia-map",
-    "/api/pikad-nearby", // วงรัศมีรอบบ้านในแท็บแผนที่
     "/pages/anc-dashboard",
     "/api/anc-sheets",
   ],
@@ -95,7 +94,6 @@ export const FEATURE_PATHS = {
     "/pages/acs-map",
     "/api/acs-map",
     "/api/acs-sheets",
-    "/api/pikad-nearby", // วงรัศมีรอบบ้านในแท็บแผนที่
     "/pages/high-risk-procedures",
     "/api/high-risk-procedures",
     "/pages/er-procedures",
@@ -110,7 +108,6 @@ export const FEATURE_PATHS = {
     "/pages/sepsis-map",
     "/api/sepsis-map",
     "/api/sepsis-sheets",
-    "/api/pikad-nearby", // วงรัศมีรอบบ้านในแท็บแผนที่
   ],
 
   // โรคติดเชื้อ (วัณโรค)
@@ -119,7 +116,6 @@ export const FEATURE_PATHS = {
     "/api/tb-dashboard",
     "/pages/tb-map",
     "/api/tb-map",
-    "/api/pikad-nearby", // วงรัศมีรอบบ้านในแท็บแผนที่
   ],
 
   // จิตเวช / ยาเสพติด
@@ -136,7 +132,6 @@ export const FEATURE_PATHS = {
     "/pages/homeward-map",
     "/api/homeward-map",
     "/api/homeward-sheets",
-    "/api/pikad-nearby", // วงรัศมีรอบบ้านในแท็บแผนที่
   ],
 
   // IMC (ดูได้ทั้งพยาบาลและกายภาพ)
@@ -145,7 +140,6 @@ export const FEATURE_PATHS = {
     "/pages/imc-map",
     "/api/imc-map",
     "/api/imc-sheets",
-    "/api/pikad-nearby", // วงรัศมีรอบบ้านในแท็บแผนที่
   ],
 
   // กายภาพบำบัด

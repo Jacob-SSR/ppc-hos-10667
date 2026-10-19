@@ -505,13 +505,14 @@ export default function HomeWardMapView() {
                         </div>
                     )}
 
-                    {centerPoint && mapReady && (
+                    {mapReady && (
                         <NearbyRadiusPanel
                             L={LRef.current}
                             map={mapRef.current}
                             center={centerPoint}
                             patients={nearbyCandidates}
                             patientMarkers={markerById.current}
+                            onRecenter={setSelectedId}
                             onClose={() => setSelectedId(null)}
                         />
                     )}
