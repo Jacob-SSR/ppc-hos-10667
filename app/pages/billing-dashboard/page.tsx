@@ -10,6 +10,7 @@ import { UnitCard } from "./components/UnitCard";
 import { RemarkTable } from "./components/RemarkTable";
 import BillingBarChart from "./components/BillingBarChart";
 import BillingCrossTab from "./BillingCrossTab";
+import { SheetModifiedBadge } from "@/app/components/dashboard/live";
 
 const fmt = (n: number) => n.toLocaleString("th-TH");
 
@@ -51,6 +52,7 @@ export default function BillingDashboardPage() {
                 · อัปเดต {new Date(data.updatedAt).toLocaleString("th-TH")}
               </span>
             )}
+            <SheetModifiedBadge sources={["billing"]} className="ml-2" />
           </p>
         </div>
         <button

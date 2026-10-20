@@ -4,6 +4,7 @@ export {
   getFirstSheetTitle,
   getAllSheetTitles,
   getValues,
+  getSpreadsheetModifiedTime,
 } from "./client";
 export {
   toStr,
@@ -16,3 +17,10 @@ export {
 } from "./coerce";
 export { parseDate, beToCe, monthLabelShort } from "./parseDate";
 export { sheetsError } from "./response";
+export {
+  SHEET_SOURCES,
+  isSheetSourceKey,
+  getSheetsModified,
+  type SheetSourceKey,
+  type SheetModifiedInfo,
+} from "./modified";

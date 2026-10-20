@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { SheetModifiedBadge } from "@/app/components/dashboard/live";
 
 // ─── Types (ตรงกับ /api/anc-sheets) ───────────────────────────────────────────
 interface AncRow {
@@ -200,6 +201,7 @@ export default function AncDashboardPage() {
                 <div className="badge-year">
                     ปีงบประมาณ 2569
                     {data && <span className="upd"> · อัปเดต {new Date(data.updatedAt).toLocaleString("th-TH")}</span>}
+                    <SheetModifiedBadge sources={["anc"]} className="upd ml-1" />
                 </div>
             </div>
 

@@ -12,7 +12,7 @@ import {
     CheckCircle, MapPin, ChevronUp, ChevronDown, Search, X, Download,
 } from "lucide-react";
 import * as XLSX from "xlsx";
-import { useAutoRefresh, timeAgo, CountdownRing } from "@/app/components/dashboard/live";
+import { useAutoRefresh, timeAgo, CountdownRing, SheetModifiedBadge } from "@/app/components/dashboard/live";
 import AiSummaryCard from "@/app/components/ai/AiSummaryCard";
 import type { StrokeSheetsDashboardData, StrokeSheetRow } from "@/app/api/stroke-sheets/route";
 
@@ -366,6 +366,7 @@ export default function StrokeOverviewView() {
                                     <span>Sheet: {data.sheetName}</span>
                                 </>
                             )}
+                            <SheetModifiedBadge sources={["stroke"]} />
                         </div>
                     </div>
                 </div>

@@ -7,3 +7,9 @@ export { HBarList } from "./HBarList";
 export { SectionCard } from "./SectionCard";
 export { MiniPagination } from "./MiniPagination";
 export { LiveBadge, ConnectionStatus, RefreshButton } from "./LiveBadge";
+export {
+  SheetModifiedBadge,
+  useSheetsModified,
+  formatSheetTime,
+  isSheetStale,
+} from "./SheetModifiedBadge";

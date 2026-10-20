@@ -1,6 +1,11 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import {
+    useSheetsModified,
+    formatSheetTime,
+    isSheetStale,
+} from "@/app/components/dashboard/live";
 
 interface DiskInfo {
     mount: string;
@@ -118,6 +123,61 @@ function ServerCard({ server }: { server: ServerStats }) {
     );
 }
 
+/** เวลาที่ Google Sheet แต่ละไฟล์ถูกแก้ไขล่าสุด — ใหม่สุดขึ้นก่อน, ชีตที่ดึงไม่ได้อยู่ท้าย */
+function SheetsModifiedTable() {
+    const { items, error } = useSheetsModified();
+    const rows = [...(items ?? [])].sort((a, b) =>
+        (b.modifiedAt ?? "").localeCompare(a.modifiedAt ?? ""),
+    );
+
+    return (
+        <section className="mt-8 rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
+            <h2 className="text-lg font-semibold text-gray-800">Google Sheets — แก้ไขล่าสุด</h2>
+            <p className="mb-4 text-sm text-gray-500">
+                เวลาที่มีคนแก้ไขชีตจริง (จาก Google Drive) · สีส้ม = ไม่มีการแก้ไขเกิน 7 วัน
+            </p>
+            {error && (
+                <p className="rounded-lg bg-red-50 p-3 text-sm text-red-600">ดึงข้อมูลไม่ได้: {error}</p>
+            )}
+            {!items && !error && <p className="text-sm text-gray-500">กำลังโหลด...</p>}
+            {rows.length > 0 && (
+                <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                        <thead>
+                            <tr className="border-b border-gray-200 text-left text-gray-500">
+                                <th className="py-2 pr-4 font-medium">ชีต</th>
+                                <th className="py-2 font-medium">แก้ไขล่าสุด</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {rows.map((r) => (
+                                <tr key={r.key} className="border-b border-gray-100 last:border-0">
+                                    <td className="py-2 pr-4 text-gray-700">{r.label}</td>
+                                    <td className="py-2">
+                                        {r.modifiedAt ? (
+                                            <span
+                                                className={
+                                                    isSheetStale(r.modifiedAt)
+                                                        ? "font-semibold text-amber-600"
+                                                        : "text-gray-700"
+                                                }
+                                            >
+                                                {formatSheetTime(r.modifiedAt)}
+                                            </span>
+                                        ) : (
+                                            <span className="text-red-600">{r.error ?? "-"}</span>
+                                        )}
+                                    </td>
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
+                </div>
+            )}
+        </section>
+    );
+}
+
 export default function ServerStatusPage() {
     const [servers, setServers] = useState<ServerStats[]>([]);
     const [fetchedAt, setFetchedAt] = useState<string>("");
@@ -173,6 +233,8 @@ export default function ServerStatusPage() {
                     <p className="text-gray-500">กำลังดึงข้อมูลจากทั้ง 3 เครื่อง...</p>
                 )}
             </div>
+
+            <SheetsModifiedTable />
         </main>
     );
 }

@@ -11,7 +11,7 @@ import {
     Users, AlertTriangle, Building2, MapPin, Activity, TrendingUp,
     CheckCircle2,
 } from "lucide-react";
-import { useAutoRefresh } from "@/app/components/dashboard/live";
+import { useAutoRefresh, SheetModifiedBadge } from "@/app/components/dashboard/live";
 import AiSummaryCard from "@/app/components/ai/AiSummaryCard";
 import type { HomeWardSheetsData, HomeWardSheetRow, HomeWardSummary } from "@/app/api/homeward-sheets/route";
 
@@ -548,6 +548,7 @@ export default function HomeWardDashboardOverview() {
                         <p className="text-xs mt-0.5" style={{ color: C.lightL }}>
                             รพ.พลับพลาชัย · อัปเดตทุก 30 วินาที
                             {data && <span className="ml-2">· อัปเดตล่าสุด {new Date(data.updatedAt).toLocaleTimeString("th-TH")}</span>}
+                            <SheetModifiedBadge sources={["homeward"]} className="ml-2" staleClassName="text-amber-200 font-semibold" />
                         </p>
                     </div>
                     <div className="flex items-center gap-3">

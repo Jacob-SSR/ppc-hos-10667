@@ -15,6 +15,7 @@ import { exportToExcel } from "@/lib/exportExcel";
 import {
     useAutoRefresh, timeAgo, CountdownRing, KpiCard, HBarList,
     SectionCard, MiniPagination, LiveBadge, ConnectionStatus, RefreshButton,
+    SheetModifiedBadge,
 } from "@/app/components/dashboard/live";
 import AiSummaryCard from "@/app/components/ai/AiSummaryCard";
 import { usePagination } from "@/hooks/usePagination";
@@ -527,6 +528,7 @@ export default function SepsisOverviewView() {
                                 <span>Sheets: {data.sheetNames.join(", ")}</span>
                             </>
                         )}
+                        <SheetModifiedBadge sources={["sepsis"]} />
                     </p>
                 </div>
 

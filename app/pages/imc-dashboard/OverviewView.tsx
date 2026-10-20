@@ -11,6 +11,7 @@ import {
 import {
     useAutoRefresh, timeAgo, CountdownRing, KpiCard, HBarList,
     SectionCard, LiveBadge, ConnectionStatus, RefreshButton,
+    SheetModifiedBadge,
 } from "@/app/components/dashboard/live";
 import AiSummaryCard from "@/app/components/ai/AiSummaryCard";
 
@@ -342,6 +343,7 @@ export default function ImcOverviewView() {
                     <p className="text-xs text-gray-400 mt-0.5 flex items-center gap-2">
                         <span>Intermediate Care · โรงพยาบาลพลับพลาชัย — ดึงข้อมูลจาก Google Sheets แบบ Real-time</span>
                         {data && (<><span>·</span><Clock size={11} /><span>อัปเดต {timeAgo(data.updatedAt)}</span></>)}
+                        <SheetModifiedBadge sources={["imc"]} />
                     </p>
                 </div>
                 <div className="flex items-center gap-3">

@@ -3,6 +3,8 @@
 import { Suspense, type ReactNode } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { LayoutDashboard, MapPinned } from "lucide-react";
+import { SheetModifiedBadge } from "@/app/components/dashboard/live";
+import type { SheetSourceKey } from "@/lib/sheets/modified";
 
 /**
  * ห่อหน้า Dashboard + แผนที่ ให้อยู่หน้าเดียวกันแบบสลับแท็บ
@@ -15,6 +17,8 @@ type Props = {
     map: ReactNode;
     overviewLabel?: string;
     mapLabel?: string;
+    /** ชีตที่แท็บแผนที่ใช้ → แสดง "ชีตแก้ไขล่าสุด" ที่แถบแท็บตอนเปิดแผนที่ */
+    mapSheetSources?: SheetSourceKey[];
 };
 
 function TabButton({
@@ -48,6 +52,7 @@ function TabsInner({
     map,
     overviewLabel = "ภาพรวม",
     mapLabel = "แผนที่บ้าน",
+    mapSheetSources,
 }: Props) {
     const searchParams = useSearchParams();
     const router = useRouter();
@@ -79,6 +84,11 @@ function TabsInner({
                 >
                     {mapLabel}
                 </TabButton>
+                {tab === "map" && mapSheetSources && (
+                    <div className="ml-auto hidden sm:block pr-1 text-[11px] text-gray-400">
+                        <SheetModifiedBadge sources={mapSheetSources} leadingDot={false} />
+                    </div>
+                )}
             </div>
 
             {tab === "map" ? (
