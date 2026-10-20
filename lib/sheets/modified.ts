@@ -23,7 +23,7 @@ export const SHEET_SOURCES = {
   sepsis: { label: "Sepsis", env: "Sepsis_SPREADSHEET_ID" },
   stm: { label: "STM", env: "STM_SHEET_ID" },
   tb: { label: "TB", env: "TB_SPREADSHEET_ID" },
-  pikad: { label: "พิกัดหลังคาเรือน (แผนที่)", env: "PIKAD_SPREADSHEET_ID" },
+  pikad: { label: "พิกัดหลังคาเรือน", env: "PIKAD_SPREADSHEET_ID" },
 } as const satisfies Record<string, { label: string; env: string }>;
 
 export type SheetSourceKey = keyof typeof SHEET_SOURCES;

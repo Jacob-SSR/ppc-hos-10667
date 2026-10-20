@@ -68,10 +68,13 @@ export function useSheetsModified(keys: SheetSourceKey[] = []) {
 export function SheetModifiedBadge({
   sources,
   className = "",
+  leadingDot = true,
   staleClassName = "text-amber-600 font-semibold",
 }: {
   sources: SheetSourceKey[];
   className?: string;
+  /** false = ไม่มี "·" นำหน้า (ใช้เมื่อ badge ไม่ได้ต่อท้ายข้อความอื่น) */
+  leadingDot?: boolean;
   /** header พื้นเข้มส่งสีอ่อนกว่านี้มาแทน */
   staleClassName?: string;
 }) {
@@ -82,7 +85,7 @@ export function SheetModifiedBadge({
   const multi = shown.length > 1;
   return (
     <span className={`inline-flex items-center gap-1 flex-wrap ${className}`}>
-      <span>·</span>
+      {leadingDot && <span>·</span>}
       <FileSpreadsheet size={10} />
       <span>ชีตแก้ไขล่าสุด</span>
       {shown.map((i, idx) => (

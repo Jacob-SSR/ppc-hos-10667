@@ -21,6 +21,7 @@ export default function Page() {
             overview={<Overview />}
             map={<MapView />}
             mapLabel="แผนที่บ้านผู้ป่วยวัณโรค"
+            mapSheetSources={["tb", "pikad"]}
         />
     );
 }
