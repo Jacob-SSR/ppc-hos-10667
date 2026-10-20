@@ -16,6 +16,7 @@ import {
 import { exportToExcel } from "@/lib/exportExcel";
 import { usePagination } from "@/hooks/usePagination";
 import type { D506Row } from "@/lib/d506Sheets.service";
+import { SheetModifiedBadge } from "@/app/components/dashboard/live";
 
 interface Payload {
   updatedAt: string;
@@ -315,7 +316,10 @@ export default function D506DashboardPage() {
           </div>
           <div>
             <h1 className="text-xl font-extrabold" style={{ color: MINT }}>D506 Dashboard — ระบาดวิทยา</h1>
-            <p className="text-xs text-gray-400">โรงพยาบาลพลับพลาชัย · ระบบติดตามโรคที่ต้องรายงาน (506)</p>
+            <p className="text-xs text-gray-400">
+              โรงพยาบาลพลับพลาชัย · ระบบติดตามโรคที่ต้องรายงาน (506)
+              <SheetModifiedBadge sources={["d506"]} className="ml-1" />
+            </p>
           </div>
         </div>
         <div className="flex items-center gap-2">

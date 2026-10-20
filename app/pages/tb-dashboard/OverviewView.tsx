@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 import type { TBDashboardData, TBRow, TBByYear } from "@/app/api/tb-dashboard/route";
 import AiSummaryCard from "@/app/components/ai/AiSummaryCard";
+import { SheetModifiedBadge } from "@/app/components/dashboard/live";
 
 // ─── Colors ───────────────────────────────────────────────────────────────────
 const C = {
@@ -675,6 +676,7 @@ export default function TBDashboardOverview() {
                     <p className="text-xs text-gray-400 mt-0.5">
                         ตามมาตรฐาน WHO / กรมควบคุมโรค · รพ.พลับพลาชัย จ.บุรีรัมย์
                         {data && <span className="ml-2">· อัปเดต {new Date(data.updatedAt).toLocaleString("th-TH")}</span>}
+                        <SheetModifiedBadge sources={["tb"]} className="ml-2" />
                     </p>
                 </div>
                 <button onClick={() => fetchData()} disabled={loading}

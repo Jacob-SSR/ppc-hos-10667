@@ -12,6 +12,7 @@ import {
 import {
     useAutoRefresh, timeAgo, CountdownRing, KpiCard, HBarList,
     SectionCard, MiniPagination, LiveBadge, ConnectionStatus, RefreshButton,
+    SheetModifiedBadge,
 } from "@/app/components/dashboard/live";
 import { usePagination } from "@/hooks/usePagination";
 import type { MiniThanSummary, MiniThanDashboardData, MiniThanRow } from "@/app/api/minithan-sheets/route";
@@ -252,6 +253,7 @@ export default function MiniThanDashboardOverview() {
                         <p className="text-xs mt-0.5" style={{ color: C.midL }}>
                             รพ.พลับพลาชัย · โปรแกรม IMC · อัปเดตทุก 30 วินาที
                             {data && <span className="ml-2">· อัปเดต {timeAgo(data.updatedAt)}</span>}
+                            <SheetModifiedBadge sources={["minithan"]} className="ml-2" staleClassName="text-amber-200 font-semibold" />
                         </p>
                     </div>
                     <div className="flex items-center gap-3">

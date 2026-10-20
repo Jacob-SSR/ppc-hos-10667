@@ -10,6 +10,7 @@ import {
   Building2, MapPin, ChevronDown, Filter,
 } from "lucide-react";
 import React from "react";
+import { SheetModifiedBadge } from "@/app/components/dashboard/live";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 interface KtbServiceSummary {
@@ -489,6 +490,7 @@ export default function KtbDashboardPage() {
           <p className="text-xs text-gray-400 mt-0.5">
             รายการที่ชดเชยแล้วแต่ยังไม่ได้รับการชดเชย
             {data && <span className="ml-2">· อัปเดต {new Date(data.updatedAt).toLocaleString("th-TH")}</span>}
+            <SheetModifiedBadge sources={["ktb"]} className="ml-2" />
           </p>
         </div>
         <button onClick={() => fetchData(true)} disabled={loading}

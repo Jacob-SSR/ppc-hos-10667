@@ -12,6 +12,7 @@ import {
 import {
   useAutoRefresh, timeAgo, CountdownRing, KpiCard, HBarList,
   SectionCard, LiveBadge, ConnectionStatus, RefreshButton,
+  SheetModifiedBadge,
 } from "@/app/components/dashboard/live";
 import AiSummaryCard from "@/app/components/ai/AiSummaryCard";
 
@@ -113,6 +114,7 @@ export default function AccidentOverviewView() {
                 <span>อัปเดต {timeAgo(data.updatedAt)}</span>
               </>
             )}
+            <SheetModifiedBadge sources={["accident"]} />
           </p>
         </div>
 

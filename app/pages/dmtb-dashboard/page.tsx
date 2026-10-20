@@ -20,6 +20,7 @@ import {
     CartesianGrid,
     ResponsiveContainer,
 } from "recharts";
+import { SheetModifiedBadge } from "@/app/components/dashboard/live";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 interface TbItemSummary {
@@ -729,6 +730,7 @@ export default function TbDashboardPage() {
                     <p className="text-xs text-gray-400 mt-0.5">
                         แยกตามประเภทที่ขอเบิก — โรงพยาบาลพลับพลาชัย · ดึงข้อมูลจาก Google Sheets
                         {data && <span className="ml-2">· อัปเดต {new Date(data.updatedAt).toLocaleString("th-TH")}</span>}
+                        <SheetModifiedBadge sources={["dmtb"]} className="ml-2" />
                     </p>
                 </div>
                 <button

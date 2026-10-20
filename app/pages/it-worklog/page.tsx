@@ -25,6 +25,7 @@ import {
     Activity, Users, Info, Calendar,
 } from "lucide-react";
 import { PieChart, Pie, Cell, Tooltip as PieTooltip, ResponsiveContainer } from "recharts";
+import { SheetModifiedBadge } from "@/app/components/dashboard/live";
 
 const MINT = { 500: "#3aa36a", 700: "#236b43" };
 
@@ -62,6 +63,7 @@ export default function ItWorklogPage() {
                         </h1>
                         <p className="text-[11px] mt-0.5" style={{ color: "#a8d5ba" }}>
                             โหลดจาก Google Sheets
+                            <SheetModifiedBadge sources={["itWorklog"]} className="ml-1" staleClassName="text-amber-200 font-semibold" />
                         </p>
                     </div>
                 </div>

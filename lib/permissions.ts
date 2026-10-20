@@ -43,6 +43,7 @@ export const FEATURE_PATHS = {
     "/pages/settings",
     "/api/change-password",
     "/api/ai",
+    "/api/sheets-modified", // แค่เวลาแก้ไขชีต ไม่มีข้อมูลผู้ป่วย — badge ในทุก dashboard ที่ดึงจาก Google Sheets
   ],
 
   // งานการพยาบาลผู้ป่วยนอก (OPD)

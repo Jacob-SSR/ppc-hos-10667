@@ -13,6 +13,7 @@ import {
 import {
   useAutoRefresh, timeAgo, CountdownRing, KpiCard, HBarList,
   SectionCard, MiniPagination, LiveBadge, ConnectionStatus, RefreshButton,
+  SheetModifiedBadge,
 } from "@/app/components/dashboard/live";
 import { usePagination } from "@/hooks/usePagination";
 import type { DrugDashboardSummary, DrugSheetsDashboardData, DrugKpiItem } from "@/app/api/drug-sheets/route";
@@ -321,6 +322,7 @@ export default function DrugDashboardOverview() {
             <span>ดึงข้อมูลจาก Google Sheets แบบ Real-time</span>
             {data && (<><span>·</span><Clock size={11} /><span>อัปเดต {timeAgo(data.updatedAt)}</span>
               <span>·</span><span>Sheet: {data.sheetName}</span></>)}
+            <SheetModifiedBadge sources={["drug"]} />
           </p>
         </div>
         <div className="flex items-center gap-3">

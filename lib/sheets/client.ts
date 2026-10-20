@@ -53,3 +53,27 @@ export async function getValues(
   const res = await sheets.spreadsheets.values.get({ spreadsheetId, range });
   return (res.data.values ?? []) as string[][];
 }
+
+/**
+ * เวลาที่ไฟล์ spreadsheet ถูกแก้ไขล่าสุด (ISO string) — Sheets API ไม่มีให้ ต้องถาม Drive API
+ * ต้องเปิด "Google Drive API" ใน GCP project เดียวกับ service account
+ * และ service account ต้องมีสิทธิ์เข้าถึงไฟล์ (แชร์ไฟล์ให้แล้วก็พอ)
+ */
+export async function getSpreadsheetModifiedTime(
+  spreadsheetId: string,
+): Promise<string | null> {
+  const auth = new google.auth.GoogleAuth({
+    credentials: {
+      client_email: process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL,
+      private_key: process.env.GOOGLE_PRIVATE_KEY?.replace(/\\n/g, "\n"),
+    },
+    scopes: ["https://www.googleapis.com/auth/drive.metadata.readonly"],
+  });
+  const drive = google.drive({ version: "v3", auth });
+  const res = await drive.files.get({
+    fileId: spreadsheetId,
+    fields: "modifiedTime",
+    supportsAllDrives: true,
+  });
+  return res.data.modifiedTime ?? null;
+}

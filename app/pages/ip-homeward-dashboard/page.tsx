@@ -14,6 +14,7 @@ import {
 import {
     useAutoRefresh, timeAgo, CountdownRing, KpiCard,
     SectionCard, LiveBadge, ConnectionStatus, RefreshButton,
+    SheetModifiedBadge,
 } from "@/app/components/dashboard/live";
 import type { IpHomeWardData, FundKey } from "@/lib/ip-homeward.types";
 import AiSummaryCard from "@/app/components/ai/AiSummaryCard";
@@ -118,6 +119,7 @@ export default function IpHomeWardDashboardPage() {
                                 <span>อัปเดต {timeAgo(data.updatedAt)}</span>
                             </>
                         )}
+                        <SheetModifiedBadge sources={["ipHomeward"]} />
                     </p>
                 </div>
                 <div className="flex items-center gap-3">

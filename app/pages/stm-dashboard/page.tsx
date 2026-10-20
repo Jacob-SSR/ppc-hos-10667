@@ -10,6 +10,7 @@ import {
   RefreshCw, TrendingUp, BadgeCheck, AlertTriangle, Info,
   Building2, ChevronDown, ChevronLeft, ChevronRight,
 } from "lucide-react";
+import { SheetModifiedBadge } from "@/app/components/dashboard/live";
 
 const PAGE_SIZE = 50;
 
@@ -625,6 +626,7 @@ export default function StmDashboardPage() {
           <p className="text-xs text-gray-400 mt-0.5">
             ข้อมูลเรียลไทม์จาก Google Sheet · สรุปยอดเรียกเก็บและยอดชดเชยทั้งสิ้น · {segLabel}
             {data && <span className="ml-2">· อัปเดต {new Date(data.updatedAt).toLocaleString("th-TH")}</span>}
+            <SheetModifiedBadge sources={["stm"]} className="ml-2" />
           </p>
         </div>
         <button onClick={() => fetchData(true)} disabled={loading}
