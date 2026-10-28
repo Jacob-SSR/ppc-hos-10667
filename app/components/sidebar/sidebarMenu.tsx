@@ -1,6 +1,7 @@
 import {
   LayoutDashboard,
   BarChart3,
+  MessageSquareText,
   FileEdit,
   UserX,
   Smile,
@@ -344,6 +345,12 @@ export const REPORT_ITEMS: SidebarItem[] = [
     label: "สถิติผู้ป่วยตามกลุ่มโรค (ICD-10)",
     href: "/pages/icd10-report",
     icon: BarChart3,
+    group: "report",
+  },
+  {
+    label: "diagtext ที่ลงมากที่สุด",
+    href: "/pages/diagtext-dashboard",
+    icon: MessageSquareText,
     group: "report",
   },
   {

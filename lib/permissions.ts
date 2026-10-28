@@ -192,6 +192,8 @@ export const FEATURE_PATHS = {
     "/api/appointment-dashboard",
     "/pages/icd10-report",
     "/api/icd10-report",
+    "/pages/diagtext-dashboard",
+    "/api/diagtext-dashboard",
     "/pages/report",
     "/api/report",
     "/pages/no-endpoint",
