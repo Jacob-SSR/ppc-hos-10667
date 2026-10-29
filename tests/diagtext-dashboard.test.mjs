@@ -37,12 +37,12 @@ test("person source uses whitelisted column or falls back to ovstdiag", () => {
 
 test("year summary ranks texts per month, quarter and fiscal year", () => {
   const texts = [
-    { ym: "2026-10", diag_text: "URI", visits: 5 },
-    { ym: "2026-10", diag_text: "uri ", visits: 1 },
-    { ym: "2026-10", diag_text: "1. HT\n2. DM", visits: 3 },
-    { ym: "2026-11", diag_text: "HT", visits: 4 },
-    { ym: "2027-01", diag_text: "Dyspepsia", visits: 2 },
-    { ym: "2025-09", diag_text: "out of year", visits: 99 },
+    { ym: "2026-10", code: "D1", diag_text: "URI", visits: 5 },
+    { ym: "2026-10", code: "D1", diag_text: "uri ", visits: 1 },
+    { ym: "2026-10", code: "D1", diag_text: "1. HT\n2. DM", visits: 3 },
+    { ym: "2026-11", code: "D2", diag_text: "HT", visits: 4 },
+    { ym: "2027-01", code: null, diag_text: "Dyspepsia", visits: 2 },
+    { ym: "2025-09", code: "D1", diag_text: "out of year", visits: 99 },
   ];
   const persons = [
     { ym: "2026-10", code: "D1", name: "หมอ ก", entries: 7, visits: 6 },
@@ -61,6 +61,11 @@ test("year summary ranks texts per month, quarter and fiscal year", () => {
   assert.equal(r.quarters[0].top[0].text, "HT");
   assert.equal(r.quarters[0].top[0].visits, 7);
   assert.deepEqual(r.quarters[0].persons.map(p => [p.code, p.entries]), [["D1", 8], ["D2", 4]]);
+  // D1 เดือน ต.ค.: URI 6 + HT 3 + DM 3 = 12 ครั้ง → URI 50%
+  const d1 = oct.persons.find(p => p.code === "D1");
+  assert.equal(d1.text_total, 12);
+  assert.deepEqual(d1.texts.map(t => [t.text, t.visits, t.share]), [["URI", 6, 0.5], ["DM", 3, 0.25], ["HT", 3, 0.25]]);
+  assert.deepEqual(r.quarters[0].persons.find(p => p.code === "D2").texts, [{ text: "HT", visits: 4, share: 1 }]);
   assert.equal(r.quarters[1].top[0].text, "Dyspepsia");
   assert.equal(r.quarters[1].persons[0].name, "ไม่ระบุผู้ลง");
   assert.equal(r.year.opd_visits, 19);
@@ -83,6 +88,8 @@ test("day summary counts each visit once per text and ranks persons", () => {
   assert.equal(r.diag_visits, 2);
   assert.deepEqual(r.persons.map(p => [p.name, p.entries, p.visits]), [["หมอ ก", 2, 1], ["D2", 1, 1]]);
   assert.deepEqual(r.visits[0].texts, ["URI", "Fever"]);
+  assert.equal(r.persons[0].text_total, 2);
+  assert.deepEqual(r.persons[0].texts.map(t => [t.text, t.share]), [["Fever", 0.5], ["URI", 0.5]]);
 });
 
 // VN 3 มี ovstdiag แค่โรครอง (diagtype 2) → โหมดถอยไปใช้แพทย์โรคหลักต้องได้ "ไม่ระบุผู้ลง"
@@ -115,6 +122,7 @@ test("year queries run end to end and exclude blank text and other years", () =>
     assert.equal(r.year.diag_visits, 3);
     assert.equal(r.year.entries, 3);
     if (person.kind === "column") assert.deepEqual(r.year.persons.map(p => p.name), ["หมอ ก", "หมอ ข", "ไม่ระบุผู้ลง"]);
+    if (person.kind === "column") assert.deepEqual(r.year.persons.map(p => p.texts.map(t => t.text)), [["URI"], ["uri"], ["HT"]]);
     else assert.deepEqual(r.year.persons.map(p => [p.name, p.entries]), [["หมอ ฌ", 2], ["ไม่ระบุผู้ลง", 1]]);
   }
 });
@@ -129,9 +137,10 @@ test("day query returns visits of the chosen date only", () => {
 });
 
 test("csv neutralizes formulas and REPORT roles can open the page", () => {
-  const csv = diagtextCsv("t", [{ text: "=cmd", visits: 1 }], [{ code: "D1", name: "หมอ", entries: 2, visits: 1 }]);
+  const csv = diagtextCsv("t", [{ text: "=cmd", visits: 1 }], [{ code: "D1", name: "หมอ", entries: 2, visits: 1, text_total: 2, texts: [{ text: "URI", visits: 2, share: 1 }] }]);
   assert.ok(csv.startsWith("﻿"));
   assert.ok(csv.includes(`"'=cmd"`));
+  assert.ok(csv.includes(`"หมอ","D1","1","URI","2","100.0%"`));
   assert.ok(canAccessPath("FINANCE", "/pages/diagtext-dashboard"));
   assert.ok(canAccessPath("FINANCE", "/api/diagtext-dashboard/day"));
   assert.ok(!canAccessPath("USER", "/api/diagtext-dashboard"));
