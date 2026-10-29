@@ -101,6 +101,18 @@
 .groupRow { background: color-mix(in oklch, var(--report-soft), transparent 40%); }
 .groupRow th { color: var(--report-accent); font-weight: 600 !important; }
 
+.personTable > tbody > tr:not(.personDetail) > td:nth-child(2) { min-width: 150px; }
+.personButton { display: inline-flex; align-items: center; gap: 4px; padding: 0; border: 0; background: transparent; color: var(--report-ink); text-align: left; font-weight: 500; overflow-wrap: anywhere; }
+.personButton:hover { color: var(--report-accent); }
+.chevron, .chevronOpen { flex-shrink: 0; color: var(--report-muted); transition: transform .16s; }
+.chevronOpen { transform: rotate(90deg); color: var(--report-accent); }
+.report .personDetail > td { padding: 4px 16px 16px 56px; background: var(--report-soft); }
+.personSummary { font-size: .8125rem; color: var(--report-muted); padding: 8px 0; }
+.personSummary b { color: var(--report-ink); font-weight: 500; }
+.report .personTexts { font-size: .8125rem; background: var(--report-surface); border-radius: 8px; overflow: hidden; }
+.report .personTexts :is(th, td) { padding: 6px 12px; }
+.report .personTexts thead th { background: var(--report-surface); border-bottom: 1px solid var(--report-line); }
+
 .visitTable { min-width: 820px; }
 .diagnosis { white-space: pre-wrap; min-width: 240px; overflow-wrap: anywhere; }
 .pagination { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 14px 20px; border-top: 1px solid var(--report-line); font-size: .75rem; color: var(--report-muted); }
@@ -115,6 +127,7 @@
 :global(html.dark) .report table :is(td,th) { color: var(--report-ink) !important; background: transparent !important; }
 :global(html.dark) .report table thead th, :global(html.dark) .report tr:hover :is(td, th) { background: var(--report-soft) !important; }
 :global(html.dark) .report .groupRow th { color: var(--report-accent) !important; }
+:global(html.dark) .report .personDetail > td { background: var(--report-soft) !important; }
 :global(html.dark) .report .error { background: oklch(28% .035 30); color: oklch(85% .075 30); border-color: oklch(48% .075 30); }
 
 @container (max-width: 1000px) {
@@ -134,6 +147,7 @@
   .chartPanel { padding: 16px 12px; }
   .pagination { flex-direction: column; align-items: stretch; }
   .pagination > div { justify-content: space-between; }
+  .report .personDetail > td { padding: 4px 8px 12px; }
 }
 @media (prefers-reduced-motion: reduce) { .report * { animation: none !important; transition: none !important; } }
 @media print {

@@ -1,9 +1,9 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Legend } from "recharts";
 import { AlertCircle, CalendarDays, ChevronLeft, ChevronRight, Download, LoaderCircle, MessageSquareText, Printer, RefreshCw, Trophy } from "lucide-react";
-import { QUARTER_LABELS, diagtextCsv, type Bucket, type DaySummary, type PersonRank, type TopText, type YearSummary } from "@/lib/diagtext-dashboard";
+import { PERSON_TEXT_TOP, QUARTER_LABELS, diagtextCsv, type Bucket, type DaySummary, type PersonRank, type TopText, type YearSummary } from "@/lib/diagtext-dashboard";
 import { currentReportYear } from "@/lib/report-period";
 import styles from "./diagtext.module.css";
 
@@ -107,7 +107,7 @@ export default function DiagtextDashboardPage() {
     <div className={styles.pageHeading}>
       <div>
         <div className={styles.eyebrow}>รายงานเวชระเบียน <span>/</span> diagtext</div>
-        <h1>ข้อความวินิจฉัยที่ลงมากที่สุด</h1>
+        <h1>diagtext ที่ลงมากที่สุด</h1>
         <p>อันดับ diagtext รายปีงบ รายไตรมาส รายเดือน และรายวัน พร้อมอันดับผู้ลง</p>
       </div>
       <span className={styles.pageTag}><MessageSquareText size={15} aria-hidden="true" /> ovst_doctor_diag</span>
@@ -150,7 +150,7 @@ export default function DiagtextDashboardPage() {
 
     {error && <div role="alert" className={styles.error}><AlertCircle size={19} aria-hidden="true" /><div><strong>โหลดข้อมูลไม่สำเร็จ</strong><p>{error}</p></div>
       <button type="button" className={styles.secondaryButton} onClick={scope === "day" ? dayData.reload : year.reload}><RefreshCw size={15} aria-hidden="true" /> ลองใหม่</button></div>}
-    {loading && <div className={styles.loading} role="status"><LoaderCircle size={23} className={styles.spin} aria-hidden="true" /><div><strong>กำลังรวบรวม diagtext</strong><p>{scope === "day" ? "กำลังดึง visit ของวันที่เลือก" : `กำลังนับข้อความวินิจฉัยทั้งปีงบ ${fy + 543} อาจใช้เวลาสักครู่ในครั้งแรก`}</p></div></div>}
+    {loading && <div className={styles.loading} role="status"><LoaderCircle size={23} className={styles.spin} aria-hidden="true" /><div><strong>กำลังรวบรวม diagtext</strong><p>{scope === "day" ? "กำลังดึง visit ของวันที่เลือก" : `กำลังนับ diagtext ทั้งปีงบ ${fy + 543} อาจใช้เวลาสักครู่ในครั้งแรก`}</p></div></div>}
 
     {view && !loading && <div className={styles.results}>
       <section aria-label="สรุปผล">
@@ -172,8 +172,8 @@ export default function DiagtextDashboardPage() {
 
       {view.diag > 0 ? <div className={styles.columns}>
         <TopTextPanel top={view.top} total={view.diag} />
-        <PersonPanel persons={view.persons} total={view.entries} />
-      </div> : <div className={styles.noResults} role="status"><MessageSquareText size={26} aria-hidden="true" /><h2>ยังไม่มี diagtext ในช่วงนี้</h2><p>{view.opd ? `มี visit ${nf(view.opd)} ครั้ง แต่ยังไม่มีข้อความวินิจฉัยที่แพทย์ลง` : "ไม่พบ visit ในช่วงที่เลือก"}</p></div>}
+        <PersonPanel key={view.title} persons={view.persons} total={view.entries} />
+      </div> : <div className={styles.noResults} role="status"><MessageSquareText size={26} aria-hidden="true" /><h2>ยังไม่มี diagtext ในช่วงนี้</h2><p>{view.opd ? `มี visit ${nf(view.opd)} ครั้ง แต่ยังไม่มี diagtext ที่แพทย์ลง` : "ไม่พบ visit ในช่วงที่เลือก"}</p></div>}
 
       {trend.length > 0 && <section className={styles.chartPanel}>
         <div className={styles.panelHeading}><h2>{scope === "month" ? "รายวันในเดือนนี้" : "รายเดือน"}</h2><span>{scope === "month" ? "กดแท่งเพื่อดู visit ของวันนั้น" : "กดแท่งเพื่อดูรายเดือน"}</span></div>
@@ -216,7 +216,7 @@ function TopTextPanel({ top, total }: { top: TopText[]; total: number }) {
   return <section className={styles.panel}>
     <div className={styles.panelHeading}><h2><Trophy size={16} aria-hidden="true" /> diagtext ที่ลงมากที่สุด</h2><span>นับครั้งรับบริการ (VN)</span></div>
     <div className={styles.tableScroll} tabIndex={0} role="region" aria-label="ตารางอันดับ diagtext">
-      <table><thead><tr><th scope="col">อันดับ</th><th scope="col">ข้อความวินิจฉัย</th><th scope="col" className={styles.numeric}>ครั้ง</th><th scope="col" className={styles.numeric}>สัดส่วน</th></tr></thead>
+      <table><thead><tr><th scope="col">อันดับ</th><th scope="col">diagtext</th><th scope="col" className={styles.numeric}>ครั้ง</th><th scope="col" className={styles.numeric} title="ครั้งของ diagtext นี้ ÷ visit ที่ลง diagtext ทั้งหมดในช่วงนี้">สัดส่วน</th></tr></thead>
         <tbody>{shown.map((t, i) => <tr key={t.text}>
           <td className={styles.rank}>{String(i + 1).padStart(2, "0")}</td>
           <td><span className={styles.textCell}>{t.text}</span><span className={styles.meter} aria-hidden="true"><i style={{ width: `${(t.visits / max) * 100}%` }} /></span></td>
@@ -230,19 +230,43 @@ function TopTextPanel({ top, total }: { top: TopText[]; total: number }) {
 
 function PersonPanel({ persons, total }: { persons: PersonRank[]; total: number }) {
   const [all, setAll] = useState(false);
+  const [open, setOpen] = useState<Set<string>>(() => new Set());
   const shown = all ? persons : persons.slice(0, 10);
   const max = persons[0]?.entries || 1;
+  const toggle = (code: string) => setOpen(prev => { const next = new Set(prev); if (!next.delete(code)) next.add(code); return next; });
   return <section className={styles.panel}>
-    <div className={styles.panelHeading}><h2><Trophy size={16} aria-hidden="true" /> อันดับผู้ลง diagtext</h2><span>เรียงตามจำนวนรายการที่ลง</span></div>
+    <div className={styles.panelHeading}><h2><Trophy size={16} aria-hidden="true" /> อันดับผู้ลง diagtext</h2><span>กดชื่อเพื่อดูว่าลง diagtext อะไรบ้าง</span></div>
     <div className={styles.tableScroll} tabIndex={0} role="region" aria-label="ตารางอันดับผู้ลง diagtext">
-      <table><thead><tr><th scope="col">อันดับ</th><th scope="col">ผู้ลง</th><th scope="col" className={styles.numeric}>รายการ</th><th scope="col" className={styles.numeric}>ครั้ง (VN)</th><th scope="col" className={styles.numeric}>สัดส่วน</th></tr></thead>
-        <tbody>{shown.map((p, i) => <tr key={p.code || "-"}>
-          <td className={styles.rank}>{String(i + 1).padStart(2, "0")}</td>
-          <td><span className={styles.textCell}>{p.name}</span>{p.code && p.code !== p.name && <small className={styles.sub}>รหัส {p.code}</small>}<span className={styles.meter} aria-hidden="true"><i style={{ width: `${(p.entries / max) * 100}%` }} /></span></td>
-          <td className={styles.numeric}>{nf(p.entries)}</td>
-          <td className={styles.numeric}>{nf(p.visits)}</td>
-          <td className={styles.numeric}>{pct(p.entries, total)}</td>
-        </tr>)}</tbody></table>
+      <table className={styles.personTable}><thead><tr><th scope="col">อันดับ</th><th scope="col">ผู้ลง</th><th scope="col" className={styles.numeric}>รายการ</th><th scope="col" className={styles.numeric}>ครั้ง (VN)</th><th scope="col" className={styles.numeric} title="รายการที่คนนี้ลง ÷ รายการที่ทุกคนลงรวมกันในช่วงนี้">% ของทั้งหมด</th></tr></thead>
+        <tbody>{shown.map((p, i) => {
+          const id = p.code || "-";
+          const expanded = open.has(id);
+          return <Fragment key={id}>
+            <tr className={styles.clickRow} onClick={() => toggle(id)}>
+              <td className={styles.rank}>{String(i + 1).padStart(2, "0")}</td>
+              <td>
+                <button type="button" className={styles.personButton} aria-expanded={expanded} aria-controls={`person-${id}`} onClick={e => { e.stopPropagation(); toggle(id); }}>
+                  <ChevronRight size={14} aria-hidden="true" className={expanded ? styles.chevronOpen : styles.chevron} />{p.name}
+                </button>
+                {p.code && p.code !== p.name && <small className={styles.sub}>รหัส {p.code}</small>}
+                <span className={styles.meter} aria-hidden="true"><i style={{ width: `${(p.entries / max) * 100}%` }} /></span>
+              </td>
+              <td className={styles.numeric}>{nf(p.entries)}</td>
+              <td className={styles.numeric}>{nf(p.visits)}</td>
+              <td className={styles.numeric}>{pct(p.entries, total)}</td>
+            </tr>
+            {expanded && <tr id={`person-${id}`} className={styles.personDetail}><td colSpan={5}>
+              <p className={styles.personSummary}><b>{p.name}</b> ลง diagtext ทั้งหมด <b>{nf(p.text_total)}</b> ครั้ง ใน {nf(p.visits)} visit{p.texts.length >= PERSON_TEXT_TOP ? ` · แสดง ${PERSON_TEXT_TOP} อันดับแรก` : ""}</p>
+              <table className={styles.personTexts}><thead><tr><th scope="col">อันดับ</th><th scope="col">diagtext</th><th scope="col" className={styles.numeric}>ครั้ง</th><th scope="col" className={styles.numeric}>% ของที่คนนี้ลง</th></tr></thead>
+                <tbody>{p.texts.map((t, ti) => <tr key={t.text}>
+                  <td className={styles.rank}>{String(ti + 1).padStart(2, "0")}</td>
+                  <td><span className={styles.textCell}>{t.text}</span><span className={styles.meter} aria-hidden="true"><i style={{ width: `${t.share * 100}%` }} /></span></td>
+                  <td className={styles.numeric}>{nf(t.visits)}</td>
+                  <td className={styles.numeric}>{(t.share * 100).toFixed(1)}%</td>
+                </tr>)}</tbody></table>
+            </td></tr>}
+          </Fragment>;
+        })}</tbody></table>
     </div>
     {persons.length > 10 && <button type="button" className={styles.moreButton} onClick={() => setAll(a => !a)}>{all ? "แสดง 10 อันดับ" : `แสดงทั้งหมด ${persons.length} คน`}</button>}
   </section>;
@@ -278,7 +302,7 @@ function VisitTable({ visits }: { visits: DayResult["visits"] }) {
   return <section className={styles.panel}>
     <div className={styles.panelHeading}><h2><CalendarDays size={16} aria-hidden="true" /> visit ที่ลง diagtext <span className={styles.count}>{nf(visits.length)} ครั้ง</span></h2><span>เรียงตามเวลามา</span></div>
     <div className={styles.tableScroll} tabIndex={0} role="region" aria-label="ตาราง visit ของวันที่เลือก">
-      <table className={styles.visitTable}><thead><tr><th scope="col">เวลา</th><th scope="col">VN / HN</th><th scope="col">แผนก</th><th scope="col">ข้อความวินิจฉัย</th><th scope="col">ผู้ลง</th></tr></thead>
+      <table className={styles.visitTable}><thead><tr><th scope="col">เวลา</th><th scope="col">VN / HN</th><th scope="col">แผนก</th><th scope="col">diagtext</th><th scope="col">ผู้ลง</th></tr></thead>
         <tbody>{visits.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE).map(v => <tr key={v.vn}>
           <td className={styles.numeric}>{v.vsttime || "—"}</td>
           <td><span className={styles.textCell}>{v.vn}</span><small className={styles.sub}>HN {v.hn}</small></td>

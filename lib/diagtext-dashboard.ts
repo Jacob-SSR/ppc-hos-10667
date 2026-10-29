@@ -7,6 +7,7 @@
 
 export const DIAGTEXT_TITLE = "Dashboard ข้อความวินิจฉัย (diagtext)";
 export const DIAGTEXT_TOP = 50; // เก็บอันดับต่อช่วงไว้เท่านี้ หน้าเว็บแสดง 10 แล้วกดดูเพิ่ม
+export const PERSON_TEXT_TOP = 20; // diagtext ที่แต่ละคนลง (กดชื่อในตารางอันดับผู้ลง)
 export const DAY_LIMIT = 20000;
 
 // ── ผู้ลง diagtext ───────────────────────────────────────────────────────────
@@ -116,7 +117,7 @@ export function splitDiagText(text: unknown): { key: string; label: string }[] {
 }
 
 // ── SQL ──────────────────────────────────────────────────────────────────────
-// รวมยอดใน MySQL ก่อน (เดือน × ข้อความ) เพื่อไม่ต้องลากทุกแถวของทั้งปีงบมาที่ Node
+// รวมยอดใน MySQL ก่อน (เดือน × ผู้ลง × ข้อความ) เพื่อไม่ต้องลากทุกแถวของทั้งปีงบมาที่ Node
 
 export function yearQueries(fy: number, person: PersonSource) {
   const { date_from: from, date_to: to } = fiscalRange(fy);
@@ -125,12 +126,13 @@ export function yearQueries(fy: number, person: PersonSource) {
     from,
     to,
     texts: {
-      sql: `SELECT DATE_FORMAT(o.vstdate, '%Y-%m') AS ym, TRIM(d.diag_text) AS diag_text, COUNT(DISTINCT d.vn) AS visits
+      sql: `SELECT DATE_FORMAT(o.vstdate, '%Y-%m') AS ym, ${p.code} AS code, TRIM(d.diag_text) AS diag_text, COUNT(DISTINCT d.vn) AS visits
         FROM ovst_doctor_diag d
         JOIN ovst o ON o.vn = d.vn
+        ${p.join}
         WHERE o.vstdate BETWEEN ? AND ? AND ${HAS_TEXT}
-        GROUP BY DATE_FORMAT(o.vstdate, '%Y-%m'), TRIM(d.diag_text)`,
-      values: [from, to],
+        GROUP BY DATE_FORMAT(o.vstdate, '%Y-%m'), ${p.code}, TRIM(d.diag_text)`,
+      values: [...p.values, from, to],
     },
     persons: {
       sql: `SELECT DATE_FORMAT(o.vstdate, '%Y-%m') AS ym, ${p.code} AS code, MAX(${p.name}) AS name,
@@ -180,13 +182,18 @@ export function dayQueries(date: string, person: PersonSource) {
 
 // ── รวมยอด ───────────────────────────────────────────────────────────────────
 
-export type TextRow = { ym: string; diag_text: string | null; visits: number | string };
+export type TextRow = { ym: string; code: string | null; diag_text: string | null; visits: number | string };
 export type PersonRow = { ym: string; code: string | null; name: string | null; entries: number | string; visits: number | string };
 export type CountRow = { date: string; c: number | string };
 export type DayRow = { vn: string; hn: string; vsttime: string | null; department: string | null; diag_text: string | null; person_code: string | null; person_name: string | null };
 
 export type TopText = { text: string; visits: number };
-export type PersonRank = { code: string; name: string; entries: number; visits: number };
+export type PersonText = TopText & { share: number };
+/**
+ * texts = diagtext ที่คนนั้นลง เรียงมากไปน้อย; share = ครั้งของข้อความนั้น ÷ text_total
+ * text_total = ผลรวมครั้งของทุกข้อความที่คนนั้นลง (ช่องหลายบรรทัดนับทุกบรรทัด) → share รวมกันได้ 100%
+ */
+export type PersonRank = { code: string; name: string; entries: number; visits: number; text_total: number; texts: PersonText[] };
 export type Bucket = {
   key: string; // "FY" | "Q1".."Q4" | "YYYY-MM"
   from: string;
@@ -217,6 +224,11 @@ class TextCounter {
   get size() {
     return this.counts.size;
   }
+  get total() {
+    let n = 0;
+    for (const e of this.counts.values()) n += e.visits;
+    return n;
+  }
   top(limit: number): TopText[] {
     return [...this.counts.values()]
       .map((e) => ({
@@ -230,16 +242,34 @@ class TextCounter {
 }
 
 class PersonCounter {
-  private map = new Map<string, PersonRank>();
-  add(code: string | null, name: string | null, entries: number, visits: number) {
+  private map = new Map<string, { code: string; name: string; entries: number; visits: number; texts: TextCounter }>();
+  private get(code: string | null, name?: string | null) {
     const c = String(code ?? "").trim();
-    const e = this.map.get(c) ?? { code: c, name: String(name ?? "").trim() || (c ? c : UNKNOWN_PERSON), entries: 0, visits: 0 };
+    const e = this.map.get(c) ?? { code: c, name: "", entries: 0, visits: 0, texts: new TextCounter() };
+    if (!e.name) e.name = String(name ?? "").trim();
+    this.map.set(c, e);
+    return e;
+  }
+  add(code: string | null, name: string | null, entries: number, visits: number) {
+    const e = this.get(code, name);
     e.entries += entries;
     e.visits += visits;
-    this.map.set(c, e);
+  }
+  addText(code: string | null, key: string, label: string, n: number) {
+    this.get(code).texts.add(key, label, n);
   }
   list(): PersonRank[] {
-    return [...this.map.values()].sort(byRank);
+    return [...this.map.values()]
+      .map(({ texts, ...e }) => {
+        const text_total = texts.total;
+        return {
+          ...e,
+          name: e.name || e.code || UNKNOWN_PERSON,
+          text_total,
+          texts: texts.top(PERSON_TEXT_TOP).map((t) => ({ ...t, share: text_total ? t.visits / text_total : 0 })),
+        };
+      })
+      .sort(byRank);
   }
 }
 
@@ -259,7 +289,10 @@ export function summarizeYear(fy: number, texts: TextRow[], persons: PersonRow[]
   for (const r of texts) {
     if (!inYear(r.ym)) continue;
     const n = Number(r.visits) || 0;
-    for (const t of splitDiagText(r.diag_text)) for (const k of keysOf(r.ym)) acc.get(k)!.texts.add(t.key, t.label, n);
+    for (const t of splitDiagText(r.diag_text)) for (const k of keysOf(r.ym)) {
+      acc.get(k)!.texts.add(t.key, t.label, n);
+      acc.get(k)!.persons.addText(r.code, t.key, t.label, n);
+    }
   }
   for (const r of persons) {
     if (!inYear(r.ym)) continue;
@@ -295,33 +328,39 @@ export type DayVisit = { vn: string; hn: string; vsttime: string; department: st
 
 export function summarizeDay(date: string, rows: DayRow[], opdVisits: number) {
   const texts = new Map<string, { label: string; vns: Set<string> }>();
-  const persons = new Map<string, { code: string; name: string; entries: number; vns: Set<string> }>();
+  const persons = new Map<string, { code: string; name: string; entries: number; vns: Set<string>; texts: Map<string, { label: string; vns: Set<string> }> }>();
   const visits = new Map<string, DayVisit>();
   for (const r of rows) {
     const vn = String(r.vn);
     const parts = splitDiagText(r.diag_text);
     if (!parts.length) continue;
     const v = visits.get(vn) ?? { vn, hn: String(r.hn ?? ""), vsttime: r.vsttime ?? "", department: r.department ?? "", texts: [], persons: [] };
-    for (const t of parts) {
-      const e = texts.get(t.key) ?? { label: t.label, vns: new Set() };
-      e.vns.add(vn);
-      texts.set(t.key, e);
-      if (!v.texts.some((x) => x.toLowerCase() === t.key)) v.texts.push(t.label);
-    }
     const code = String(r.person_code ?? "").trim();
     const name = String(r.person_name ?? "").trim() || code || UNKNOWN_PERSON;
-    const p = persons.get(code) ?? { code, name, entries: 0, vns: new Set() };
+    const p = persons.get(code) ?? { code, name, entries: 0, vns: new Set(), texts: new Map() };
     p.entries++;
     p.vns.add(vn);
     persons.set(code, p);
+    for (const t of parts) {
+      for (const m of [texts, p.texts]) {
+        const e = m.get(t.key) ?? { label: t.label, vns: new Set() };
+        e.vns.add(vn);
+        m.set(t.key, e);
+      }
+      if (!v.texts.some((x) => x.toLowerCase() === t.key)) v.texts.push(t.label);
+    }
     if (!v.persons.includes(name)) v.persons.push(name);
     visits.set(vn, v);
   }
-  const top = [...texts.values()]
-    .map((e) => ({ text: e.label, visits: e.vns.size }))
-    .sort((a, b) => b.visits - a.visits || a.text.localeCompare(b.text));
-  const list = [...persons.values()]
-    .map(({ vns, ...p }) => ({ ...p, visits: vns.size }))
+  const rank = (m: Map<string, { label: string; vns: Set<string> }>) =>
+    [...m.values()].map((e) => ({ text: e.label, visits: e.vns.size })).sort((a, b) => b.visits - a.visits || a.text.localeCompare(b.text));
+  const top = rank(texts);
+  const list: PersonRank[] = [...persons.values()]
+    .map(({ vns, texts: own, ...p }) => {
+      const mine = rank(own);
+      const text_total = mine.reduce((s, t) => s + t.visits, 0);
+      return { ...p, visits: vns.size, text_total, texts: mine.slice(0, PERSON_TEXT_TOP).map((t) => ({ ...t, share: t.visits / text_total })) };
+    })
     .sort(byRank);
   return {
     date,
@@ -350,11 +389,14 @@ export function diagtextCsv(title: string, top: TopText[], persons: PersonRank[]
   const lines = [
     [title],
     [],
-    ["อันดับ", "ข้อความวินิจฉัย (diagtext)", "ครั้งรับบริการ"],
+    ["อันดับ", "diagtext", "ครั้งรับบริการ"],
     ...top.map((t, i) => [i + 1, t.text, t.visits]),
     [],
     ["อันดับ", "ผู้ลง diagtext", "รหัส", "จำนวนรายการที่ลง", "ครั้งรับบริการ"],
     ...persons.map((p, i) => [i + 1, p.name, p.code, p.entries, p.visits]),
+    [],
+    ["ผู้ลง diagtext", "รหัส", "อันดับ", "diagtext", "ครั้ง", "% ของที่คนนั้นลง"],
+    ...persons.flatMap((p) => p.texts.map((t, i) => [p.name, p.code, i + 1, t.text, t.visits, `${(t.share * 100).toFixed(1)}%`])),
   ];
   return "﻿" + lines.map((r) => r.map(quote).join(",")).join("\r\n");
 }
