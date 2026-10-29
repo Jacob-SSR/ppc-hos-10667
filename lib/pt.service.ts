@@ -183,6 +183,7 @@ interface RecordQueryRow extends RowDataPacket {
   staff_id: string;
   staff_name: string;
   hn: string;
+  cid: string | null;
   patient_name: string;
   pcode: string;
   pttype: string;
@@ -222,6 +223,8 @@ export interface PtRecord {
   drugCharge: number; // c14
   otherCharge: number; // c15
   hn: string;
+  /** เลขบัตรประชาชน 13 หลัก ("" = ไม่มีในทะเบียน) */
+  cid: string;
   patient_name: string;
 }
 
@@ -283,6 +286,7 @@ export async function getPtDashboard(
         ${PT_SERVICE_TIME_EXPR}                    AS svc_time,
         ${PT_STAFF_SUBQ}                           AS staff_id,
         v.hn,
+        pt.cid                                     AS cid,
         CONCAT(pt.pname, pt.fname, ' ', pt.lname)  AS patient_name,
         COALESCE(v.pcode, '')                      AS pcode,
         v.pttype                                   AS pttype,
@@ -337,6 +341,7 @@ export async function getPtDashboard(
       drugCharge: Number(r.charge_drug) || 0,
       otherCharge: Number(r.charge_other) || 0,
       hn: r.hn,
+      cid: (r.cid ?? "").trim(),
       patient_name: r.patient_name,
     };
   });
