@@ -90,6 +90,8 @@
 .rank { color: var(--report-muted); width: 56px; font-variant-numeric: tabular-nums; }
 .textCell { display: block; overflow-wrap: anywhere; }
 .sub { display: block; font-size: .6875rem; color: var(--report-muted); }
+.shareOf { display: block; font-size: .6875rem; color: var(--report-muted); white-space: normal; }
+.shareOf > span { white-space: nowrap; }
 .meter { display: block; height: 4px; margin-top: 6px; border-radius: 4px; background: var(--report-soft); overflow: hidden; }
 .meter i { display: block; height: 100%; border-radius: 4px; background: var(--report-accent); }
 

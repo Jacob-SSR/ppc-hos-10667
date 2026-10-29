@@ -237,7 +237,7 @@ function PersonPanel({ persons, total }: { persons: PersonRank[]; total: number 
   return <section className={styles.panel}>
     <div className={styles.panelHeading}><h2><Trophy size={16} aria-hidden="true" /> อันดับผู้ลง diagtext</h2><span>กดชื่อเพื่อดูว่าลง diagtext อะไรบ้าง</span></div>
     <div className={styles.tableScroll} tabIndex={0} role="region" aria-label="ตารางอันดับผู้ลง diagtext">
-      <table className={styles.personTable}><thead><tr><th scope="col">อันดับ</th><th scope="col">ผู้ลง</th><th scope="col" className={styles.numeric}>รายการ</th><th scope="col" className={styles.numeric}>ครั้ง (VN)</th><th scope="col" className={styles.numeric} title="รายการที่คนนี้ลง ÷ รายการที่ทุกคนลงรวมกันในช่วงนี้">% ของทั้งหมด</th></tr></thead>
+      <table className={styles.personTable}><thead><tr><th scope="col">อันดับ</th><th scope="col">ผู้ลง</th><th scope="col" className={styles.numeric}>รายการ</th><th scope="col" className={styles.numeric}>ครั้ง (VN)</th><th scope="col" className={styles.numeric} title="รายการที่คนนี้ลง ÷ รายการที่ทุกคนลงรวมกันในช่วงนี้">ส่วนแบ่งจากทุกคน</th></tr></thead>
         <tbody>{shown.map((p, i) => {
           const id = p.code || "-";
           const expanded = open.has(id);
@@ -253,7 +253,7 @@ function PersonPanel({ persons, total }: { persons: PersonRank[]; total: number 
               </td>
               <td className={styles.numeric}>{nf(p.entries)}</td>
               <td className={styles.numeric}>{nf(p.visits)}</td>
-              <td className={styles.numeric}>{pct(p.entries, total)}</td>
+              <td className={styles.numeric}>{pct(p.entries, total)}<small className={styles.shareOf}><span>{nf(p.entries)} จาก</span> <span>{nf(total)} รายการ</span></small></td>
             </tr>
             {expanded && <tr id={`person-${id}`} className={styles.personDetail}><td colSpan={5}>
               <p className={styles.personSummary}><b>{p.name}</b> ลง diagtext ทั้งหมด <b>{nf(p.text_total)}</b> ครั้ง ใน {nf(p.visits)} visit{p.texts.length >= PERSON_TEXT_TOP ? ` · แสดง ${PERSON_TEXT_TOP} อันดับแรก` : ""}</p>
