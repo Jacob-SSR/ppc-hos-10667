@@ -221,7 +221,7 @@ function TopTextPanel({ top, total }: { top: TopText[]; total: number }) {
           <td className={styles.rank}>{String(i + 1).padStart(2, "0")}</td>
           <td><span className={styles.textCell}>{t.text}</span><span className={styles.meter} aria-hidden="true"><i style={{ width: `${(t.visits / max) * 100}%` }} /></span></td>
           <td className={styles.numeric}>{nf(t.visits)}</td>
-          <td className={styles.numeric}>{pct(t.visits, total)}</td>
+          <td className={styles.numeric}>{pct(t.visits, total)}<small className={styles.shareOf}><span>{nf(t.visits)} จาก</span> <span>{nf(total)} visit</span></small></td>
         </tr>)}</tbody></table>
     </div>
     {top.length > 10 && <button type="button" className={styles.moreButton} onClick={() => setAll(a => !a)}>{all ? "แสดง 10 อันดับ" : `แสดง ${top.length} อันดับ`}</button>}
