@@ -36,6 +36,8 @@ interface PtRecord {
     service_text?: string;
     income: number;
     hn: string;
+    /** เลขบัตรประชาชน 13 หลัก */
+    cid?: string;
     patient_name: string;
 }
 interface PtQueueItem {
@@ -330,6 +332,7 @@ export default function PtDashboardPage() {
                 const filtered = grp.rows.filter((r) => {
                     const mq = !ql ||
                         r.hn.toLowerCase().includes(ql) ||
+                        (r.cid ?? "").includes(ql) ||
                         r.patient_name.toLowerCase().includes(ql) ||
                         r.procedure.toLowerCase().includes(ql) ||
                         r.procedure_name.toLowerCase().includes(ql);
@@ -393,6 +396,7 @@ export default function PtDashboardPage() {
                 เจ้าหน้าที่: r.staff_name,
                 ประเภท: r.role === "pt" ? "PT" : "PTA",
                 HN: r.hn,
+                CID: r.cid ?? "",
                 ชื่อผู้ป่วย: r.patient_name,
                 หมวดการให้บริการ: r.procedure,
                 รายละเอียดการให้บริการ: r.procedure_name,
@@ -709,7 +713,7 @@ export default function PtDashboardPage() {
                                 <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
                                 <input
                                     type="text"
-                                    placeholder="ค้นหา HN / ชื่อ / รายละเอียดการให้บริการ..."
+                                    placeholder="ค้นหา HN / CID / ชื่อ / รายละเอียดการให้บริการ..."
                                     value={q}
                                     onChange={(e) => setQ(e.target.value)}
                                     className="w-full border-2 border-gray-200 rounded-full pl-9 pr-4 py-2 text-sm text-gray-800 bg-white focus:outline-none focus:border-[#7ec8a0] transition-colors"
@@ -771,7 +775,7 @@ export default function PtDashboardPage() {
                                                                 <table className="min-w-full text-xs border-collapse">
                                                                     <thead>
                                                                         <tr>
-                                                                            <Th>วันที่</Th><Th>HN</Th><Th>ชื่อผู้ป่วย</Th>
+                                                                            <Th>วันที่</Th><Th>HN</Th><Th>CID</Th><Th>ชื่อผู้ป่วย</Th>
                                                                             <Th>หัตถการ / รายละเอียดการให้บริการ</Th><Th>เวร</Th><Th>สิทธิ์</Th>
                                                                             <Th className="text-right">รายได้</Th>
                                                                         </tr>
@@ -781,6 +785,7 @@ export default function PtDashboardPage() {
                                                                             <Tr key={i} index={i}>
                                                                                 <td className="px-3 py-2 text-gray-600 whitespace-nowrap">{formatThaiDate(r.date)}</td>
                                                                                 <td className="px-3 py-2 font-mono text-gray-500">{r.hn}</td>
+                                                                                <td className="px-3 py-2 font-mono text-gray-500 whitespace-nowrap">{r.cid || "-"}</td>
                                                                                 <td className="px-3 py-2 text-gray-800">{r.patient_name}</td>
                                                                                 <td className="px-3 py-2 max-w-[260px]">
                                                                                     <span className="inline-block px-2 py-0.5 rounded-full text-[10px] font-semibold" title={r.procedure_name}
@@ -801,7 +806,7 @@ export default function PtDashboardPage() {
                                                                     </tbody>
                                                                     <tfoot>
                                                                         <tr style={{ backgroundColor: MINT[50] }}>
-                                                                            <td colSpan={6} className="px-3 py-2 text-xs font-semibold text-gray-500">รวม {filtered.length} visits</td>
+                                                                            <td colSpan={7} className="px-3 py-2 text-xs font-semibold text-gray-500">รวม {filtered.length} visits</td>
                                                                             <td className="px-3 py-2 text-right font-bold" style={{ color: MINT[800] }}>{baht(grpI)}</td>
                                                                         </tr>
                                                                     </tfoot>
