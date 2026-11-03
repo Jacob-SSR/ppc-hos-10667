@@ -1,6 +1,7 @@
 @import "tailwindcss";
 
 :root {
+  --font-prompt: "Prompt";
   --background: #ffffff;
   --foreground: #171717;
   --mint-50:  #f0faf4;
