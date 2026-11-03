@@ -24,7 +24,7 @@ COPY . .
 # หมายเหตุสำคัญตอน build:
 #  1) ต้องมีไฟล์ .env.production ใน context — next build จะอ่านค่า env จากไฟล์นี้
 #     (โดยเฉพาะ NEXT_PUBLIC_SYNC_SECRET ที่ถูก inline เข้า bundle + ผ่านด่านเช็ค env ใน lib/db.ts)
-#  2) เครื่องที่ build ต้องต่อเน็ตได้ เพราะ next/font/google โหลดฟอนต์ Prompt ตอน build
+#  2) ฟอนต์ Prompt รวมอยู่ใน @fontsource/prompt จากขั้น npm ci แล้ว ไม่ต้องโหลด Google Fonts ตอน build
 #  3) ข้าม type-check ใน container (ตั้ง ignoreBuildErrors ใน next.config.ts)
 #     เพราะขั้นนี้กินแรมหนักจน OOM — deploy script ต้องรัน `npx tsc --noEmit` ก่อน docker build เสมอ
 RUN npm run build

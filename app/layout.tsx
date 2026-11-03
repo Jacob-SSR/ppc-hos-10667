@@ -1,14 +1,12 @@
 import type { Metadata } from "next";
-import { Prompt } from "next/font/google";
+// Bundle Prompt locally so production builds do not need Google Fonts access.
+import "@fontsource/prompt/300.css";
+import "@fontsource/prompt/400.css";
+import "@fontsource/prompt/500.css";
+import "@fontsource/prompt/600.css";
+import "@fontsource/prompt/700.css";
 import "./globals.css";
 import { SettingsProvider } from "./contexts/SettingsContext";
-
-const prompt = Prompt({
-  subsets: ["latin", "thai"],
-  weight: ["300", "400", "500", "600", "700"],
-  variable: "--font-prompt",
-  display: "swap",
-});
 
 export const metadata: Metadata = {
   title: "ระบบรายงานโรงพยาบาลพลับพลาชัย",
@@ -18,7 +16,7 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="th">
-      <body className={`${prompt.variable} font-sans antialiased`}>
+      <body className="font-sans antialiased">
         <SettingsProvider>
           {children}
         </SettingsProvider>
