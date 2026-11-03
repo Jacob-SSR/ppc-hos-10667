@@ -13,7 +13,6 @@ import { ClinicStageTable } from "./ClinicStageTable";
 import { ClinicStackChart, StageAvgBarChart } from "./StageCharts";
 import { HourlyStageLineChart } from "./HourlyStageLineChart";
 import { WaitBucketChart } from "./WaitBucketChart";
-import { PersonTable } from "./PersonTable";
 
 type KpiItem = {
     icon: React.ElementType; label: string; value: string; sub: string; accent: string; bg: string;
@@ -121,13 +120,6 @@ export function OverviewView({
                     onSelect={onSelectClinic}
                 />
             </SectionCard>
-
-            <PersonTable
-                visits={data.visits}
-                columns={data.stageColumns}
-                total={data.visitsTotal}
-                truncated={data.visitsTruncated}
-            />
 
             <p className="text-[11px] text-gray-400 mt-5">
                 * เป้าหมายเวลารวม (ปัจจุบัน ≤ {data.targetTotal} นาที) และ % ผ่านเกณฑ์ (≥ {pctGoal}%) ปรับได้ที่ปุ่มเป้าหมาย ·

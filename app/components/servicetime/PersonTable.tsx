@@ -9,10 +9,15 @@ import { fmt, stageColor, toHM, toDMY } from "./helpers";
 
 // ─── ตารางข้อมูลรายบุคคล (ตามตัวกรอง) ─────────────────────────────────────────
 export function PersonTable({
-    visits, columns, total, truncated,
-}: { visits: PersonVisit[]; columns: StageColumn[]; total: number; truncated: boolean }) {
+    visits, columns, total, truncated, start, end, disabled = false,
+}: {
+    visits: PersonVisit[]; columns: StageColumn[]; total: number; truncated: boolean;
+    start: string; end: string; disabled?: boolean;
+}) {
     const [q, setQ] = useState("");
     const [clinicFilter, setClinicFilter] = useState("all");
+    const [page, setPage] = useState(1);
+    const pageSize = 50;
 
     const clinicOptions = useMemo(
         () => [...new Set(visits.map((v) => v.department))].sort((a, b) => a.localeCompare(b, "th")),
@@ -28,7 +33,12 @@ export function PersonTable({
         });
     }, [visits, q, clinicFilter]);
 
+    const pageCount = Math.max(1, Math.ceil(filtered.length / pageSize));
+    const currentPage = Math.min(page, pageCount);
+    const pageRows = filtered.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+
     const exportPersons = () => {
+        if (disabled || filtered.length === 0) return;
         const data = filtered.map((v) => {
             const o: Record<string, unknown> = {
                 VN: v.vn, HN: v.hn, วันที่: toDMY(v.date), คลินิก: v.department, มาถึง: toHM(v.arrivalMinute),
@@ -39,14 +49,14 @@ export function PersonTable({
         });
         exportToExcel(data, {
             sheetName: "รายบุคคล",
-            filePrefix: "servicetime_รายบุคคล",
+            filePrefix: `servicetime_รายบุคคล_${start}_${end}`,
             dateKeys: [],
         });
     };
 
     return (
         <SectionCard
-            title="ข้อมูลรายบุคคล (ตามตัวกรอง วันที่ / เวร / คลินิก)"
+            title="ข้อมูลรายบุคคล (ตามตัวกรอง วันที่ / เวร / คลินิก / ประเภทการมา)"
             icon={ClipboardList} titleColor="#1a5233" className="mb-4"
         >
             <div className="flex flex-wrap items-center gap-2 -mt-1 mb-2">
@@ -54,14 +64,15 @@ export function PersonTable({
                     <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400" />
                     <input
                         value={q}
-                        onChange={(e) => setQ(e.target.value)}
+                        onChange={(e) => { setQ(e.target.value); setPage(1); }}
+                        aria-label="ค้นหา VN / HN"
                         placeholder="ค้นหา VN / HN"
                         className="rounded-lg border border-gray-200 bg-white pl-8 pr-3 py-1.5 text-sm text-gray-700 shadow-sm focus:outline-none focus:ring-2 focus:ring-green-600/30"
                     />
                 </div>
                 <select
                     value={clinicFilter}
-                    onChange={(e) => setClinicFilter(e.target.value)}
+                    onChange={(e) => { setClinicFilter(e.target.value); setPage(1); }}
                     className="rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-sm text-gray-700 shadow-sm focus:outline-none focus:ring-2 focus:ring-green-600/30 min-w-[140px]"
                     title="กรองคลินิก"
                 >
@@ -72,15 +83,22 @@ export function PersonTable({
                 </select>
                 <button
                     onClick={exportPersons}
-                    className="inline-flex items-center gap-1.5 rounded-lg bg-green-700 px-3 py-1.5 text-xs font-semibold text-white hover:bg-green-800 transition-colors"
+                    disabled={disabled || filtered.length === 0}
+                    className="inline-flex items-center gap-1.5 rounded-lg bg-green-700 px-3 py-1.5 text-xs font-semibold text-white hover:bg-green-800 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                    <Download size={13} /> โหลด Excel
+                    <Download size={13} /> ส่งออก Excel ({fmt(filtered.length)} Visit)
                 </button>
                 <span className="text-xs text-gray-500">
-                    {fmt(filtered.length)}{(q || clinicFilter !== "all") ? ` / ${fmt(visits.length)}` : ""} ราย
+                    {fmt(filtered.length)}{(q || clinicFilter !== "all") ? ` / ${fmt(visits.length)}` : ""} Visit
                     {truncated && <span className="text-amber-600"> · แสดง {fmt(visits.length)} จาก {fmt(total)} (ปรับตัวกรองให้แคบลงเพื่อดูครบ)</span>}
                 </span>
             </div>
+
+            <p className="mb-3 text-xs text-gray-500">
+                1 แถวต่อ Visit · เวลาทุกขั้นตอนเป็นนาที · Excel รวมทุกรายการที่ค้นหา/กรองในตาราง ไม่เฉพาะหน้าปัจจุบัน
+                {truncated && <span className="text-amber-700"> · Excel จำกัดเฉพาะ {fmt(visits.length)} Visit ที่โหลดมา กรุณาลดช่วงวันที่หรือตัวกรองเพื่อส่งออกให้ครบ</span>}
+                {disabled && <span className="text-amber-700"> · รอโหลดข้อมูลสำเร็จก่อนส่งออก</span>}
+            </p>
 
             <div className="overflow-auto max-h-[520px]">
                 <table className="w-full text-xs">
@@ -101,7 +119,7 @@ export function PersonTable({
                         </tr>
                     </thead>
                     <tbody>
-                        {filtered.map((v) => (
+                        {pageRows.map((v) => (
                             <tr key={v.vn} className="border-b border-gray-50 hover:bg-gray-50/60">
                                 <td className="py-1.5 pr-2 tabular-nums text-gray-700 sticky left-0 bg-white z-10">{v.vn}</td>
                                 <td className="py-1.5 px-2 tabular-nums text-gray-500">{v.hn || "-"}</td>
@@ -123,6 +141,15 @@ export function PersonTable({
                         )}
                     </tbody>
                 </table>
+            </div>
+            <div className="mt-3 flex items-center justify-between gap-2 text-xs text-gray-500">
+                <span>หน้า {fmt(currentPage)} / {fmt(pageCount)} · หน้าละ {pageSize} Visit</span>
+                <div className="flex gap-2">
+                    <button type="button" disabled={currentPage <= 1} onClick={() => setPage(currentPage - 1)}
+                        className="rounded-lg border border-gray-200 px-3 py-1.5 hover:bg-gray-50 disabled:opacity-40">ก่อนหน้า</button>
+                    <button type="button" disabled={currentPage >= pageCount} onClick={() => setPage(currentPage + 1)}
+                        className="rounded-lg border border-gray-200 px-3 py-1.5 hover:bg-gray-50 disabled:opacity-40">ถัดไป</button>
+                </div>
             </div>
         </SectionCard>
     );

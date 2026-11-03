@@ -22,6 +22,7 @@ import {
     TabBar, View,
     FlowVSM,
     OverviewView,
+    PersonTable,
 } from "@/app/components/servicetime";
 
 export default function ServiceTimeDashboardPage() {
@@ -306,6 +307,17 @@ export default function ServiceTimeDashboardPage() {
                             onExportClinics={exportClinics}
                         />
                     )}
+
+                    <PersonTable
+                        key={[data.start, data.end, data.visitType, data.shift, data.clinic].join("|")}
+                        visits={data.visits}
+                        columns={data.stageColumns}
+                        total={data.visitsTotal}
+                        truncated={data.visitsTruncated}
+                        start={data.start}
+                        end={data.end}
+                        disabled={loading || error !== null}
+                    />
                 </>
             ) : null}
 
