@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { jwtVerify } from "jose";
-import { canAccessPath } from "@/lib/permissions";
+import { canAccessPath, normalizeRole } from "@/lib/permissions";
 
 const secret = new TextEncoder().encode(process.env.JWT_SECRET as string);
 
@@ -83,8 +83,7 @@ export async function proxy(request: NextRequest) {
 
     // ── สิทธิ์ตามสายงาน (role อยู่ใน JWT ตั้งแต่ตอน login) ──
     // แพทย์ / ผอ. / ADMIN / IT → ผ่านหมด, สายงานอื่นเข้าได้เฉพาะโซนตัวเอง
-    const role =
-      typeof payload.role === "string" ? payload.role.toUpperCase() : "USER";
+    const role = normalizeRole(typeof payload.role === "string" ? payload.role : null);
 
     if (!canAccessPath(role, pathname)) {
       return pathname.startsWith("/api")

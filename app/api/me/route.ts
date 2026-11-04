@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import jwt from "jsonwebtoken";
 import { cookies } from "next/headers";
 import { db2 } from "@/lib/db";
+import { normalizeRole } from "@/lib/permissions";
 import { RowDataPacket } from "mysql2";
 
 type UserRow = RowDataPacket & { user: string; name: string; role: string };
@@ -37,7 +38,7 @@ export async function GET() {
       user: {
         username: decoded.username,
         // คนที่ยังไม่ตั้ง role (คอลัมน์เพิ่งเพิ่ม) → USER ; normalize เป็นตัวใหญ่เสมอ
-        role: (user?.role ?? "USER").toUpperCase(),
+        role: normalizeRole(user?.role),
         name: user?.name ?? decoded.username,
       },
     });

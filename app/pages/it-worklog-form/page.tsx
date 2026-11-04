@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
+import { canAccessITTools } from "@/lib/permissions";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   ClipboardList, CheckCircle2, XCircle,
@@ -228,8 +229,8 @@ export default function ItWorklogFormPage() {
       .then(r => r.json())
       .then(data => {
         const role = data.user?.role;
-        setIsIT(role === "IT");
-        if (role === "IT") {
+        setIsIT(canAccessITTools(role));
+        if (canAccessITTools(role)) {
           setUserName(data.user?.username ?? "");
           setDisplayName(data.user?.name ?? data.user?.username ?? "");
         }
@@ -296,7 +297,7 @@ export default function ItWorklogFormPage() {
         </div>
         <div>
           <p className="text-base font-bold text-gray-800">ไม่มีสิทธิ์เข้าถึง</p>
-          <p className="text-sm text-gray-500 mt-1">หน้านี้สำหรับเจ้าหน้าที่ IT เท่านั้น</p>
+          <p className="text-sm text-gray-500 mt-1">หน้านี้สำหรับผู้ดูแลระบบและเจ้าหน้าที่ IT</p>
         </div>
       </div>
     );

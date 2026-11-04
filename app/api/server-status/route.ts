@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { canAccessITTools } from "@/lib/permissions";
 import { NodeSSH } from "node-ssh";
 import si from "systeminformation";
 
@@ -130,7 +131,7 @@ async function getSshStats(server: ServerConfig) {
 }
 
 export async function GET(req: Request) {
-  // เช็ค role จาก session เดียวกับที่ sidebar ใช้ — ไม่ใช่ IT ตอบ 403
+  // เช็ค role จาก session เดียวกับที่ sidebar ใช้ — ADMIN และ IT เข้าได้
   const meRes = await fetch(new URL("/api/me", req.url), {
     headers: { cookie: req.headers.get("cookie") || "" },
     cache: "no-store",
@@ -138,7 +139,7 @@ export async function GET(req: Request) {
   const me = await meRes.json().catch(() => null);
   const role = me?.user?.role?.toUpperCase();
 
-  if (role !== "IT") {
+  if (!canAccessITTools(role)) {
     return NextResponse.json({ error: "forbidden" }, { status: 403 });
   }
 

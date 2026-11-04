@@ -16,6 +16,16 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 /** role ที่เห็นได้ทุกอย่าง */
+export function normalizeRole(role: string | null | undefined): string {
+  return role?.trim().toUpperCase() || "USER";
+}
+
+/** เครื่องมือดูแลระบบเปิดให้ ADMIN และ IT เท่านั้น */
+export function canAccessITTools(role: string | null | undefined): boolean {
+  const normalized = normalizeRole(role);
+  return normalized === "ADMIN" || normalized === "IT";
+}
+
 export const FULL_ACCESS_ROLES = [
   "ADMIN",
   "DIRECTOR", // ผู้อำนวยการ
@@ -322,7 +332,7 @@ function startsWithPath(pathname: string, prefix: string): boolean {
 
 /** รายการ path prefix ทั้งหมดที่ role นี้เข้าได้ (null = เข้าได้ทุก path) */
 export function allowedPathsForRole(role: string | null | undefined): string[] | null {
-  const r = (role ?? "USER").toUpperCase();
+  const r = normalizeRole(role);
 
   if ((FULL_ACCESS_ROLES as readonly string[]).includes(r)) return null;
 
