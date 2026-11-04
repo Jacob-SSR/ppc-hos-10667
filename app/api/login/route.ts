@@ -3,6 +3,7 @@ import jwt from "jsonwebtoken";
 import bcrypt from "bcrypt";
 import md5 from "md5";
 import { db2 } from "@/lib/db";
+import { normalizeRole } from "@/lib/permissions";
 import { RowDataPacket } from "mysql2";
 import { rateLimit, getClientIp, tooManyRequests } from "@/lib/rateLimit";
 
@@ -76,7 +77,7 @@ export async function POST(req: Request) {
 
   // คนที่ยังไม่ได้ตั้ง role (คอลัมน์เพิ่งเพิ่ม) → ถือเป็น "USER" ธรรมดา
   // ⚠️ ต้อง fallback เสมอ ไม่งั้น role เป็น undefined แล้ว proxy ที่เช็ค role จะปฏิเสธ
-  const role = (user.role ?? "USER").toUpperCase();
+  const role = normalizeRole(user.role);
 
   const token = jwt.sign(
     { username: user.user, role },

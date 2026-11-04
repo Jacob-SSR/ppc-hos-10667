@@ -32,7 +32,7 @@ import {
 import { SidebarItem } from "./types";
 
 import { useSettings } from "@/app/contexts/SettingsContext";
-import { canAccessPath } from "@/lib/permissions";
+import { canAccessPath, canAccessITTools } from "@/lib/permissions";
 
 // =========================
 // Guest Dashboard
@@ -72,7 +72,7 @@ export default function Sidebar() {
     useState<string | null>(null);
 
   const isGuest = role === "GUEST";
-  const isIT = role === "IT";
+  const isIT = canAccessITTools(role);
 
   // =========================
   // Fetch User

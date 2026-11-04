@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import jwt from "jsonwebtoken";
 import { db2 } from "@/lib/db";
+import { canAccessITTools } from "@/lib/permissions";
 import { RowDataPacket } from "mysql2";
 import { getSheetClient, sheetsError } from "@/lib/sheets";
 import { cachedQuery, invalidate } from "@/lib/cache";
@@ -136,7 +137,7 @@ export async function GET(req: NextRequest) {
   const user = await getUser();
   if (!user)
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  if (user.role !== "IT")
+  if (!canAccessITTools(user.role))
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
   try {
@@ -160,7 +161,7 @@ export async function POST(req: NextRequest) {
   const user = await getUser();
   if (!user)
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  if (user.role !== "IT")
+  if (!canAccessITTools(user.role))
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
   const body = await req.json();
