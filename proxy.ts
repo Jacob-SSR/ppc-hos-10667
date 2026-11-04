@@ -1,9 +1,7 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
-import { jwtVerify } from "jose";
-import { canAccessPath, normalizeRole } from "@/lib/permissions";
-
-const secret = new TextEncoder().encode(process.env.JWT_SECRET as string);
+import { canAccessPath } from "@/lib/permissions";
+import { sessionAccess } from "@/lib/user-access";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // หลักการ: DENY BY DEFAULT
@@ -79,28 +77,25 @@ export async function proxy(request: NextRequest) {
 
   // 4) มี token → ตรวจ
   try {
-    const { payload } = await jwtVerify(token, secret);
+    const user = await sessionAccess(token);
+    if (!user) {
+      if (matchesAny(pathname, GUEST_ALLOWED_PATHS)) return clearTokenCookie(NextResponse.next());
+      return deny(request, true);
+    }
 
-    // ── สิทธิ์ตามสายงาน (role อยู่ใน JWT ตั้งแต่ตอน login) ──
-    // แพทย์ / ผอ. / ADMIN / IT → ผ่านหมด, สายงานอื่นเข้าได้เฉพาะโซนตัวเอง
-    const role = normalizeRole(typeof payload.role === "string" ? payload.role : null);
-
-    if (!canAccessPath(role, pathname)) {
+    if (!canAccessPath(user.role, pathname, user.features)) {
       return pathname.startsWith("/api")
         ? NextResponse.json(
-            { error: "คุณไม่มีสิทธิ์เข้าถึงข้อมูลส่วนนี้ (นอกสายงาน)" },
+            { error: "คุณไม่มีสิทธิ์เข้าถึงข้อมูลส่วนนี้ กรุณาติดต่อ IT" },
             { status: 403 },
           )
-        : NextResponse.redirect(new URL("/pages/dashboard", request.url));
+        : NextResponse.redirect(new URL("/pages/access-denied", request.url));
     }
 
     return NextResponse.next();
-  } catch {
-    // token เสีย/หมดอายุ: เคลียร์ cookie แล้วปฏิบัติเหมือน guest
-    if (matchesAny(pathname, GUEST_ALLOWED_PATHS)) {
-      return clearTokenCookie(NextResponse.next());
-    }
-    return deny(request, true);
+  } catch (err) {
+    console.error("Permission lookup failed:", (err as { code?: string }).code ?? "unknown");
+    return NextResponse.json({ error: "ตรวจสอบสิทธิ์ไม่สำเร็จ กรุณาลองใหม่" }, { status: 503 });
   }
 }
 

@@ -21,10 +21,14 @@ export function normalizeRole(role: string | null | undefined): string {
 }
 
 /** เครื่องมือดูแลระบบเปิดให้ ADMIN และ IT เท่านั้น */
-export function canAccessITTools(role: string | null | undefined): boolean {
+export function canAccessITTools(role: string | null | undefined, features?: readonly FeatureKey[] | null): boolean {
   const normalized = normalizeRole(role);
+  if (normalized === "IT") return true;
+  if (features != null) return features.includes("IT_TOOLS");
   return normalized === "ADMIN" || normalized === "IT";
 }
+
+export const canManageUsers = (role: string | null | undefined): boolean => normalizeRole(role) === "IT";
 
 export const FULL_ACCESS_ROLES = [
   "ADMIN",
@@ -255,6 +259,27 @@ export const FEATURE_PATHS = {
 
 export type FeatureKey = keyof typeof FEATURE_PATHS;
 
+export const FEATURE_LABELS: Record<FeatureKey, string> = {
+  CORE: "ภาพรวม / หน่วยบริการ / ระยะเวลารอคอย",
+  NURSING_OPD: "งานผู้ป่วยนอก", NURSING_IPD: "งานผู้ป่วยใน",
+  NURSING_ER: "งานฉุกเฉิน", NURSING_LR: "งานผู้คลอด",
+  MCH: "แม่และเด็ก / ANC", EMERGENCY: "อุบัติเหตุ / โรควิกฤต",
+  SEPSIS: "Sepsis", INFECTIOUS: "โรคติดเชื้อ / วัณโรค",
+  MENTAL: "สุขภาพจิต / ยาเสพติด", IMC: "การดูแลระยะกลาง",
+  PT: "กายภาพบำบัด", DENTAL: "ทันตกรรม", TTM: "แพทย์แผนไทย",
+  RDU: "การใช้ยาอย่างสมเหตุผล", DRUG_VALUE: "มูลค่าการใช้ยา",
+  CLAIM: "เคลม / การเงิน / ประกัน", REPORT: "รายงานเวชระเบียน",
+  PRIMARY_CARE: "ปฐมภูมิ", PPA: "PPA", IT_TOOLS: "เครื่องมือ IT / บันทึกงาน / สถานะเซิร์ฟเวอร์",
+};
+
+export const ROLE_LABELS: Record<string, string> = {
+  IT: "IT", ADMIN: "ผู้ดูแลระบบ", DIRECTOR: "ผู้อำนวยการ", DOCTOR: "แพทย์",
+  NURSE: "บริหารการพยาบาล", NURSE_OPD: "พยาบาล OPD", NURSE_IPD: "พยาบาล IPD",
+  NURSE_ER: "พยาบาล ER", NURSE_LR: "พยาบาลห้องคลอด", NURSE_IC: "ควบคุมการติดเชื้อ",
+  PSYCH: "สุขภาพจิต", DENTIST: "ทันตกรรม", PHARMACY: "เภสัชกรรม", PT: "กายภาพบำบัด",
+  TTM: "แพทย์แผนไทย", FINANCE: "การเงิน / เวชระเบียน", PUBLIC_HEALTH: "สาธารณสุข / ปฐมภูมิ", USER: "ผู้ใช้ทั่วไป",
+};
+
 /**
  * สายงาน → ฟีเจอร์ที่เห็นได้
  * "*" = เห็นทุกอย่าง
@@ -349,9 +374,38 @@ export function allowedPathsForRole(role: string | null | undefined): string[] |
 export function canAccessPath(
   role: string | null | undefined,
   pathname: string,
+  features?: readonly FeatureKey[] | null,
 ): boolean {
+  // การจัดการบัญชีเป็นสิทธิ์เฉพาะ IT ไม่ได้มากับสิทธิ์ดูรายงานทั้งหมด
+  if (startsWithPath(pathname, "/pages/user-permissions") || startsWithPath(pathname, "/api/user-permissions")) {
+    return canManageUsers(role);
+  }
+  if (["/pages/access-denied", "/pages/settings", "/api/change-password"].some((p) => startsWithPath(pathname, p))) return true;
+  if (normalizeRole(role) === "IT") return true;
+  if (features != null) {
+    return features.some((f) => FEATURE_PATHS[f]?.some((p) => startsWithPath(pathname, p)));
+  }
   const allowed = allowedPathsForRole(role);
   if (allowed === null) return true; // full access
 
   return allowed.some((p) => startsWithPath(pathname, p));
+}
+
+/** Validate before any database mutation; custom [] means no reports. */
+export function parseUserPermissionUpdate(value: unknown): {
+  username: string; role: string; features: FeatureKey[] | null; revision: number;
+} {
+  if (!value || typeof value !== "object") throw new Error("ข้อมูลไม่ถูกต้อง");
+  const v = value as Record<string, unknown>;
+  if (typeof v.username !== "string" || !v.username.trim() || v.username.length > 255) throw new Error("บัญชีผู้ใช้ไม่ถูกต้อง");
+  if (typeof v.role !== "string" || !v.role.trim() || !Object.hasOwn(ROLE_FEATURES, normalizeRole(v.role))) throw new Error("role ไม่ถูกต้อง");
+  if (!Number.isSafeInteger(v.revision) || (v.revision as number) < 0) throw new Error("กรุณาโหลดข้อมูลผู้ใช้ใหม่");
+  const role = normalizeRole(v.role);
+  let features: FeatureKey[] | null = null;
+  if (v.features !== null) {
+    if (!Array.isArray(v.features) || !v.features.every((f) => typeof f === "string" && Object.hasOwn(FEATURE_PATHS, f))) throw new Error("กลุ่มสิทธิ์ไม่ถูกต้อง");
+    features = [...new Set(v.features)] as FeatureKey[];
+  }
+  if (role === "IT" && features !== null) throw new Error("IT ต้องใช้สิทธิ์ทั้งหมดตาม role");
+  return { username: v.username, role, features, revision: v.revision as number };
 }

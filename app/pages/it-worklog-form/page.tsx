@@ -229,8 +229,8 @@ export default function ItWorklogFormPage() {
       .then(r => r.json())
       .then(data => {
         const role = data.user?.role;
-        setIsIT(canAccessITTools(role));
-        if (canAccessITTools(role)) {
+        setIsIT(canAccessITTools(role, data.user?.features));
+        if (canAccessITTools(role, data.user?.features)) {
           setUserName(data.user?.username ?? "");
           setDisplayName(data.user?.name ?? data.user?.username ?? "");
         }

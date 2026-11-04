@@ -139,7 +139,7 @@ export async function GET(req: Request) {
   const me = await meRes.json().catch(() => null);
   const role = me?.user?.role?.toUpperCase();
 
-  if (!canAccessITTools(role)) {
+  if (!canAccessITTools(role, me?.user?.features)) {
     return NextResponse.json({ error: "forbidden" }, { status: 403 });
   }
 
