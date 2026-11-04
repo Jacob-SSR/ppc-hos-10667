@@ -1,14 +1,11 @@
 // app/api/it-worklog-form/route.ts
 import { NextRequest, NextResponse } from "next/server";
 import { cookies } from "next/headers";
-import jwt from "jsonwebtoken";
-import { db2 } from "@/lib/db";
+import { sessionAccess } from "@/lib/user-access";
 import { canAccessITTools } from "@/lib/permissions";
-import { RowDataPacket } from "mysql2";
 import { getSheetClient, sheetsError } from "@/lib/sheets";
 import { cachedQuery, invalidate } from "@/lib/cache";
 
-type UserRow = RowDataPacket & { user: string; name: string; role: string };
 
 // cache 5 นาที — worklog เขียนโดยทีม IT เองผ่าน POST ซึ่ง invalidate cache ให้ทันที
 // TTL นี้จึงมีผลแค่กรณีมีคนแก้ตรงในชีต Google โดยไม่ผ่านระบบ
@@ -20,14 +17,7 @@ async function getUser() {
   const token = cookieStore.get("token")?.value;
   if (!token) return null;
   try {
-    const decoded = jwt.verify(token, process.env.JWT_SECRET!) as {
-      username: string;
-    };
-    const [rows] = await db2.query<UserRow[]>(
-      "SELECT `user`, name, role FROM ppchos.users WHERE `user` = ? LIMIT 1",
-      [decoded.username],
-    );
-    return rows[0] ?? null;
+    return await sessionAccess(token);
   } catch {
     return null;
   }
@@ -137,7 +127,7 @@ export async function GET(req: NextRequest) {
   const user = await getUser();
   if (!user)
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  if (!canAccessITTools(user.role))
+  if (!canAccessITTools(user.role, user.features))
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
   try {
@@ -161,7 +151,7 @@ export async function POST(req: NextRequest) {
   const user = await getUser();
   if (!user)
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  if (!canAccessITTools(user.role))
+  if (!canAccessITTools(user.role, user.features))
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
   const body = await req.json();

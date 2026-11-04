@@ -16,6 +16,7 @@ import {
   MapPinned,
   Server,
   HeartPulse,
+  ShieldCheck,
 } from "lucide-react";
 
 import NavGroup from "./NavGroup";
@@ -32,7 +33,7 @@ import {
 import { SidebarItem } from "./types";
 
 import { useSettings } from "@/app/contexts/SettingsContext";
-import { canAccessPath, canAccessITTools } from "@/lib/permissions";
+import { canAccessPath, canAccessITTools, canManageUsers, type FeatureKey } from "@/lib/permissions";
 
 // =========================
 // Guest Dashboard
@@ -70,9 +71,10 @@ export default function Sidebar() {
   // null = ยังโหลดอยู่
   const [role, setRole] =
     useState<string | null>(null);
+  const [features, setFeatures] = useState<FeatureKey[] | null>(null);
 
   const isGuest = role === "GUEST";
-  const isIT = canAccessITTools(role);
+  const isIT = canAccessITTools(role, features);
 
   // =========================
   // Fetch User
@@ -82,10 +84,12 @@ export default function Sidebar() {
 
     fetch("/api/me", {
       credentials: "include",
+      cache: "no-store",
     })
-      .then((res) => res.json())
+      .then((res) => { if (!res.ok) throw new Error("Session unavailable"); return res.json(); })
       .then((data) => {
         if (!cancelled) {
+          setFeatures(data.user?.features ?? null);
           setRole(
             data.user?.role?.toUpperCase() ??
               "GUEST"
@@ -101,7 +105,7 @@ export default function Sidebar() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [pathname]);
 
   // =========================
   // กรองเมนูตามสายงาน (role)
@@ -118,7 +122,8 @@ export default function Sidebar() {
                 (item) =>
                   canAccessPath(
                     role,
-                    item.href
+                    item.href,
+                    features
                   )
               ),
           })
@@ -126,7 +131,7 @@ export default function Sidebar() {
           (group) =>
             group.items.length > 0
         ),
-      [role]
+      [role, features]
     );
 
   const visibleReportItems =
@@ -136,10 +141,11 @@ export default function Sidebar() {
           (item) =>
             canAccessPath(
               role,
-              item.href
+              item.href,
+              features
             )
         ),
-      [role]
+      [role, features]
     );
 
   const visiblePrimaryCareItems =
@@ -149,10 +155,11 @@ export default function Sidebar() {
           (item) =>
             canAccessPath(
               role,
-              item.href
+              item.href,
+              features
             )
         ),
-      [role]
+      [role, features]
     );
 
   const visiblePpaItems =
@@ -162,10 +169,11 @@ export default function Sidebar() {
           (item) =>
             canAccessPath(
               role,
-              item.href
+              item.href,
+              features
             )
         ),
-      [role]
+      [role, features]
     );
 
   // =========================
@@ -182,6 +190,7 @@ export default function Sidebar() {
       ...visiblePrimaryCareItems.map((item) => ({ ...item, category: "ปฐมภูมิ" })),
       ...visiblePpaItems.map((item) => ({ ...item, category: "PPA" })),
       ...SETTINGS_ITEMS.map((item) => ({ ...item, category: "ตั้งค่า" })),
+      ...(canManageUsers(role) ? [{ label: "จัดการสิทธิ์ผู้ใช้", href: "/pages/user-permissions", icon: ShieldCheck, desc: "ตั้ง role และกลุ่มเมนูรายคน", category: "ระบบงาน IT" }] : []),
       ...(isIT ? [
         { label: "บันทึกงาน IT", href: "/pages/it-worklog-form", icon: FilePen, desc: "กรอกงานประจำวัน", category: "ระบบงาน IT" },
         { label: "สถานะเซิร์ฟเวอร์", href: "/pages/server-status", icon: Server, desc: "RAM / Harddisk เครื่องแม่ข่าย", category: "ระบบงาน IT" },
@@ -421,6 +430,7 @@ export default function Sidebar() {
             )}
 
             {/* IT Worklog */}
+            {canManageUsers(role) && <Link href="/pages/user-permissions" className={`flex items-center gap-2.5 rounded-lg px-3 py-2.5 text-sm font-medium ${pathname === "/pages/user-permissions" ? "bg-green-50 text-green-800" : "text-gray-600 hover:bg-green-50"}`}><ShieldCheck size={16} /><span>จัดการสิทธิ์ผู้ใช้</span></Link>}
             {isIT && (
               <Link
                 href="/pages/it-worklog-form"

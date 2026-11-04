@@ -1,11 +1,9 @@
 import { NextResponse } from "next/server";
-import jwt from "jsonwebtoken";
 import { cookies } from "next/headers";
-import { db2 } from "@/lib/db";
-import { normalizeRole } from "@/lib/permissions";
-import { RowDataPacket } from "mysql2";
+import { sessionAccess } from "@/lib/user-access";
 
-type UserRow = RowDataPacket & { user: string; name: string; role: string };
+export const dynamic = "force-dynamic";
+const headers = { "Cache-Control": "private, no-store" };
 
 // role มาตรฐานทั้งระบบใช้ "ตัวพิมพ์ใหญ่" เสมอ (USER, IT, ADMIN, GUEST)
 // กันบั๊กตอนเทียบกับ ROLE_POLICIES ใน proxy / login route
@@ -18,31 +16,13 @@ export async function GET() {
   const token = cookieStore.get("token")?.value;
 
   if (!token) {
-    return NextResponse.json(GUEST);
+    return NextResponse.json(GUEST, { headers });
   }
 
   try {
-    const decoded = jwt.verify(token, process.env.JWT_SECRET!) as {
-      username: string;
-    };
-
-    // ดึง role และ name จาก DB (เป็นแหล่งความจริง — เผื่อ role เปลี่ยนหลัง login)
-    const [rows] = await db2.query<UserRow[]>(
-      "SELECT `user`, name, role FROM ppchos.users WHERE `user` = ? LIMIT 1",
-      [decoded.username],
-    );
-
-    const user = rows[0];
-
-    return NextResponse.json({
-      user: {
-        username: decoded.username,
-        // คนที่ยังไม่ตั้ง role (คอลัมน์เพิ่งเพิ่ม) → USER ; normalize เป็นตัวใหญ่เสมอ
-        role: normalizeRole(user?.role),
-        name: user?.name ?? decoded.username,
-      },
-    });
+    const user = await sessionAccess(token);
+    return NextResponse.json(user ? { user } : GUEST, { headers });
   } catch {
-    return NextResponse.json(GUEST);
+    return NextResponse.json({ error: "ตรวจสอบสิทธิ์ไม่สำเร็จ" }, { status: 503, headers });
   }
 }
