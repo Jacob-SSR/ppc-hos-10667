@@ -1,28 +1,16 @@
 // lib/pt.service.ts
 // SQL service สำหรับ Dashboard กายภาพบำบัด (Physical Therapy — PT/PTA)
 //
-// *** เวอร์ชันนี้ยึดตรรกะ "ตามรายงานจริง" ของ HOSxP ***
-// รายงานต้นฉบับนับงานกายภาพแบบนี้:
-//   - ดึงจาก vn_stat โดยตรง (ไม่กรอง o.main_dep)
-//   - visit จะถูกนับก็ต่อเมื่อ "มีรายการใน opitemrece ที่ผู้ลงค่าบริการ position_id = 9"
-//   - attribute เจ้าของงาน = บุคลากรกายภาพที่ลงค่าบริการใน opitemrece (เลือกคนที่คิดเงินมากสุดของ VN)
-//   - รายได้แยกหมวดตาม income code (c13–c16)
-//   - group by vn → 1 แถวต่อ 1 visit
-//
-// ความต่างจากเวอร์ชันเดิม (ที่ทำให้ตัวเลขไม่ตรง 15 vs 11):
-//   เดิม: กรอง o.main_dep = '033' แล้วหาเจ้าของจาก diag/oper/o.doctor + เกณฑ์ position หรือชื่อ กภ.
-//   ใหม่: ยึด opitemrece + position_id = 9 ล้วน (เหมือนรายงาน) → ได้ชุด VN เดียวกับรายงาน
-//
-// หมายเหตุ (ปรับให้ตรง master ของ รพ. ก่อนใช้จริง):
-//   - PT_DEPCODE: ใช้เฉพาะใน query "คิว" (queue) เท่านั้น — query records ไม่ใช้แล้ว
-//   - position_id (ตาราง doctor_position): 9 = เจ้าหน้าที่กายภาพ (PT/PTA)
-//   - หมวดรายได้ (income code) จัดกลุ่มตามรายงานต้นฉบับ: '14' = หมวดกายภาพ/เวชกรรมฟื้นฟู,
-//     '03','04','17' = หมวดยา/เวชภัณฑ์ (ปรับโค้ด/ชื่อได้ตาม master)
-//   - ชื่อหัตถการ join จากตารางใน PT_ICD9_TABLE (default icd9_sss)
+// นับแยกตาม VN จาก ovst: มีค่าบริการโดยเจ้าหน้าที่กายภาพ หรือมีทะเบียนกายภาพ OPD
+// ไม่พึ่ง vn_stat และไม่ดึง visit แพทย์อื่นมารวมด้วย HN/วันที่
+// เชิงรุก OPD: ตรวจจาก CC ของ VN นั้น
 
 import { db } from "@/lib/db";
-import { RowDataPacket } from "mysql2";
+import type { RowDataPacket } from "mysql2";
 import { classifyPtService, PT_SERVICE_BY_KEY } from "@/lib/ptIpdCategories";
+
+import { buildPtRecordsQuery, PT_OUTREACH_PATTERNS, PT_OUTREACH_CC_PREDICATE, type PhysicOpdSource } from "@/lib/pt-dashboard-query";
+import type { PtServiceLocation } from "@/lib/pt-dashboard-filters";
 
 const PT_DEPCODE = process.env.PT_DEPCODE ?? "033";
 const DISCHARGED_STATUS = ["99", "98"];
@@ -32,7 +20,7 @@ const ICD9_TABLE_WHITELIST = ["icd9cm", "icd9_sss"] as const;
 const PT_ICD9_TABLE = ICD9_TABLE_WHITELIST.includes(
   (process.env.PT_ICD9_TABLE ?? "") as (typeof ICD9_TABLE_WHITELIST)[number],
 )
-  ? (process.env.PT_ICD9_TABLE as string)
+  ? (process.env.PT_ICD9_TABLE as (typeof ICD9_TABLE_WHITELIST)[number])
   : "icd9_sss";
 
 // ใส่รหัส doctor ที่เป็น "ผู้ช่วยกายภาพ (PTA)" ตรงนี้ ถ้าระบบไม่ได้ตั้ง position_id ให้
@@ -49,44 +37,6 @@ const PTA_OR_DD = PTA_DOCTOR_CODES.length
   : "";
 const PT_STAFF_PREDICATE = `(dd.position_id IN (${PT_POSITION_IN})${PTA_OR_DD})`;
 
-// EXISTS: visit นี้มีรายการ opitemrece ที่ผู้ลงค่าบริการเป็นบุคลากรกายภาพหรือไม่
-const PT_VISIT_EXISTS = `
-      EXISTS (
-        SELECT 1
-          FROM opitemrece oo
-          JOIN doctor dd ON dd.code = oo.doctor
-         WHERE oo.vn = v.vn
-           AND ${PT_STAFF_PREDICATE}
-      )`;
-
-// เลือกเจ้าของงาน = บุคลากรกายภาพที่คิดเงินมากสุดของ VN
-const PT_STAFF_SUBQ = `
-        (SELECT oo.doctor
-           FROM opitemrece oo
-           JOIN doctor dd ON dd.code = oo.doctor
-          WHERE oo.vn = v.vn
-            AND ${PT_STAFF_PREDICATE}
-          GROUP BY oo.doctor
-          ORDER BY SUM(oo.sum_price) DESC
-          LIMIT 1)`;
-
-// ── เวลาที่ใช้จัดเวร = "เวลาที่นักกายภาพลงรายการจริง" ไม่ใช่เวลามา visit ──
-//
-//   ⚠️ ถ้า HOSxP ของคุณไม่มีคอลัมน์ oo.rxtime ให้แก้เฉพาะคอลัมน์เวลาในบรรทัดล่างนี้
-//      (เช่นเปลี่ยนเป็นเวลาจาก doctor_operation) ถ้าคอลัมน์ไม่มีอยู่จริง SQL จะ error
-//      ไม่ใช่ fallback — COALESCE กันได้แค่ค่า NULL/ว่าง เท่านั้น
-//
-//   ดึงเวลาล่าสุดของรายการที่บุคลากรกายภาพคิดเงินใน VN นั้น ถ้าว่าง → ใช้ o.vsttime แทน
-const PT_SERVICE_TIME_EXPR = `
-        COALESCE(
-          NULLIF((SELECT MAX(oo.rxtime)
-                    FROM opitemrece oo
-                    JOIN doctor dd ON dd.code = oo.doctor
-                   WHERE oo.vn = v.vn
-                     AND ${PT_STAFF_PREDICATE}), ''),
-          o.vsttime
-        )`;
-
 // ── "หัตถการ" = รายละเอียดการให้บริการที่นักกายภาพบันทึกไว้ ──────────────────
 //
 // เดิมช่องหัตถการดึงจาก doctor_operation.icd9 ซึ่งห้องกายภาพไม่ได้ลงเป็นประจำ
@@ -99,7 +49,7 @@ const PT_SERVICE_TIME_EXPR = `
 // ชื่อตารางฝั่ง OPD ไม่เท่ากันทุก HOSxP (physic_main_opd / physic_main) และบางที่
 // ไม่มีเลย จึงหาจาก information_schema ตอน runtime แล้วจำไว้ ถ้าไม่เจอก็ข้ามไป
 // ใช้ icd9 เหมือนเดิม (ไม่ทำให้ dashboard พังเพราะตารางไม่มีจริง)
-const PHYSIC_OPD_CANDIDATES = ["physic_main_opd", "physic_main"];
+const PHYSIC_OPD_CANDIDATES = ["physic_main_opd", "physic_main"] as const;
 
 interface SchemaRow extends RowDataPacket {
   TABLE_NAME: string;
@@ -107,17 +57,17 @@ interface SchemaRow extends RowDataPacket {
 }
 
 /** ตารางบันทึกกายภาพ OPD ที่ใช้ได้จริง (null = ไม่มี → ใช้ icd9 อย่างเดียว) */
-let physicOpdTable: string | null | undefined;
+let physicOpdSource: PhysicOpdSource | null | undefined;
 
-async function resolvePhysicOpdTable(): Promise<string | null> {
-  if (physicOpdTable !== undefined) return physicOpdTable;
+async function resolvePhysicOpdSource(): Promise<PhysicOpdSource | null> {
+  if (physicOpdSource !== undefined) return physicOpdSource;
   try {
     const [rows] = await db.query<SchemaRow[]>(
       `SELECT TABLE_NAME, COLUMN_NAME
          FROM information_schema.COLUMNS
         WHERE TABLE_SCHEMA = DATABASE()
           AND TABLE_NAME IN (${PHYSIC_OPD_CANDIDATES.map(() => "?").join(",")})
-          AND COLUMN_NAME IN ('vn', 'vstdate', 'service_text')`,
+          AND COLUMN_NAME IN ('vn', 'vstdate', 'service_text', 'doctor', 'doctor_code', 'staff')`,
       PHYSIC_OPD_CANDIDATES,
     );
     const cols = new Map<string, Set<string>>();
@@ -127,16 +77,20 @@ async function resolvePhysicOpdTable(): Promise<string | null> {
       cols.get(t)!.add(String(r.COLUMN_NAME).toLowerCase());
     }
     // ต้องมีครบทั้ง 3 คอลัมน์ถึงจะ query ตามช่วงวันแล้วผูกกลับเข้า visit ได้
-    physicOpdTable =
+    const table =
       PHYSIC_OPD_CANDIDATES.find((t) => {
         const c = cols.get(t);
         return c?.has("vn") && c.has("vstdate") && c.has("service_text");
       }) ?? null;
+    const staffColumn = table
+      ? (["doctor", "doctor_code", "staff"] as const).find((c) => cols.get(table)?.has(c)) ?? null
+      : null;
+    physicOpdSource = table ? { table, staffColumn } : null;
   } catch (e) {
-    console.error("resolvePhysicOpdTable failed:", e);
-    physicOpdTable = null;
+    console.error("resolvePhysicOpdSource failed:", e);
+    physicOpdSource = null;
   }
-  return physicOpdTable;
+  return physicOpdSource;
 }
 
 interface ServiceTextRow extends RowDataPacket {
@@ -149,7 +103,8 @@ async function fetchPhysicServiceText(
   start: string,
   end: string,
 ): Promise<Map<string, string>> {
-  const table = await resolvePhysicOpdTable();
+  const source = await resolvePhysicOpdSource();
+  const table = source?.table;
   const out = new Map<string, string>();
   if (!table) return out;
   try {
@@ -184,7 +139,7 @@ interface RecordQueryRow extends RowDataPacket {
   staff_name: string;
   hn: string;
   cid: string | null;
-  patient_name: string;
+  patient_name: string | null;
   pcode: string;
   pttype: string;
   pttype_name: string;
@@ -192,11 +147,14 @@ interface RecordQueryRow extends RowDataPacket {
   charge_drug: number; // c14: income '03','04','17'
   charge_other: number; // c15: income นอกเหนือจากนั้น
   charge_total: number; // c16: รวมทั้ง visit
+  is_outreach: number;
   procedure_code: string;
   procedure_name: string;
 }
 
 interface QueueQueryRow extends RowDataPacket {
+  vn: string;
+  is_outreach: number;
   queue_no: string;
   hn: string;
   patient_name: string;
@@ -206,11 +164,13 @@ interface QueueQueryRow extends RowDataPacket {
 }
 
 export interface PtRecord {
+  vn: string;
+  service_location: PtServiceLocation;
   date: string;
   shift: "morning" | "evening";
   staff_id: string;
   staff_name: string;
-  role: "pt" | "pta";
+  role: "pt" | "pta" | "unknown";
   right: string;
   /** หมวดของรายละเอียดการให้บริการ (สำรอง: รหัส icd9 เดิม) */
   procedure: string;
@@ -229,6 +189,8 @@ export interface PtRecord {
 }
 
 export interface PtQueueItem {
+  vn: string;
+  service_location: PtServiceLocation;
   queue_no: string;
   hn: string;
   patient_name: string;
@@ -255,7 +217,8 @@ function classifyRight(pcode: string): string {
   return "อื่นๆ";
 }
 
-function classifyRole(staffId: string, name: string): "pt" | "pta" {
+function classifyRole(staffId: string, name: string): "pt" | "pta" | "unknown" {
+  if (!staffId) return "unknown";
   if (PTA_DOCTOR_CODES.includes(staffId)) return "pta";
   if ((name ?? "").includes("ผู้ช่วย")) return "pta";
   return "pt"; // กภ. / นักกายภาพบำบัด
@@ -273,49 +236,11 @@ export async function getPtDashboard(
   start: string,
   end: string,
 ): Promise<PtDashboardData> {
-  // 1) records — 1 แถวต่อ 1 visit ที่ "มีบุคลากรกายภาพลงค่าบริการ" (ตามรายงาน)
-  //    ไม่กรอง main_dep, attribute เจ้าของจาก opitemrece, รายได้แยกหมวด c13–c16
+  // 1 แถวต่อ VN: visit พบแพทย์อย่างเดียวของ HN เดียวกันไม่ถูกนำมารวม
+  const source = await resolvePhysicOpdSource();
   const [rows] = await db.query<RecordQueryRow[]>(
-    `
-    SELECT x.*, d2.name AS staff_name
-    FROM (
-      SELECT
-        v.vn                                       AS vn,
-        v.vstdate                                  AS date,
-        o.vsttime,
-        ${PT_SERVICE_TIME_EXPR}                    AS svc_time,
-        ${PT_STAFF_SUBQ}                           AS staff_id,
-        v.hn,
-        pt.cid                                     AS cid,
-        CONCAT(pt.pname, pt.fname, ' ', pt.lname)  AS patient_name,
-        COALESCE(v.pcode, '')                      AS pcode,
-        v.pttype                                   AS pttype,
-        ptt.name                                   AS pttype_name,
-        COALESCE((SELECT SUM(oo.sum_price) FROM opitemrece oo
-                   WHERE oo.vn = v.vn AND oo.income IN ('14')), 0)                      AS charge_physio,
-        COALESCE((SELECT SUM(oo.sum_price) FROM opitemrece oo
-                   WHERE oo.vn = v.vn AND oo.income IN ('03','04','17')), 0)            AS charge_drug,
-        COALESCE((SELECT SUM(oo.sum_price) FROM opitemrece oo
-                   WHERE oo.vn = v.vn AND oo.income NOT IN ('03','04','17','14')), 0)   AS charge_other,
-        COALESCE((SELECT SUM(oo.sum_price) FROM opitemrece oo
-                   WHERE oo.vn = v.vn), 0)                                              AS charge_total,
-        (SELECT op.icd9 FROM doctor_operation op
-          WHERE op.vn = v.vn ORDER BY op.icd9 LIMIT 1)                                  AS procedure_code,
-        (SELECT COALESCE(ic9.name, op.icd9) FROM doctor_operation op
-          LEFT JOIN ${PT_ICD9_TABLE} ic9 ON ic9.code = op.icd9
-          WHERE op.vn = v.vn ORDER BY op.icd9 LIMIT 1)                                  AS procedure_name
-      FROM vn_stat v
-      LEFT JOIN ovst o     ON o.vn  = v.vn
-      LEFT JOIN patient pt ON pt.hn = v.hn
-      LEFT JOIN pttype ptt ON ptt.pttype = v.pttype
-      WHERE v.vstdate BETWEEN ? AND ?
-        AND ${PT_VISIT_EXISTS}
-      GROUP BY v.vn
-    ) x
-    INNER JOIN doctor d2 ON d2.code = x.staff_id
-    ORDER BY x.date, x.vsttime
-    `,
-    [start, end],
+    buildPtRecordsQuery(source, PT_ICD9_TABLE, PT_STAFF_PREDICATE),
+    [...PT_OUTREACH_PATTERNS, start, end],
   );
 
   // รายละเอียดการให้บริการของแต่ละ visit — ใช้แทน "หัตถการ" (ดูหมายเหตุด้านบน)
@@ -325,6 +250,8 @@ export async function getPtDashboard(
     const detail = serviceTextByVn.get(String(r.vn)) ?? "";
     const cat = detail ? classifyPtService(detail).primary : "";
     return {
+      vn: String(r.vn),
+      service_location: Number(r.is_outreach) ? "outreach" : "hospital",
       date: r.date,
       shift: classifyShift(r.svc_time),
       staff_id: r.staff_id || "ไม่ระบุ",
@@ -342,7 +269,7 @@ export async function getPtDashboard(
       otherCharge: Number(r.charge_other) || 0,
       hn: r.hn,
       cid: (r.cid ?? "").trim(),
-      patient_name: r.patient_name,
+      patient_name: r.patient_name || "ไม่ระบุ",
     };
   });
 
@@ -352,6 +279,9 @@ export async function getPtDashboard(
   const [qrows] = await db.query<QueueQueryRow[]>(
     `
     SELECT
+      o.vn,
+      EXISTS (SELECT 1 FROM opdscreen os WHERE os.vn = o.vn
+        AND ${PT_OUTREACH_CC_PREDICATE}) AS is_outreach,
       o.oqueue                                   AS queue_no,
       o.hn,
       CONCAT(pt.pname, pt.fname, ' ', pt.lname)  AS patient_name,
@@ -363,14 +293,16 @@ export async function getPtDashboard(
     LEFT  JOIN doctor d    ON d.code = o.doctor
     WHERE o.vstdate = CURDATE()
       AND o.main_dep = ?
-      AND o.an IS NULL
+      AND (o.an IS NULL OR o.an = '')
       AND (o.ovstost IS NULL OR o.ovstost = '' OR o.ovstost NOT IN (${dischargedList}))
     ORDER BY CAST(o.oqueue AS UNSIGNED), o.vsttime
     `,
-    [PT_DEPCODE],
+    [...PT_OUTREACH_PATTERNS, PT_DEPCODE],
   );
 
   const queue: PtQueueItem[] = qrows.map((q) => ({
+    vn: String(q.vn),
+    service_location: Number(q.is_outreach) ? "outreach" : "hospital",
     queue_no: String(q.queue_no ?? "—"),
     hn: q.hn,
     patient_name: q.patient_name,

@@ -19,14 +19,17 @@ import { Shimmer } from "@/app/components/ui/Shimmer";
 import { EmptyState } from "@/app/components/ui/EmptyState";
 import ThaiDateInput from "@/app/components/ThaiDateInput";
 import { formatThaiDate } from "@/lib/dateUtils";
+import { filterPtLocation, PT_LOCATION_LABELS, type PtLocationFilter, type PtServiceLocation } from "@/lib/pt-dashboard-filters";
 import AiSummaryCard from "@/app/components/ai/AiSummaryCard";
 // ─── Types ──────────────────────────────────────────────────────────────────
 interface PtRecord {
+    vn: string;
+    service_location: PtServiceLocation;
     date: string;
     shift: "morning" | "evening";
     staff_id: string;
     staff_name: string;
-    role: "pt" | "pta";
+    role: "pt" | "pta" | "unknown";
     right: string;
     /** หมวดของรายละเอียดการให้บริการ (สำรอง: รหัส icd9 เดิม) */
     procedure: string;
@@ -41,6 +44,8 @@ interface PtRecord {
     patient_name: string;
 }
 interface PtQueueItem {
+    vn: string;
+    service_location: PtServiceLocation;
     queue_no: string;
     hn: string;
     patient_name: string;
@@ -100,11 +105,13 @@ function getBangkokToday(): Date {
 }
 
 // ─── Small UI helpers ─────────────────────────────────────────────────────────
+const roleLabel = (role: string) => role === "pt" ? "PT" : role === "pta" ? "PTA" : "ไม่ระบุ";
+
 function RoleBadge({ role }: { role: string }) {
     const pt = role === "pt";
     return (
         <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${pt ? "bg-blue-100 text-blue-700" : "bg-green-100 text-green-700"}`}>
-            {pt ? "PT" : "PTA"}
+            {roleLabel(role)}
         </span>
     );
 }
@@ -181,8 +188,15 @@ export default function PtDashboardPage() {
     const { data, loading, error, connected, secondsLeft, refetch } =
         useAutoRefresh<ApiResp>(apiUrl, REFRESH_MS);
 
-    const records = useMemo(() => data?.records ?? [], [data]);
-    const queue = useMemo(() => data?.queue ?? [], [data]);
+    const [location, setLocation] = useState<PtLocationFilter>("all");
+    const allRecords = useMemo(() => data?.records ?? [], [data]);
+    const records = useMemo(() => filterPtLocation(allRecords, location), [allRecords, location]);
+    const queue = useMemo(() => filterPtLocation(data?.queue ?? [], location), [data, location]);
+    const locationCounts = useMemo(() => ({
+        all: allRecords.length,
+        hospital: filterPtLocation(allRecords, "hospital").length,
+        outreach: filterPtLocation(allRecords, "outreach").length,
+    }), [allRecords]);
 
     // ── เปลี่ยน preset ──
     const handlePreset = useCallback((key: Preset) => {
@@ -368,6 +382,7 @@ export default function PtDashboardPage() {
         });
         return {
             ช่วงข้อมูล: data ? `${data.start} ถึง ${data.end}` : preset,
+            สถานที่ให้บริการ: PT_LOCATION_LABELS[location],
             ผู้ป่วยไม่ซ้ำ_ราย: kpi.pts,
             จำนวนครั้งบริการ_visits: kpi.vis,
             รายได้รวม_บาท: kpi.inc,
@@ -376,7 +391,7 @@ export default function PtDashboardPage() {
                 ผู้ช่วย_PTA: { visits: kpi.ptaV, รายได้: kpi.ptaI },
             },
             ภาระงานรายเจ้าหน้าที่: staffRows.map((s) => ({
-                ชื่อ: s.name, ประเภท: s.role === "pt" ? "PT" : "PTA",
+                ชื่อ: s.name, ประเภท: roleLabel(s.role),
                 ผู้ป่วย: s.pts.size, visits: s.vis, รายได้: s.inc,
             })),
             แยกตามเวร: shiftAgg,
@@ -384,17 +399,19 @@ export default function PtDashboardPage() {
             หัตถการที่ทำบ่อย: topN(procAgg),
             คิวคงเหลือ: queue.length,
         };
-    }, [records, data, preset, kpi, staffRows, queue]);
+    }, [records, data, preset, kpi, staffRows, queue, location]);
 
     // ── export ──
     const onExportExcel = () => {
         if (!records.length) return;
         exportToExcel(
             records.map((r) => ({
+                VN: r.vn,
+                สถานที่ให้บริการ: PT_LOCATION_LABELS[r.service_location],
                 วันที่: r.date,
                 เวร: SHIFT_LABEL[r.shift] || r.shift,
                 เจ้าหน้าที่: r.staff_name,
-                ประเภท: r.role === "pt" ? "PT" : "PTA",
+                ประเภท: roleLabel(r.role),
                 HN: r.hn,
                 CID: r.cid ?? "",
                 ชื่อผู้ป่วย: r.patient_name,
@@ -440,6 +457,23 @@ export default function PtDashboardPage() {
                     <RefreshButton loading={loading} onClick={refetch} />
                     <ConnectionStatus error={!!error} connected={connected && !!data} />
                 </div>
+            </div>
+
+            <div className="bg-white border border-gray-200 rounded-2xl shadow-sm px-6 py-3">
+                <div className="flex flex-wrap gap-2 no-print" role="group" aria-label="สถานที่ให้บริการ">
+                    {(["all", "hospital", "outreach"] as const).map((key) => (
+                        <button key={key} type="button" aria-pressed={location === key}
+                            onClick={() => setLocation(key)}
+                            className="rounded-lg border px-4 py-2 text-sm transition-colors"
+                            style={{ backgroundColor: location === key ? MINT[500] : "#fff", color: location === key ? "#fff" : "#4b5563" }}>
+                            {PT_LOCATION_LABELS[key]} · {locationCounts[key].toLocaleString()} visits
+                        </button>
+                    ))}
+                </div>
+                <p className="text-xs text-gray-500 mt-2">
+                    แสดง: {PT_LOCATION_LABELS[location]} · นับแยกตาม VN เฉพาะ visit ที่มีงานกายภาพ ผู้ป่วยซ้ำนับรายเดียวตาม HN
+                </p>
+                <p className="text-xs text-gray-500 mt-1">งานนอกพื้นที่กายภาพต้องมี “pt in community” หรือ “pt on community” ใน CC ของ visit นั้น (“เชิงรุก opd” อย่างเดียวไม่เข้าเกณฑ์)</p>
             </div>
 
             {/* ── Controls ── */}
@@ -722,7 +756,7 @@ export default function PtDashboardPage() {
                             {[
                                 { val: fRight, set: setFRight, opts: [["", "สิทธิ์ทั้งหมด"], ["UC", "UC"], ["ข้าราชการ", "ข้าราชการ"], ["ประกันสังคม", "ประกันสังคม"], ["จ่ายเอง", "จ่ายเอง"]] },
                                 { val: fShift, set: setFShift, opts: [["", "เวรทั้งหมด"], ["morning", "เวรเช้า"], ["evening", "เวรเย็น"]] },
-                                { val: fRole, set: setFRole, opts: [["", "PT + PTA"], ["pt", "PT เท่านั้น"], ["pta", "PTA เท่านั้น"]] },
+                                { val: fRole, set: setFRole, opts: [["", "เจ้าหน้าที่ทั้งหมด"], ["pt", "PT เท่านั้น"], ["pta", "PTA เท่านั้น"], ["unknown", "ไม่ระบุเจ้าหน้าที่"]] },
                             ].map((sel, si) => (
                                 <select
                                     key={si}
@@ -775,7 +809,7 @@ export default function PtDashboardPage() {
                                                                 <table className="min-w-full text-xs border-collapse">
                                                                     <thead>
                                                                         <tr>
-                                                                            <Th>วันที่</Th><Th>HN</Th><Th>CID</Th><Th>ชื่อผู้ป่วย</Th>
+                                                                            <Th>วันที่ / VN</Th><Th>HN</Th><Th>CID</Th><Th>ชื่อผู้ป่วย</Th>
                                                                             <Th>หัตถการ / รายละเอียดการให้บริการ</Th><Th>เวร</Th><Th>สิทธิ์</Th>
                                                                             <Th className="text-right">รายได้</Th>
                                                                         </tr>
@@ -783,7 +817,11 @@ export default function PtDashboardPage() {
                                                                     <tbody>
                                                                         {filtered.map((r, i) => (
                                                                             <Tr key={i} index={i}>
-                                                                                <td className="px-3 py-2 text-gray-600 whitespace-nowrap">{formatThaiDate(r.date)}</td>
+                                                                                <td className="px-3 py-2 text-gray-600 whitespace-nowrap">
+                                                                                    {formatThaiDate(r.date)}
+                                                                                    <div className="text-[10px] text-gray-400">VN: {r.vn}</div>
+                                                                                    <div className="text-[10px] text-gray-500">{PT_LOCATION_LABELS[r.service_location]}</div>
+                                                                                </td>
                                                                                 <td className="px-3 py-2 font-mono text-gray-500">{r.hn}</td>
                                                                                 <td className="px-3 py-2 font-mono text-gray-500 whitespace-nowrap">{r.cid || "-"}</td>
                                                                                 <td className="px-3 py-2 text-gray-800">{r.patient_name}</td>
