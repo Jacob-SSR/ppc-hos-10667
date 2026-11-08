@@ -26,13 +26,13 @@ export interface PtTextColumn {
   COLUMN_NAME: string;
   DATA_TYPE: string;
 }
-export interface PtOutreachMatch {
+export interface PtOutreachQuery {
   sql: string;
   params: string[];
 }
 
 /** All available text columns in supported visit tables; validate identifiers too. */
-export function buildPtOutreachMatch(schema: PtTextColumn[]): PtOutreachMatch {
+export function buildPtOutreachQuery(schema: PtTextColumn[], start: string, end: string): PtOutreachQuery {
   const tables = new Map<string, Map<string, string>>();
   for (const row of schema) {
     const table = row.TABLE_NAME.toLowerCase(), col = row.COLUMN_NAME.toLowerCase();
@@ -41,31 +41,41 @@ export function buildPtOutreachMatch(schema: PtTextColumn[]): PtOutreachMatch {
     tables.get(table)!.set(col, row.DATA_TYPE.toLowerCase());
   }
   const params: string[] = [];
+  let fieldParams: string[] = [];
   const textMatch = (table: string, alias: string): string => {
     const fields = [...(tables.get(table) ?? [])]
       .filter(([col, type]) => !["vn", "hn", "an", "cid"].includes(col)
         && ["char", "varchar", "tinytext", "text", "mediumtext", "longtext"].includes(type))
       .map(([col]) => {
-        params.push(PT_COMMUNITY_PATTERN);
-        return `LOWER(COALESCE(${alias}.\`${col}\`, '')) REGEXP ?`;
+        fieldParams.push(PT_COMMUNITY_PATTERN);
+        const text = `LOWER(COALESCE(${alias}.\`${col}\`, ''))`;
+        // Most fields cannot match; skip the regex engine until the literal
+        // word "community" is present. Preserve the exact matching rule.
+        return `(${text} LIKE '%community%' AND ${text} REGEXP ?)`;
       });
     return fields.length ? `(${fields.join(" OR ")})` : "";
   };
   const parts: string[] = [];
+  const addSource = (joins: string, match: string) => {
+    if (!match) return;
+    // Date-bounded set queries, never a correlated lookup per hospital visit.
+    parts.push(`SELECT o.vn, DATE_FORMAT(o.vstdate, '%Y-%m-%d') AS date
+      FROM ovst o ${joins} WHERE o.vstdate BETWEEN ? AND ? AND ${match}`);
+    params.push(start, end, ...fieldParams);
+    fieldParams = [];
+  };
   for (const table of PT_OUTREACH_VISIT_TABLES) {
     if (!tables.get(table)?.has("vn")) continue;
     const match = textMatch(table, table === "ovst" ? "o" : "s");
-    if (match) parts.push(table === "ovst" ? match
-      : `EXISTS (SELECT 1 FROM \`${table}\` s WHERE s.vn = o.vn AND ${match})`);
+    addSource(table === "ovst" ? "" : `JOIN \`${table}\` s ON s.vn = o.vn`, match);
   }
   for (const link of LABEL_LINKS) {
     if (!tables.get(link.table)?.has(link.key) || !tables.get(link.parent)?.has(link.column)) continue;
     if (link.parent !== "ovst" && !tables.get(link.parent)?.has("vn")) continue;
     const match = textMatch(link.table, "label");
-    if (!match) continue;
-    parts.push(link.parent === "ovst"
-      ? `EXISTS (SELECT 1 FROM \`${link.table}\` label WHERE label.\`${link.key}\` = o.\`${link.column}\` AND ${match})`
-      : `EXISTS (SELECT 1 FROM \`${link.parent}\` s JOIN \`${link.table}\` label ON label.\`${link.key}\` = s.\`${link.column}\` WHERE s.vn = o.vn AND ${match})`);
+    addSource(link.parent === "ovst"
+      ? `JOIN \`${link.table}\` label ON label.\`${link.key}\` = o.\`${link.column}\``
+      : `JOIN \`${link.parent}\` s ON s.vn = o.vn JOIN \`${link.table}\` label ON label.\`${link.key}\` = s.\`${link.column}\``, match);
   }
-  return { sql: parts.length ? `(${parts.join(" OR ")})` : "FALSE", params };
+  return { sql: parts.length ? parts.join(" UNION ") : "SELECT vn, vstdate AS date FROM ovst WHERE FALSE", params };
 }

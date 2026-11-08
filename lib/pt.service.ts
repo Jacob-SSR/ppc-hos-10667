@@ -9,9 +9,11 @@ import { db } from "@/lib/db";
 import type { RowDataPacket } from "mysql2";
 import { classifyPtService, PT_SERVICE_BY_KEY } from "@/lib/ptIpdCategories";
 
-import { buildPtRecordsQuery, type PhysicOpdSource } from "@/lib/pt-dashboard-query";
-import { buildPtOutreachMatch, PT_OUTREACH_SCHEMA_TABLES, type PtOutreachMatch } from "@/lib/pt-outreach";
+import { buildPtCandidateQuery, buildPtRecordsQuery, type PhysicOpdSource } from "@/lib/pt-dashboard-query";
+import { buildPtOutreachQuery, PT_OUTREACH_SCHEMA_TABLES, type PtTextColumn } from "@/lib/pt-outreach";
 import type { PtServiceLocation } from "@/lib/pt-dashboard-filters";
+import { createPtDashboardCache } from "@/lib/pt-dashboard-cache";
+import { withHeavySlot } from "@/lib/limiter";
 
 const PT_DEPCODE = process.env.PT_DEPCODE ?? "033";
 const DISCHARGED_STATUS = ["99", "98"];
@@ -94,9 +96,9 @@ async function resolvePhysicOpdSource(): Promise<PhysicOpdSource | null> {
   return physicOpdSource;
 }
 
-let outreachCache: { match: PtOutreachMatch; expires: number } | undefined;
-async function resolvePtOutreachMatch(): Promise<PtOutreachMatch> {
-  if (outreachCache && outreachCache.expires > Date.now()) return outreachCache.match;
+let outreachCache: { schema: PtTextColumn[]; expires: number } | undefined;
+async function resolvePtOutreachSchema(): Promise<PtTextColumn[]> {
+  if (outreachCache && outreachCache.expires > Date.now()) return outreachCache.schema;
   // Surface metadata errors instead of silently reporting zero outreach visits.
   const [rows] = await db.query<(SchemaRow & { DATA_TYPE: string })[]>(
     `SELECT TABLE_NAME, COLUMN_NAME, DATA_TYPE FROM information_schema.COLUMNS
@@ -104,9 +106,15 @@ async function resolvePtOutreachMatch(): Promise<PtOutreachMatch> {
          AND TABLE_NAME IN (${PT_OUTREACH_SCHEMA_TABLES.map(() => "?").join(",")})`,
     PT_OUTREACH_SCHEMA_TABLES,
   );
-  const match = buildPtOutreachMatch(rows);
-  outreachCache = { match, expires: Date.now() + 60 * 60 * 1000 };
-  return match;
+  outreachCache = { schema: rows, expires: Date.now() + 60 * 60 * 1000 };
+  return rows;
+}
+
+interface OutreachVisit extends RowDataPacket { vn: string; date: string }
+async function findPtOutreach(start: string, end: string): Promise<OutreachVisit[]> {
+  const query = buildPtOutreachQuery(await resolvePtOutreachSchema(), start, end);
+  const [rows] = await db.query<OutreachVisit[]>(query.sql, query.params);
+  return rows;
 }
 
 interface ServiceTextRow extends RowDataPacket {
@@ -163,14 +171,12 @@ interface RecordQueryRow extends RowDataPacket {
   charge_drug: number; // c14: income '03','04','17'
   charge_other: number; // c15: income นอกเหนือจากนั้น
   charge_total: number; // c16: รวมทั้ง visit
-  is_outreach: number;
   procedure_code: string;
   procedure_name: string;
 }
 
 interface QueueQueryRow extends RowDataPacket {
   vn: string;
-  is_outreach: number;
   queue_no: string;
   hn: string;
   patient_name: string;
@@ -248,17 +254,31 @@ function classifyShift(vsttime: string): "morning" | "evening" {
 }
 
 // ─── Main ─────────────────────────────────────────────────────────────────────
+const cachedDashboard = createPtDashboardCache<PtDashboardData>();
 export async function getPtDashboard(
   start: string,
   end: string,
 ): Promise<PtDashboardData> {
+  const today = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Bangkok" }).format(new Date());
+  return cachedDashboard(`${start}:${end}:${today}`, () => withHeavySlot(() => buildPtDashboard(start, end, today)));
+}
+
+async function buildPtDashboard(start: string, end: string, today: string): Promise<PtDashboardData> {
   // 1 แถวต่อ VN: visit พบแพทย์อย่างเดียวของ HN เดียวกันไม่ถูกนำมารวม
   const source = await resolvePhysicOpdSource();
-  const outreach = await resolvePtOutreachMatch();
-  const [rows] = await db.query<RecordQueryRow[]>(
-    buildPtRecordsQuery(source, PT_ICD9_TABLE, PT_STAFF_PREDICATE, outreach),
-    [...outreach.params, start, end],
-  );
+  const outreachVisits = await findPtOutreach(start, end);
+  const outreachVns = new Set(outreachVisits.map((r) => String(r.vn)));
+  const candidates = buildPtCandidateQuery(source, PT_STAFF_PREDICATE, start, end);
+  const [eligible] = await db.query<(RowDataPacket & { vn: string })[]>(candidates.sql, candidates.params);
+  const vns = [...new Set([...eligible.map((r) => String(r.vn)), ...outreachVns])];
+  const rows: RecordQueryRow[] = [];
+  // No charge/staff/procedure lookup for unrelated hospital visits.
+  for (let offset = 0; offset < vns.length; offset += 250) {
+    const query = buildPtRecordsQuery(source, PT_ICD9_TABLE, PT_STAFF_PREDICATE, vns.slice(offset, offset + 250));
+    const [batch] = await db.query<RecordQueryRow[]>(query.sql, query.params);
+    rows.push(...batch);
+  }
+  rows.sort((a, b) => a.date.localeCompare(b.date) || a.vsttime.localeCompare(b.vsttime) || String(a.vn).localeCompare(String(b.vn)));
 
   // รายละเอียดการให้บริการของแต่ละ visit — ใช้แทน "หัตถการ" (ดูหมายเหตุด้านบน)
   const serviceTextByVn = await fetchPhysicServiceText(start, end);
@@ -268,7 +288,7 @@ export async function getPtDashboard(
     const cat = detail ? classifyPtService(detail).primary : "";
     return {
       vn: String(r.vn),
-      service_location: Number(r.is_outreach) ? "outreach" : "hospital",
+      service_location: outreachVns.has(String(r.vn)) ? "outreach" : "hospital",
       date: r.date,
       shift: classifyShift(r.svc_time),
       staff_id: r.staff_id || "ไม่ระบุ",
@@ -293,11 +313,15 @@ export async function getPtDashboard(
   // 2) คิว ณ ปัจจุบัน — ovst.oqueue เฉพาะวันนี้ของแผนก ที่ยังไม่จำหน่าย
   //    รับแผนกกายภาพหรือ visit ที่มีคำระบุ PT community ไม่กรองตามบุคลากร
   const dischargedList = DISCHARGED_STATUS.map((s) => `'${s}'`).join(",");
+  const todayOutreach = start <= today && end >= today
+    ? outreachVisits.filter((r) => r.date === today) : await findPtOutreach(today, today);
+  const queueOutreach = new Set(todayOutreach.map((r) => String(r.vn)));
+  const queueOutreachPredicate = queueOutreach.size
+    ? `o.vn IN (${[...queueOutreach].map(() => "?").join(",")})` : "FALSE";
   const [qrows] = await db.query<QueueQueryRow[]>(
     `
     SELECT
       o.vn,
-      ${outreach.sql} AS is_outreach,
       o.oqueue                                   AS queue_no,
       o.hn,
       CONCAT(pt.pname, pt.fname, ' ', pt.lname)  AS patient_name,
@@ -308,17 +332,17 @@ export async function getPtDashboard(
     INNER JOIN patient pt  ON pt.hn = o.hn
     LEFT  JOIN doctor d    ON d.code = o.doctor
     WHERE o.vstdate = CURDATE()
-      AND (o.main_dep = ? OR ${outreach.sql})
+      AND (o.main_dep = ? OR ${queueOutreachPredicate})
       AND (o.an IS NULL OR o.an = '')
       AND (o.ovstost IS NULL OR o.ovstost = '' OR o.ovstost NOT IN (${dischargedList}))
     ORDER BY CAST(o.oqueue AS UNSIGNED), o.vsttime
     `,
-    [...outreach.params, PT_DEPCODE, ...outreach.params],
+    [PT_DEPCODE, ...queueOutreach],
   );
 
   const queue: PtQueueItem[] = qrows.map((q) => ({
     vn: String(q.vn),
-    service_location: Number(q.is_outreach) ? "outreach" : "hospital",
+    service_location: queueOutreach.has(String(q.vn)) ? "outreach" : "hospital",
     queue_no: String(q.queue_no ?? "—"),
     hn: q.hn,
     patient_name: q.patient_name,

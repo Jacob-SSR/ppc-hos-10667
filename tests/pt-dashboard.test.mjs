@@ -1,12 +1,14 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { DatabaseSync } from "node:sqlite";
-import { buildPtRecordsQuery } from "../lib/pt-dashboard-query.ts";
-import { buildPtOutreachMatch, PT_OUTREACH_SCHEMA_TABLES } from "../lib/pt-outreach.ts";
+import { buildPtCandidateQuery, buildPtRecordsQuery } from "../lib/pt-dashboard-query.ts";
+import { buildPtOutreachQuery, PT_OUTREACH_SCHEMA_TABLES } from "../lib/pt-outreach.ts";
+import { createPtDashboardCache } from "../lib/pt-dashboard-cache.ts";
 import { filterPtLocation } from "../lib/pt-dashboard-filters.ts";
 
 function fixture() {
   const db = new DatabaseSync(":memory:");
+  db.function("DATE_FORMAT", { varargs: true }, (date) => String(date).slice(0, 10));
   // Exercise production MySQL REGEXP predicates with SQLite's injectable operator.
   db.function("regexp", (pattern, text) => Number(new RegExp(pattern.replaceAll("[[:space:]_.-]", "[\\s_.-]")).test(text ?? "")));
   db.exec(`
@@ -56,9 +58,12 @@ function metadata(db) {
     .map(col => ({ TABLE_NAME: table, COLUMN_NAME: col.name, DATA_TYPE: "varchar" })));
 }
 function query(db, src = source) {
-  const outreach = buildPtOutreachMatch(metadata(db));
-  return db.prepare(buildPtRecordsQuery(src, "icd9_sss", "dd.position_id IN ('9')", outreach))
-    .all(...outreach.params, "2026-11-06", "2026-11-06");
+  const outreach = buildPtOutreachQuery(metadata(db), "2026-11-06", "2026-11-06");
+  const outreachVns = new Set(db.prepare(outreach.sql).all(...outreach.params).map(r => r.vn));
+  const candidates = buildPtCandidateQuery(src, "dd.position_id IN ('9')", "2026-11-06", "2026-11-06");
+  const vns = [...new Set([...db.prepare(candidates.sql).all(...candidates.params).map(r => r.vn), ...outreachVns])];
+  const records = buildPtRecordsQuery(src, "icd9_sss", "dd.position_id IN ('9')", vns);
+  return db.prepare(records.sql).all(...records.params).map(r => ({ ...r, is_outreach: Number(outreachVns.has(r.vn)) }));
 }
 
 test("keeps separate PT VNs for one patient, including missing vn_stat, excludes doctor-only VN", () => {
@@ -186,11 +191,61 @@ test("detects linked visit-type and clinic names, without assuming optional mast
 });
 
 test("schema matching ignores unsupported tables, unsafe identifiers, and nontext columns", () => {
-  assert.deepEqual(buildPtOutreachMatch([]), { sql: "FALSE", params: [] });
-  assert.deepEqual(buildPtOutreachMatch([
+  const empty = buildPtOutreachQuery([], "2026-11-06", "2026-11-06");
+  assert.equal(empty.params.length, 0);
+  assert.match(empty.sql, /WHERE FALSE/);
+  assert.deepEqual(buildPtOutreachQuery([
     { TABLE_NAME: "patient", COLUMN_NAME: "name", DATA_TYPE: "text" },
     { TABLE_NAME: "opdscreen", COLUMN_NAME: "vn", DATA_TYPE: "varchar" },
     { TABLE_NAME: "opdscreen", COLUMN_NAME: "cc` injected", DATA_TYPE: "text" },
     { TABLE_NAME: "opdscreen", COLUMN_NAME: "weight", DATA_TYPE: "decimal" },
-  ]), { sql: "FALSE", params: [] });
+  ], "2026-11-06", "2026-11-06"), empty);
+});
+
+test("outreach search has no correlated subqueries and detail aggregation only uses eligible VNs", () => {
+  const db = fixture();
+  try {
+    const outreach = buildPtOutreachQuery(metadata(db), "2026-11-06", "2026-11-06");
+    const plan = db.prepare(`EXPLAIN QUERY PLAN ${outreach.sql}`).all(...outreach.params);
+    assert.ok(plan.every(r => !String(r.detail).includes("CORRELATED")));
+    const records = buildPtRecordsQuery(source, "icd9_sss", "dd.position_id IN ('9')", ["PT-AM"]);
+    assert.ok(!records.sql.includes("REGEXP"));
+    const row = db.prepare(records.sql).get(...records.params);
+    assert.equal(row.vn, "PT-AM");
+    assert.equal(row.charge_total, 150);
+    assert.equal(row.svc_time, "08:40");
+    assert.equal(row.staff_id, "PT1");
+    const empty = buildPtRecordsQuery(source, "icd9_sss", "dd.position_id IN ('9')", []);
+    assert.deepEqual(db.prepare(empty.sql).all(...empty.params), []);
+  } finally { db.close(); }
+});
+
+test("batched charge totals retain non-PT/unassigned charges without changing PT owner/time", () => {
+  const db = fixture();
+  try {
+    db.exec(`INSERT INTO opitemrece VALUES
+      ('PT-AM', 'MD1', '15:00', '03', 40), ('PT-AM', NULL, '16:00', '99', 60);`);
+    const row = query(db).find(r => r.vn === "PT-AM");
+    assert.deepEqual([row.charge_physio, row.charge_drug, row.charge_other, row.charge_total], [150, 40, 60, 250]);
+    assert.equal(row.staff_id, "PT1");
+    assert.equal(row.svc_time, "08:40");
+  } finally { db.close(); }
+});
+
+test("identical slow requests share work; successful cache expires and failures retry", async () => {
+  let time = 0, calls = 0, release;
+  const get = createPtDashboardCache(30, 2, () => time);
+  const build = () => { calls++; return new Promise(resolve => { release = resolve; }); };
+  const first = get("range", build), second = get("range", build);
+  await Promise.resolve();
+  assert.equal(calls, 1);
+  release(123);
+  assert.deepEqual(await Promise.all([first, second]), [123, 123]);
+  assert.equal(await get("range", () => { throw Error("cached"); }), 123);
+  time = 31;
+  assert.equal(await get("range", async () => 456), 456);
+  await assert.rejects(get("error", async () => { throw Error("DB error"); }), /DB error/);
+  assert.equal(await get("error", async () => 789), 789);
+  await get("third", async () => 3);
+  assert.equal(await get("range", async () => 999), 999); // bounded eviction
 });
