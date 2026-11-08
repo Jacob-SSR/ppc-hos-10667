@@ -1,15 +1,16 @@
 // lib/pt.service.ts
 // SQL service สำหรับ Dashboard กายภาพบำบัด (Physical Therapy — PT/PTA)
 //
-// นับแยกตาม VN จาก ovst: มีค่าบริการโดยเจ้าหน้าที่กายภาพ หรือมีทะเบียนกายภาพ OPD
+// นับแยกตาม VN: มีค่าบริการ/ทะเบียนกายภาพ OPD หรือมีข้อความ PT in/on community
 // ไม่พึ่ง vn_stat และไม่ดึง visit แพทย์อื่นมารวมด้วย HN/วันที่
-// เชิงรุก OPD: ตรวจจาก CC ของ VN นั้น
+// เชิงรุก OPD: ตรวจข้อความและชื่อประเภทบริการที่เชื่อมกับ VN นั้น
 
 import { db } from "@/lib/db";
 import type { RowDataPacket } from "mysql2";
 import { classifyPtService, PT_SERVICE_BY_KEY } from "@/lib/ptIpdCategories";
 
-import { buildPtRecordsQuery, PT_OUTREACH_PATTERNS, PT_OUTREACH_CC_PREDICATE, type PhysicOpdSource } from "@/lib/pt-dashboard-query";
+import { buildPtRecordsQuery, type PhysicOpdSource } from "@/lib/pt-dashboard-query";
+import { buildPtOutreachMatch, PT_OUTREACH_SCHEMA_TABLES, type PtOutreachMatch } from "@/lib/pt-outreach";
 import type { PtServiceLocation } from "@/lib/pt-dashboard-filters";
 
 const PT_DEPCODE = process.env.PT_DEPCODE ?? "033";
@@ -91,6 +92,21 @@ async function resolvePhysicOpdSource(): Promise<PhysicOpdSource | null> {
     physicOpdSource = null;
   }
   return physicOpdSource;
+}
+
+let outreachCache: { match: PtOutreachMatch; expires: number } | undefined;
+async function resolvePtOutreachMatch(): Promise<PtOutreachMatch> {
+  if (outreachCache && outreachCache.expires > Date.now()) return outreachCache.match;
+  // Surface metadata errors instead of silently reporting zero outreach visits.
+  const [rows] = await db.query<(SchemaRow & { DATA_TYPE: string })[]>(
+    `SELECT TABLE_NAME, COLUMN_NAME, DATA_TYPE FROM information_schema.COLUMNS
+       WHERE TABLE_SCHEMA = DATABASE()
+         AND TABLE_NAME IN (${PT_OUTREACH_SCHEMA_TABLES.map(() => "?").join(",")})`,
+    PT_OUTREACH_SCHEMA_TABLES,
+  );
+  const match = buildPtOutreachMatch(rows);
+  outreachCache = { match, expires: Date.now() + 60 * 60 * 1000 };
+  return match;
 }
 
 interface ServiceTextRow extends RowDataPacket {
@@ -238,9 +254,10 @@ export async function getPtDashboard(
 ): Promise<PtDashboardData> {
   // 1 แถวต่อ VN: visit พบแพทย์อย่างเดียวของ HN เดียวกันไม่ถูกนำมารวม
   const source = await resolvePhysicOpdSource();
+  const outreach = await resolvePtOutreachMatch();
   const [rows] = await db.query<RecordQueryRow[]>(
-    buildPtRecordsQuery(source, PT_ICD9_TABLE, PT_STAFF_PREDICATE),
-    [...PT_OUTREACH_PATTERNS, start, end],
+    buildPtRecordsQuery(source, PT_ICD9_TABLE, PT_STAFF_PREDICATE, outreach),
+    [...outreach.params, start, end],
   );
 
   // รายละเอียดการให้บริการของแต่ละ visit — ใช้แทน "หัตถการ" (ดูหมายเหตุด้านบน)
@@ -274,14 +291,13 @@ export async function getPtDashboard(
   });
 
   // 2) คิว ณ ปัจจุบัน — ovst.oqueue เฉพาะวันนี้ของแผนก ที่ยังไม่จำหน่าย
-  //    (คงพฤติกรรมเดิม: แสดงผู้รอคิวทุกคน ไม่กรองตามบุคลากร, ยังใช้ main_dep)
+  //    รับแผนกกายภาพหรือ visit ที่มีคำระบุ PT community ไม่กรองตามบุคลากร
   const dischargedList = DISCHARGED_STATUS.map((s) => `'${s}'`).join(",");
   const [qrows] = await db.query<QueueQueryRow[]>(
     `
     SELECT
       o.vn,
-      EXISTS (SELECT 1 FROM opdscreen os WHERE os.vn = o.vn
-        AND ${PT_OUTREACH_CC_PREDICATE}) AS is_outreach,
+      ${outreach.sql} AS is_outreach,
       o.oqueue                                   AS queue_no,
       o.hn,
       CONCAT(pt.pname, pt.fname, ' ', pt.lname)  AS patient_name,
@@ -292,12 +308,12 @@ export async function getPtDashboard(
     INNER JOIN patient pt  ON pt.hn = o.hn
     LEFT  JOIN doctor d    ON d.code = o.doctor
     WHERE o.vstdate = CURDATE()
-      AND o.main_dep = ?
+      AND (o.main_dep = ? OR ${outreach.sql})
       AND (o.an IS NULL OR o.an = '')
       AND (o.ovstost IS NULL OR o.ovstost = '' OR o.ovstost NOT IN (${dischargedList}))
     ORDER BY CAST(o.oqueue AS UNSIGNED), o.vsttime
     `,
-    [...PT_OUTREACH_PATTERNS, PT_DEPCODE],
+    [...outreach.params, PT_DEPCODE, ...outreach.params],
   );
 
   const queue: PtQueueItem[] = qrows.map((q) => ({

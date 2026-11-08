@@ -1,11 +1,14 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { DatabaseSync } from "node:sqlite";
-import { buildPtRecordsQuery, PT_OUTREACH_PATTERNS } from "../lib/pt-dashboard-query.ts";
+import { buildPtRecordsQuery } from "../lib/pt-dashboard-query.ts";
+import { buildPtOutreachMatch, PT_OUTREACH_SCHEMA_TABLES } from "../lib/pt-outreach.ts";
 import { filterPtLocation } from "../lib/pt-dashboard-filters.ts";
 
 function fixture() {
   const db = new DatabaseSync(":memory:");
+  // Exercise production MySQL REGEXP predicates with SQLite's injectable operator.
+  db.function("regexp", (pattern, text) => Number(new RegExp(pattern.replaceAll("[[:space:]_.-]", "[\\s_.-]")).test(text ?? "")));
   db.exec(`
     CREATE TABLE ovst (vn, hn, vstdate, vsttime, pttype);
     CREATE TABLE vn_stat (vn, pcode);
@@ -48,9 +51,15 @@ function fixture() {
 }
 
 const source = { table: "physic_main_opd", staffColumn: "doctor" };
-const query = (db, src = source) => db.prepare(
-  buildPtRecordsQuery(src, "icd9_sss", "dd.position_id IN ('9')"),
-).all(...PT_OUTREACH_PATTERNS, "2026-11-06", "2026-11-06");
+function metadata(db) {
+  return PT_OUTREACH_SCHEMA_TABLES.flatMap(table => db.prepare(`PRAGMA table_info(${table})`).all()
+    .map(col => ({ TABLE_NAME: table, COLUMN_NAME: col.name, DATA_TYPE: "varchar" })));
+}
+function query(db, src = source) {
+  const outreach = buildPtOutreachMatch(metadata(db));
+  return db.prepare(buildPtRecordsQuery(src, "icd9_sss", "dd.position_id IN ('9')", outreach))
+    .all(...outreach.params, "2026-11-06", "2026-11-06");
+}
 
 test("keeps separate PT VNs for one patient, including missing vn_stat, excludes doctor-only VN", () => {
   const db = fixture();
@@ -102,7 +111,7 @@ test("CC is checked by VN, case-insensitively, without multiplying rows or leaki
 test("outreach accepts both PT in/on community in CC with surrounding text and mixed case", () => {
   const db = fixture();
   try {
-    for (const cc of ["PT in Community", "ติดตาม pt on community กายภาพ", "Pt On CoMmUnItY", "pt in community / เชิงรุก opd"]) {
+    for (const cc of ["PT in Community", "ติดตาม pt on community กายภาพ", "Pt On CoMmUnItY", "pt in community / เชิงรุก opd", "PT  in\ncommunity", "pt\ton\tcommunity", "pt-in-community"]) {
       db.prepare("UPDATE opdscreen SET cc = ? WHERE vn = 'PT-PM'").run(cc);
       const rows = query(db);
       assert.deepEqual(rows.filter(r => r.is_outreach).map(r => r.vn), ["PT-PM"], cc);
@@ -112,4 +121,76 @@ test("outreach accepts both PT in/on community in CC with surrounding text and m
       assert.ok(query(db).every(r => r.is_outreach === 0), cc);
     }
   } finally { db.close(); }
+});
+
+test("finds every available text field in visit notes, screening, and both PT registries", () => {
+  const db = fixture();
+  try {
+    db.exec(`UPDATE opdscreen SET cc = NULL;
+      ALTER TABLE opdscreen ADD COLUMN hpi TEXT;
+      ALTER TABLE opdscreen ADD COLUMN pmh TEXT;
+      ALTER TABLE ovst ADD COLUMN remark TEXT;
+      CREATE TABLE ovst_doctor_diag (vn, diag_text TEXT);
+      CREATE TABLE physic_main (vn, note TEXT);
+      CREATE TABLE opd_note (vn, note TEXT);
+      INSERT INTO ovst_doctor_diag VALUES ('PT-PM', NULL), ('MD', NULL);
+      INSERT INTO physic_main VALUES ('PT-PM', NULL);
+      INSERT INTO opd_note VALUES ('PT-PM', NULL);`);
+    for (const [table, col, vn] of [
+      ["opdscreen", "hpi", "PT-PM"], ["opdscreen", "pmh", "PT-PM"],
+      ["ovst", "remark", "PT-PM"], ["ovst_doctor_diag", "diag_text", "PT-PM"],
+      ["physic_main_opd", "service_text", "PT-AM"], ["physic_main", "note", "PT-PM"],
+      ["opd_note", "note", "PT-PM"],
+    ]) {
+      db.prepare(`UPDATE ${table} SET ${col} = ? WHERE vn = ?`).run("PT on community", vn);
+      assert.deepEqual(query(db).filter(r => r.is_outreach).map(r => r.vn), [vn], `${table}.${col}`);
+      db.prepare(`UPDATE ${table} SET ${col} = NULL WHERE vn = ?`).run(vn);
+    }
+    // A marker on another VN for the same patient never tags PT-AM/PT-PM.
+    db.exec("UPDATE ovst_doctor_diag SET diag_text = 'PT in community' WHERE vn = 'MD'");
+    const rows = query(db);
+    assert.deepEqual(rows.filter(r => r.is_outreach).map(r => r.vn), ["MD"]);
+    assert.equal(rows.find(r => r.vn === "MD").staff_id, null);
+  } finally { db.close(); }
+});
+
+test("includes marked community visits without billing/registry, and respects visit date range", () => {
+  const db = fixture();
+  try {
+    db.exec(`UPDATE opdscreen SET cc = NULL;
+      INSERT INTO ovst VALUES ('COMMUNITY', 'H1', '2026-11-06', '16:00', '01');
+      INSERT INTO opdscreen VALUES ('COMMUNITY', 'PT in community'), ('OLD', 'PT in community');`);
+    const rows = query(db);
+    assert.deepEqual(rows.filter(r => r.is_outreach).map(r => r.vn), ["COMMUNITY"]);
+    assert.equal(rows.find(r => r.vn === "COMMUNITY").charge_total, 0);
+    assert.equal(rows.find(r => r.vn === "COMMUNITY").staff_id, null);
+  } finally { db.close(); }
+});
+
+test("detects linked visit-type and clinic names, without assuming optional master columns exist", () => {
+  const db = fixture();
+  try {
+    db.exec(`UPDATE opdscreen SET cc = NULL;
+      ALTER TABLE ovst ADD COLUMN ovstist;
+      CREATE TABLE ovstist (ovstist, name TEXT);
+      INSERT INTO ovstist VALUES ('C', 'PT in community');
+      UPDATE ovst SET ovstist = 'C' WHERE vn = 'PT-PM';
+      CREATE TABLE clinic_visit (vn, clinic);
+      CREATE TABLE clinic (clinic, name TEXT);
+      INSERT INTO clinic VALUES ('C', 'PT on community');
+      INSERT INTO clinic_visit VALUES ('PT-AM', 'C'), ('PT-AM', 'C');`);
+    assert.deepEqual(query(db).filter(r => r.is_outreach).map(r => r.vn), ["PT-AM", "PT-PM"]);
+    db.exec("DROP TABLE clinic; DROP TABLE ovstist; DROP TABLE opdscreen");
+    assert.ok(query(db).every(r => r.is_outreach === 0));
+  } finally { db.close(); }
+});
+
+test("schema matching ignores unsupported tables, unsafe identifiers, and nontext columns", () => {
+  assert.deepEqual(buildPtOutreachMatch([]), { sql: "FALSE", params: [] });
+  assert.deepEqual(buildPtOutreachMatch([
+    { TABLE_NAME: "patient", COLUMN_NAME: "name", DATA_TYPE: "text" },
+    { TABLE_NAME: "opdscreen", COLUMN_NAME: "vn", DATA_TYPE: "varchar" },
+    { TABLE_NAME: "opdscreen", COLUMN_NAME: "cc` injected", DATA_TYPE: "text" },
+    { TABLE_NAME: "opdscreen", COLUMN_NAME: "weight", DATA_TYPE: "decimal" },
+  ]), { sql: "FALSE", params: [] });
 });
