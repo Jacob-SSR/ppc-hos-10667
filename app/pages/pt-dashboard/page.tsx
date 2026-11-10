@@ -473,7 +473,7 @@ export default function PtDashboardPage() {
                 <p className="text-xs text-gray-500 mt-2">
                     แสดง: {PT_LOCATION_LABELS[location]} · นับแยกตาม VN เฉพาะ visit ที่มีงานกายภาพ ผู้ป่วยซ้ำนับรายเดียวตาม HN
                 </p>
-                <p className="text-xs text-gray-500 mt-1">งานนอกพื้นที่กายภาพค้นหา “pt in community” หรือ “pt on community” ในข้อความของ visit บันทึกกายภาพ และชื่อประเภทบริการที่เชื่อมกับ visit นั้น (“เชิงรุก opd” อย่างเดียวไม่เข้าเกณฑ์)</p>
+                <p className="text-xs text-gray-500 mt-1">งานนอกพื้นที่ต้องมีรายการยา/ค่าบริการ “PT in community” หรือ “PT on community” และการมามีคำว่า “งานเชิงรุก” ใน visit เดียวกัน</p>
             </div>
 
             {/* ── Controls ── */}

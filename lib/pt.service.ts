@@ -1,16 +1,16 @@
 // lib/pt.service.ts
 // SQL service สำหรับ Dashboard กายภาพบำบัด (Physical Therapy — PT/PTA)
 //
-// นับแยกตาม VN: มีค่าบริการ/ทะเบียนกายภาพ OPD หรือมีข้อความ PT in/on community
+// นับแยกตาม VN: มีค่าบริการ/ทะเบียนกายภาพ OPD รวมรายการกายภาพที่ลงโดยแพทย์อื่น
 // ไม่พึ่ง vn_stat และไม่ดึง visit แพทย์อื่นมารวมด้วย HN/วันที่
-// เชิงรุก OPD: ตรวจข้อความและชื่อประเภทบริการที่เชื่อมกับ VN นั้น
+// เชิงรุก OPD: รายการ PT in/on community + การมา "งานเชิงรุก" ใน VN เดียวกัน
 
 import { db } from "@/lib/db";
 import type { RowDataPacket } from "mysql2";
 import { classifyPtService, PT_SERVICE_BY_KEY } from "@/lib/ptIpdCategories";
 
 import { buildPtCandidateQuery, buildPtRecordsQuery, type PhysicOpdSource } from "@/lib/pt-dashboard-query";
-import { buildPtOutreachQuery, PT_OUTREACH_SCHEMA_TABLES, type PtTextColumn } from "@/lib/pt-outreach";
+import { buildPtCatalogQuery, buildPtOutreachQuery, collectPtItemCodes, PT_OUTREACH_SCHEMA_TABLES, type PtTextColumn, type PtItemCodes } from "@/lib/pt-outreach";
 import type { PtServiceLocation } from "@/lib/pt-dashboard-filters";
 import { createPtDashboardCache } from "@/lib/pt-dashboard-cache";
 import { withHeavySlot } from "@/lib/limiter";
@@ -96,9 +96,10 @@ async function resolvePhysicOpdSource(): Promise<PhysicOpdSource | null> {
   return physicOpdSource;
 }
 
-let outreachCache: { schema: PtTextColumn[]; expires: number } | undefined;
-async function resolvePtOutreachSchema(): Promise<PtTextColumn[]> {
-  if (outreachCache && outreachCache.expires > Date.now()) return outreachCache.schema;
+interface PtItemConfiguration { schema: PtTextColumn[]; codes: PtItemCodes }
+let outreachCache: (PtItemConfiguration & { expires: number }) | undefined;
+async function resolvePtItemConfiguration(): Promise<PtItemConfiguration> {
+  if (outreachCache && outreachCache.expires > Date.now()) return outreachCache;
   // Surface metadata errors instead of silently reporting zero outreach visits.
   const [rows] = await db.query<(SchemaRow & { DATA_TYPE: string })[]>(
     `SELECT TABLE_NAME, COLUMN_NAME, DATA_TYPE FROM information_schema.COLUMNS
@@ -106,13 +107,15 @@ async function resolvePtOutreachSchema(): Promise<PtTextColumn[]> {
          AND TABLE_NAME IN (${PT_OUTREACH_SCHEMA_TABLES.map(() => "?").join(",")})`,
     PT_OUTREACH_SCHEMA_TABLES,
   );
-  outreachCache = { schema: rows, expires: Date.now() + 60 * 60 * 1000 };
-  return rows;
+  const catalog = buildPtCatalogQuery(rows);
+  const [items] = await db.query<(RowDataPacket & { icode: string; is_community: number })[]>(catalog.sql, catalog.params);
+  outreachCache = { schema: rows, codes: collectPtItemCodes(items), expires: Date.now() + 60 * 60 * 1000 };
+  return outreachCache;
 }
 
 interface OutreachVisit extends RowDataPacket { vn: string; date: string }
-async function findPtOutreach(start: string, end: string): Promise<OutreachVisit[]> {
-  const query = buildPtOutreachQuery(await resolvePtOutreachSchema(), start, end);
+async function findPtOutreach(start: string, end: string, config: PtItemConfiguration): Promise<OutreachVisit[]> {
+  const query = buildPtOutreachQuery(config.schema, start, end, config.codes.communityIcodes);
   const [rows] = await db.query<OutreachVisit[]>(query.sql, query.params);
   return rows;
 }
@@ -266,19 +269,20 @@ export async function getPtDashboard(
 async function buildPtDashboard(start: string, end: string, today: string): Promise<PtDashboardData> {
   // 1 แถวต่อ VN: visit พบแพทย์อย่างเดียวของ HN เดียวกันไม่ถูกนำมารวม
   const source = await resolvePhysicOpdSource();
-  const outreachVisits = await findPtOutreach(start, end);
+  const itemConfig = await resolvePtItemConfiguration();
+  const outreachVisits = await findPtOutreach(start, end, itemConfig);
   const outreachVns = new Set(outreachVisits.map((r) => String(r.vn)));
-  const candidates = buildPtCandidateQuery(source, PT_STAFF_PREDICATE, start, end);
+  const candidates = buildPtCandidateQuery(source, PT_STAFF_PREDICATE, start, end, itemConfig.codes.ptIcodes);
   const [eligible] = await db.query<(RowDataPacket & { vn: string })[]>(candidates.sql, candidates.params);
   const vns = [...new Set([...eligible.map((r) => String(r.vn)), ...outreachVns])];
   const rows: RecordQueryRow[] = [];
   // No charge/staff/procedure lookup for unrelated hospital visits.
   for (let offset = 0; offset < vns.length; offset += 250) {
-    const query = buildPtRecordsQuery(source, PT_ICD9_TABLE, PT_STAFF_PREDICATE, vns.slice(offset, offset + 250));
+    const query = buildPtRecordsQuery(source, PT_ICD9_TABLE, PT_STAFF_PREDICATE, vns.slice(offset, offset + 250), itemConfig.codes.ptIcodes);
     const [batch] = await db.query<RecordQueryRow[]>(query.sql, query.params);
     rows.push(...batch);
   }
-  rows.sort((a, b) => a.date.localeCompare(b.date) || a.vsttime.localeCompare(b.vsttime) || String(a.vn).localeCompare(String(b.vn)));
+  rows.sort((a, b) => a.date.localeCompare(b.date) || (a.vsttime || "").localeCompare(b.vsttime || "") || String(a.vn).localeCompare(String(b.vn)));
 
   // รายละเอียดการให้บริการของแต่ละ visit — ใช้แทน "หัตถการ" (ดูหมายเหตุด้านบน)
   const serviceTextByVn = await fetchPhysicServiceText(start, end);
@@ -314,7 +318,7 @@ async function buildPtDashboard(start: string, end: string, today: string): Prom
   //    รับแผนกกายภาพหรือ visit ที่มีคำระบุ PT community ไม่กรองตามบุคลากร
   const dischargedList = DISCHARGED_STATUS.map((s) => `'${s}'`).join(",");
   const todayOutreach = start <= today && end >= today
-    ? outreachVisits.filter((r) => r.date === today) : await findPtOutreach(today, today);
+    ? outreachVisits.filter((r) => r.date === today) : await findPtOutreach(today, today, itemConfig);
   const queueOutreach = new Set(todayOutreach.map((r) => String(r.vn)));
   const queueOutreachPredicate = queueOutreach.size
     ? `o.vn IN (${[...queueOutreach].map(() => "?").join(",")})` : "FALSE";

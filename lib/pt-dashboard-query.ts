@@ -5,16 +5,17 @@ export interface PhysicOpdSource {
 }
 
 export function buildPtCandidateQuery(
-  source: PhysicOpdSource | null, staffPredicate: string, start: string, end: string,
+  source: PhysicOpdSource | null, staffPredicate: string, start: string, end: string, ptIcodes: string[] = [],
 ): { sql: string; params: string[] } {
   const billed = `SELECT o.vn FROM ovst o
-    JOIN opitemrece oo ON oo.vn = o.vn JOIN doctor dd ON dd.code = oo.doctor
-    WHERE o.vstdate BETWEEN ? AND ? AND ${staffPredicate}`;
+    JOIN opitemrece oo ON oo.vn = o.vn LEFT JOIN doctor dd ON dd.code = oo.doctor
+    WHERE o.vstdate BETWEEN ? AND ? AND (${staffPredicate} OR oo.income = '14'
+      ${ptIcodes.length ? `OR oo.icode IN (${ptIcodes.map(() => "?").join(",")})` : ""})`;
   return {
     sql: source ? `${billed} UNION SELECT o.vn FROM ovst o
       JOIN ${source.table} pm ON pm.vn = o.vn WHERE o.vstdate BETWEEN ? AND ?`
       : `SELECT DISTINCT vn FROM (${billed}) billed`,
-    params: source ? [start, end, start, end] : [start, end],
+    params: source ? [start, end, ...ptIcodes, start, end] : [start, end, ...ptIcodes],
   };
 }
 
@@ -24,6 +25,7 @@ export function buildPtRecordsQuery(
   icd9Table: "icd9cm" | "icd9_sss",
   staffPredicate: string,
   vns: string[],
+  ptIcodes: string[] = [],
 ): { sql: string; params: string[] } {
   const placeholders = vns.map(() => "?").join(",") || "NULL";
   const registeredStaff = source?.staffColumn
@@ -65,12 +67,14 @@ export function buildPtRecordsQuery(
           SUM(CASE WHEN oo.income IN ('03','04','17') THEN oo.sum_price ELSE 0 END) AS charge_drug,
           SUM(CASE WHEN oo.income NOT IN ('03','04','17','14') THEN oo.sum_price ELSE 0 END) AS charge_other,
           SUM(oo.sum_price) AS charge_total,
-          MAX(CASE WHEN ${staffPredicate} THEN oo.rxtime ELSE NULL END) AS svc_time
+          MAX(CASE WHEN ${staffPredicate} OR oo.income = '14'
+            ${ptIcodes.length ? `OR oo.icode IN (${ptIcodes.map(() => "?").join(",")})` : ""}
+            THEN oo.rxtime ELSE NULL END) AS svc_time
         FROM opitemrece oo LEFT JOIN doctor dd ON dd.code = oo.doctor
         WHERE oo.vn IN (${placeholders}) GROUP BY oo.vn
       ) charges ON charges.vn = o.vn
       WHERE o.vn IN (${placeholders})
     ) x
     LEFT JOIN doctor d2 ON d2.code = x.staff_id
-    ORDER BY x.date, x.vsttime, x.vn`, params: [...vns, ...vns] };
+    ORDER BY x.date, x.vsttime, x.vn`, params: [...ptIcodes, ...vns, ...vns] };
 }
