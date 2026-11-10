@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Check, RefreshCw, Save, Search, ShieldCheck, Users } from "lucide-react";
 import { FEATURE_LABELS, FEATURE_PATHS, ROLE_FEATURES, ROLE_LABELS, type FeatureKey } from "@/lib/permissions";
+import PasswordResetForm from "./PasswordResetForm";
 import type { UserAccess } from "@/lib/user-access";
 
 const keys = Object.keys(FEATURE_PATHS) as FeatureKey[];
@@ -26,6 +27,8 @@ export default function UserPermissionsPage() {
   const [features, setFeatures] = useState<FeatureKey[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [resetting, setResetting] = useState(false);
+  const busy = saving || resetting;
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const editor = useRef<HTMLElement>(null);
@@ -81,9 +84,9 @@ export default function UserPermissionsPage() {
 
   return <div className="mx-auto max-w-7xl p-4 md:p-6">
     <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
-      <div><h1 className="flex items-center gap-2 text-xl font-bold text-gray-800"><ShieldCheck className="text-green-700" />จัดการสิทธิ์ผู้ใช้</h1>
-        <p className="mt-1 text-sm text-gray-500">สำหรับ IT · เลือกบัญชี ตั้ง role และกำหนดกลุ่มเมนูที่เปิดดูได้</p></div>
-      <button className={button} onClick={() => setRefresh((v) => v + 1)} disabled={loading || saving}><RefreshCw size={16} />โหลดรายชื่อใหม่</button>
+      <div><h1 className="flex items-center gap-2 text-xl font-bold text-gray-800"><ShieldCheck className="text-green-700" />จัดการผู้ใช้และรหัสผ่าน</h1>
+        <p className="mt-1 text-sm text-gray-500">สำหรับ IT · ตั้งรหัสผ่านใหม่ จัดการ role และกลุ่มเมนูที่เปิดดูได้</p></div>
+      <button className={button} onClick={() => setRefresh((v) => v + 1)} disabled={loading || busy}><RefreshCw size={16} />โหลดรายชื่อใหม่</button>
     </div>
     {error && <div role="alert" className="mb-4 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">{error}</div>}
     {notice && <div role="status" className="mb-4 flex gap-2 rounded-xl border border-green-200 bg-green-50 p-4 text-sm text-green-800"><Check size={18} />{notice}</div>}
@@ -92,22 +95,23 @@ export default function UserPermissionsPage() {
         <div className="border-b border-gray-100 p-4">
           <h2 className="mb-3 flex items-center gap-2 font-semibold text-gray-800"><Users size={17} />ผู้ใช้ทั้งหมด <span className="text-sm font-normal text-gray-500">{total.toLocaleString()} บัญชี</span></h2>
           <label className="relative block"><Search size={16} className="absolute left-3 top-3 text-gray-400" />
-            <input aria-label="ค้นหาชื่อหรือบัญชีผู้ใช้" value={search} onChange={(e) => setSearch(e.target.value)} disabled={saving} placeholder="ค้นหาชื่อ / username เช่น kotchii" className="w-full rounded-lg border border-gray-200 py-2 pl-9 pr-3 text-sm focus:outline-none focus:ring-2 focus:ring-green-600/30" /></label>
+            <input aria-label="ค้นหาชื่อหรือบัญชีผู้ใช้" value={search} onChange={(e) => setSearch(e.target.value)} disabled={busy} placeholder="ค้นหาชื่อ / username เช่น kotchii" className="w-full rounded-lg border border-gray-200 py-2 pl-9 pr-3 text-sm focus:outline-none focus:ring-2 focus:ring-green-600/30" /></label>
         </div>
         <div className="max-h-[620px] overflow-auto" aria-busy={loading}>
-          {loading ? <p role="status" className="p-8 text-center text-sm text-gray-500">กำลังโหลดผู้ใช้…</p> : users.length === 0 ? <p className="p-8 text-center text-sm text-gray-500">ไม่พบผู้ใช้</p> : users.map((user) => <button key={user.username} disabled={saving} onClick={() => choose(user)} aria-pressed={selected?.username === user.username} className={`block w-full border-b border-gray-100 px-4 py-3 text-left disabled:opacity-50 ${selected?.username === user.username ? "bg-green-50" : "hover:bg-gray-50"}`}>
+          {loading ? <p role="status" className="p-8 text-center text-sm text-gray-500">กำลังโหลดผู้ใช้…</p> : users.length === 0 ? <p className="p-8 text-center text-sm text-gray-500">ไม่พบผู้ใช้</p> : users.map((user) => <button key={user.username} disabled={busy} onClick={() => choose(user)} aria-pressed={selected?.username === user.username} className={`block w-full border-b border-gray-100 px-4 py-3 text-left disabled:opacity-50 ${selected?.username === user.username ? "bg-green-50" : "hover:bg-gray-50"}`}>
             <span className="block text-sm font-semibold text-gray-800">{user.name}</span>
             <span className="mt-1 flex flex-wrap justify-between gap-1 text-xs text-gray-500"><span>{user.username}</span><span>{ROLE_LABELS[user.role] ?? user.role} · {user.features === null ? "ตาม role" : `${user.features.length} กลุ่ม`}</span></span>
           </button>)}
         </div>
         <div className="flex items-center justify-between gap-2 border-t border-gray-100 p-3 text-xs text-gray-500"><span>หน้า {page} / {pages}</span><div className="flex gap-2">
-          <button className={button} disabled={page <= 1 || loading || saving} onClick={() => setPage((v) => v - 1)}>ก่อนหน้า</button>
-          <button className={button} disabled={page >= pages || loading || saving} onClick={() => setPage((v) => v + 1)}>ถัดไป</button></div></div>
+          <button className={button} disabled={page <= 1 || loading || busy} onClick={() => setPage((v) => v - 1)}>ก่อนหน้า</button>
+          <button className={button} disabled={page >= pages || loading || busy} onClick={() => setPage((v) => v + 1)}>ถัดไป</button></div></div>
       </section>
       <section ref={editor} className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm" aria-label="แก้ไขสิทธิ์ผู้ใช้">
-        {!selected ? <div className="py-16 text-center text-gray-500"><ShieldCheck size={36} className="mx-auto mb-3 text-green-600" /><h2 className="font-semibold">เลือกผู้ใช้เพื่อกำหนดสิทธิ์</h2><p className="mt-2 text-sm">ค้นหาชื่อหรือ username จากรายการด้านซ้าย</p></div> : <>
+        {!selected ? <div className="py-16 text-center text-gray-500"><ShieldCheck size={36} className="mx-auto mb-3 text-green-600" /><h2 className="font-semibold">เลือกผู้ใช้เพื่อจัดการบัญชี</h2><p className="mt-2 text-sm">ค้นหาชื่อหรือ username จากรายการด้านซ้าย</p></div> : <>
           <h2 className="font-bold text-gray-800">{selected.name}</h2><p className="mb-5 mt-1 text-sm text-gray-500">บัญชี {selected.username}</p>
-          <fieldset disabled={saving} className="space-y-5">
+          {selected.username !== currentUsername ? <PasswordResetForm key={selected.username} username={selected.username} name={selected.name} disabled={saving} onBusyChange={setResetting} /> : <p className="mb-5 rounded-lg bg-gray-50 p-3 text-sm text-gray-600">เปลี่ยนรหัสผ่านของตัวเองได้ที่ <a href="/pages/settings" className="text-green-700 underline">ตั้งค่าบัญชี</a></p>}
+          <fieldset disabled={busy} className="space-y-5">
             <div><label htmlFor="user-role" className="mb-2 block text-sm font-semibold text-gray-700">Role / สายงาน</label>
               <select id="user-role" value={role} disabled={selected.username === currentUsername} onChange={(e) => changeRole(e.target.value)} className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm disabled:bg-gray-50">
                 {!Object.hasOwn(ROLE_FEATURES, role) && <option value={role}>{role} (เดิม)</option>}

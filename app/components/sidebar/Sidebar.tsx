@@ -190,7 +190,7 @@ export default function Sidebar() {
       ...visiblePrimaryCareItems.map((item) => ({ ...item, category: "ปฐมภูมิ" })),
       ...visiblePpaItems.map((item) => ({ ...item, category: "PPA" })),
       ...SETTINGS_ITEMS.map((item) => ({ ...item, category: "ตั้งค่า" })),
-      ...(canManageUsers(role) ? [{ label: "จัดการสิทธิ์ผู้ใช้", href: "/pages/user-permissions", icon: ShieldCheck, desc: "ตั้ง role และกลุ่มเมนูรายคน", category: "ระบบงาน IT" }] : []),
+      ...(canManageUsers(role) ? [{ label: "จัดการผู้ใช้ / รหัสผ่าน", href: "/pages/user-permissions", icon: ShieldCheck, desc: "ตั้งรหัสผ่าน role และกลุ่มเมนูรายคน", category: "ระบบงาน IT" }] : []),
       ...(isIT ? [
         { label: "บันทึกงาน IT", href: "/pages/it-worklog-form", icon: FilePen, desc: "กรอกงานประจำวัน", category: "ระบบงาน IT" },
         { label: "สถานะเซิร์ฟเวอร์", href: "/pages/server-status", icon: Server, desc: "RAM / Harddisk เครื่องแม่ข่าย", category: "ระบบงาน IT" },
@@ -430,7 +430,7 @@ export default function Sidebar() {
             )}
 
             {/* IT Worklog */}
-            {canManageUsers(role) && <Link href="/pages/user-permissions" className={`flex items-center gap-2.5 rounded-lg px-3 py-2.5 text-sm font-medium ${pathname === "/pages/user-permissions" ? "bg-green-50 text-green-800" : "text-gray-600 hover:bg-green-50"}`}><ShieldCheck size={16} /><span>จัดการสิทธิ์ผู้ใช้</span></Link>}
+            {canManageUsers(role) && <Link href="/pages/user-permissions" className={`flex items-center gap-2.5 rounded-lg px-3 py-2.5 text-sm font-medium ${pathname === "/pages/user-permissions" ? "bg-green-50 text-green-800" : "text-gray-600 hover:bg-green-50"}`}><ShieldCheck size={16} /><span>จัดการผู้ใช้ / รหัสผ่าน</span></Link>}
             {isIT && (
               <Link
                 href="/pages/it-worklog-form"
