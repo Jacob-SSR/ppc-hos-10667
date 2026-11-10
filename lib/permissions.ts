@@ -161,6 +161,8 @@ export const FEATURE_PATHS = {
   PT: [
     "/pages/pt-dashboard",
     "/api/pt-dashboard",
+    "/pages/pt-treatment-summary",
+    "/api/pt-treatment-summary",
     "/pages/pt-ipd-register",
     "/api/pt-ipd-register",
   ],
