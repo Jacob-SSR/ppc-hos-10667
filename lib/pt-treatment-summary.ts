@@ -1,9 +1,4 @@
 export const PT_TREATMENT_TITLE = "สรุปค่ารักษาทางด้านกายภาพแบบเลือกหัตถการ";
-export const PT_DEFAULT_ICODES = [
-  "3050121", "3140481", "3140480", "3050157", "3050158", "3050170",
-  "3050171", "3050172", "3002120", "3140479", "3002121", "3002123",
-  "3002128", "3002127", "3002125", "3002126", "3002122", "3140407",
-];
 export const PT_MAX_SELECTION = 200;
 export interface PtTreatmentFilters { start: string; end: string; icodes: string[]; byRight: boolean }
 export interface PtTreatmentItem { icode: string; name: string }

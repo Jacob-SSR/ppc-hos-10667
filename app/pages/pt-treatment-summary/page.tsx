@@ -8,7 +8,7 @@ import { Download, Printer, Receipt, Search } from "lucide-react";
 import ThaiDateInput from "@/app/components/ThaiDateInput";
 import { fmtDate, getBangkokToday, toThaiDateLabel } from "@/lib/thaiDate";
 import {
-  PT_DEFAULT_ICODES, PT_MAX_SELECTION, PT_TREATMENT_TITLE, ptTreatmentExport,
+  PT_MAX_SELECTION, PT_TREATMENT_TITLE, ptTreatmentExport,
   type PtTreatmentItem, type PtTreatmentReport,
 } from "@/lib/pt-treatment-summary";
 
@@ -43,7 +43,6 @@ export default function PtTreatmentSummaryPage() {
         if (!response.ok) throw Error(data.error || "โหลดทะเบียนไม่สำเร็จ");
         if (controller.signal.aborted) return;
         setCatalog(data.items); setHospital(data.hospital);
-        setSelected(data.items.filter((i: PtTreatmentItem) => PT_DEFAULT_ICODES.includes(i.icode)).map((i: PtTreatmentItem) => i.icode));
       } catch (e) {
         if (!controller.signal.aborted) setCatalogError(e instanceof Error ? e.message : "โหลดทะเบียนไม่สำเร็จ");
       } finally { if (!controller.signal.aborted) setCatalogLoading(false); }
@@ -59,7 +58,6 @@ export default function PtTreatmentSummaryPage() {
     return catalog.filter(item => (!selectedOnly || selectedSet.has(item.icode)) && (!q || item.icode.toLowerCase().includes(q) || item.name.toLowerCase().includes(q)));
   }, [catalog, search, selectedOnly, selectedSet]);
   const visible = matching.slice(0, 100);
-  const availableDefaults = useMemo(() => catalog.filter(item => PT_DEFAULT_ICODES.includes(item.icode)).map(item => item.icode), [catalog]);
   const dirty = result && (result.start !== fmtDate(start) || result.end !== fmtDate(end) || result.byRight !== byRight || [...result.icodes].sort().join(",") !== [...selected].sort().join(","));
 
   function toggle(code: string) {
@@ -108,7 +106,7 @@ export default function PtTreatmentSummaryPage() {
         </div>
         <div className="border-t border-gray-100 pt-4">
           <div className="flex flex-wrap items-center justify-between gap-2"><h2 className="font-semibold">เลือกหัตถการ <span className="text-sm font-normal text-gray-500">{selected.length} / {PT_MAX_SELECTION} รายการ</span></h2>
-            <div className="flex flex-wrap gap-2"><button className={button} disabled={catalogLoading} onClick={() => { setSelected(availableDefaults); setError(""); }}>ชุดรายงานเดิม ({availableDefaults.length})</button><button className={button} disabled={!selected.length} onClick={() => setSelected([])}>ล้างการเลือก</button></div>
+            <button className={button} disabled={!selected.length} onClick={() => setSelected([])}>ล้างการเลือก</button>
           </div>
           <div className="mt-3 flex flex-wrap items-center gap-3">
             <div className="relative min-w-60 flex-1"><Search size={17} className="absolute left-3 top-3 text-gray-400" aria-hidden="true" /><input type="search" value={search} onChange={e => setSearch(e.target.value)} aria-label="ค้นหาหัตถการ" placeholder="ค้นหาชื่อหัตถการหรือรหัสรายการ…" className="min-h-10 w-full rounded-lg border border-gray-300 py-2 pl-10 pr-3 text-sm" /></div>
@@ -121,7 +119,6 @@ export default function PtTreatmentSummaryPage() {
               {!visible.length && <p className="bg-white p-5 text-sm text-gray-500 md:col-span-2">ไม่พบรายการตามคำค้นหา</p>}
             </div>
             <p className="mt-2 text-xs text-gray-500">แสดง {visible.length} จาก {matching.length.toLocaleString()} รายการ{matching.length > 100 && " · พิมพ์ชื่อหรือรหัสให้เจาะจงขึ้นเพื่อค้นหารายการอื่น"} · ค้นหาได้จากทะเบียนค่าบริการทั้งหมด</p>
-            {availableDefaults.length < PT_DEFAULT_ICODES.length && <p className="mt-1 text-xs text-amber-700">พบรหัสชุดรายงานเดิม {availableDefaults.length} จาก {PT_DEFAULT_ICODES.length} รหัสในทะเบียนนี้ สามารถค้นหาและเลือกหัตถการเพิ่มได้</p>}
           </>}
         </div>
         <div className="flex flex-wrap items-center gap-3 border-t border-gray-100 pt-4"><button className={`${button} border-green-700 bg-green-700 text-white hover:bg-green-800`} disabled={catalogLoading || loading || !selected.length} onClick={loadReport}>{loading ? "กำลังประมวลผล…" : "แสดงรายงาน"}</button><span className="text-xs text-gray-500">ค่าบริการจากรายการที่เลือก · ไม่รวมค่ารักษาอื่นใน visit</span></div>

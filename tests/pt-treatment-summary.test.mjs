@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { DatabaseSync } from "node:sqlite";
 import {
-  parsePtTreatmentFilters, ptTreatmentQueries, ptTreatmentExport, PT_DEFAULT_ICODES,
+  parsePtTreatmentFilters, ptTreatmentQueries, ptTreatmentExport,
 } from "../lib/pt-treatment-summary.ts";
 import { canAccessPath } from "../lib/permissions.ts";
 
@@ -34,8 +34,6 @@ test("validates real calendar dates, selection, group and preserves leading zero
   for (const override of [{ start: "2026-02-30" }, { end: "2026-10-20" }, { start: "2026-1-1" }, { icodes: "" }, { icodes: "0001,' OR 1=1" }, { icodes: "0001," }, { group: "unknown" }, { icodes: Array.from({ length: 201 }, (_,i) => String(i)).join(",") }]) {
     assert.throws(() => parsePtTreatmentFilters(new URLSearchParams({ start: filters.start, end: filters.end, icodes: "0001", ...override })));
   }
-  assert.equal(PT_DEFAULT_ICODES.length, 18);
-  assert.equal(new Set(PT_DEFAULT_ICODES).size, 18);
 });
 
 test("line amounts and quantities aggregate without duplicating VN income or losing repeat procedures", () => {
