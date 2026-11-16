@@ -37,7 +37,7 @@ export function ptTreatmentQueries(filters: PtTreatmentFilters) {
   const base = `FROM ovst o JOIN opitemrece oo ON oo.vn = o.vn
     WHERE o.vstdate BETWEEN ? AND ? AND oo.icode IN (${placeholders})`;
   const aggregate = `COUNT(DISTINCT o.hn) AS patients, COUNT(DISTINCT o.vn) AS visits,
-    COUNT(*) AS lines, COALESCE(SUM(oo.qty), 0) AS quantity,
+    COUNT(*) AS \`lines\`, COALESCE(SUM(oo.qty), 0) AS quantity,
     COALESCE(SUM(oo.sum_price), 0) AS charge`;
   const selected = filters.byRight
     ? "COALESCE(o.pttype, '') AS pttype, COALESCE(ptt.name, 'ไม่ระบุสิทธิ') AS pttype_name"
