@@ -1,34 +1,47 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { DatabaseSync } from "node:sqlite";
-import { parseStaffSheet, parseStaffDentalRequest, staffPatientQuery, staffDentalVisitQuery, matchStaffPatients, resolveStaffPatients, summarizeStaffDental, staffDentalExport } from "../lib/staff-dental.ts";
+import { ACTIVE_DOCTOR_SQL, activeDoctorStaff, parseStaffDentalFilters, staffPatientQuery, staffDentalVisitQuery, matchStaffPatients, resolveStaffPatients, summarizeStaffDental, staffDentalExport } from "../lib/staff-dental.ts";
 import { canAccessPath } from "../lib/permissions.ts";
 
 const member = (id, first, more = {}) => ({ id, first, last: "ใจดี", prefix: "นาย", group: "กลุ่ม ก", department: "แผนก ก", hn: "", cid: "", ...more });
 const input = { start: "2026-01-01", end: "2026-11-18", staff: [member(1,"สมชาย")] };
 
-test("imports the supplied Thai two-row header and preserves work group and department", () => {
-  const staff = parseStaffSheet([
-    ["ลำดับ","กลุ่มงาน (ปฏิบัติงานจริง)","คำนำ","ชื่อ","สกุล","ประเภท","ตำแหน่ง","ระดับ","สถานะ"],
-    ["ที่",null,"หน้า"], [1," งาน ก ","นาย"," สมชาย  ","ใจดี",null,null,null,"ดำเนินการแล้ว"],
-    [null,null,null,null,null],
-  ]);
-  assert.equal(staff.length,1);
-  assert.equal(staff[0].group,"งาน ก"); assert.equal(staff[0].department,"งาน ก");
-  assert.equal(staff[0].first,"สมชาย");
-  assert.equal(staff[0].status,undefined); // Ignore the unrelated original status column.
-  const separate = parseStaffSheet([["ชื่อ","นามสกุล","กลุ่มงาน","แผนก","HN"],["ก","ข","ค","ง","000001"]]);
-  assert.equal(separate[0].department,"ง"); assert.equal(separate[0].hn,"000001");
-  assert.throws(()=>parseStaffSheet([["ชื่อ","สกุล","แผนก"],["ก","ข","ค"],["ก ","ข","ง"]]),/ซ้ำ/);
+test("SQL roster contains active doctors only and retains unknown departments without guessing a join", () => {
+  const db=new DatabaseSync(":memory:");
+  try {
+    db.exec(`CREATE TABLE doctor(code,name,pname,fname,lname,cid,department,position_id,active);
+      CREATE TABLE doctor_position(id,name);
+      INSERT INTO doctor_position VALUES ('5','พยาบาลวิชาชีพ');
+      INSERT INTO doctor VALUES ('0001','ก ข','นาย','ก','ข','1234567890123','[]','5','Y'),
+      ('0002','ค ง','นาง','ค','ง',NULL,'[][ห้องฉุกเฉิน]','5','Y'),
+      ('0003','จ ฉ',NULL,'จ','ฉ',NULL,NULL,NULL,'N');`);
+    const staff=activeDoctorStaff(db.prepare(ACTIVE_DOCTOR_SQL).all());
+    assert.equal(staff.length,2);assert.equal(staff[0].doctorCode,'0001');
+    assert.equal(staff[0].department,'ไม่ระบุ');assert.equal(staff[0].group,'พยาบาลวิชาชีพ');
+    assert.equal(staff[1].department,'ห้องฉุกเฉิน');assert.equal(staff[1].cid,'');
+    const missing=activeDoctorStaff([{code:'4',department:'NULL',cid:'0000000000000'}]);
+    assert.equal(missing[0].department,'ไม่ระบุ');assert.equal(missing[0].cid,'');
+    assert.ok(!ACTIVE_DOCTOR_SQL.includes('kskdepartment'));
+  } finally {db.close();}
 });
 
-test("validates the API input, real calendar dates, size and duplicate identities", () => {
-  assert.deepEqual(parseStaffDentalRequest(input),input);
-  for (const patch of [{start:"2026-02-30"},{start:"2026-11-19"},{end:"2028-01-01"},{staff:[]},{staff:[member(1,"ก"),member(1,"ข")]},{staff:[member(1,"ก"),member(2,"ก")]},{staff:[member(1,"ก",{cid:"123"})]}]) assert.throws(()=>parseStaffDentalRequest({...input,...patch}));
+test("API accepts dates only; supplied staff cannot override the database population", () => {
+  assert.deepEqual(parseStaffDentalFilters(input),{start:input.start,end:input.end});
+  for (const patch of [{start:"2026-02-30"},{start:"2026-11-19"},{end:"2028-01-01"}]) assert.throws(()=>parseStaffDentalFilters({...input,...patch}));
   const malicious = member(1,"ก' OR 1=1 --");
   const q=staffPatientQuery([malicious]);
   assert.ok(!q.sql.includes(malicious.first)); assert.ok(q.params.includes(malicious.first.replaceAll(" ","")));
   assert.equal((q.sql.match(/\?/g)||[]).length,q.params.length);
+});
+
+test("duplicate roster CIDs and incomplete names remain unresolved, even without patient matches", () => {
+  const staff=[member(1,'ก',{cid:'1234567890123'}),member(2,'ข',{cid:'1234567890123'}),member(3,'',{last:''})];
+  const matches=matchStaffPatients(staff,[{hn:'0001',cid:null,fname:'',lname:''}]);
+  assert.deepEqual(matches,[]);
+  const resolved=resolveStaffPatients(staff,matches);
+  assert.deepEqual(resolved.map(r=>r.status),['duplicate_patient','duplicate_patient','not_found']);
+  assert.ok(resolved.every(r=>r.visits===null));
 });
 
 function fixture() {
