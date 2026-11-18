@@ -169,6 +169,8 @@ export const FEATURE_PATHS = {
 
   // ทันตกรรม
   DENTAL: [
+    "/pages/staff-dental",
+    "/api/staff-dental",
     "/pages/dental-dashboard",
     "/api/dental-dashboard",
     "/pages/uc-outside-dental",
