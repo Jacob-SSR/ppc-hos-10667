@@ -112,6 +112,12 @@ export const DASHBOARD_GROUPS: SidebarSubGroup[] = [
         group: "main",
       },
       {
+        label: "ติดตามทำฟันเจ้าหน้าที่",
+        href: "/pages/staff-dental",
+        icon: UserCheck,
+        group: "main",
+      },
+      {
         label: "แพทย์แผนไทย",
         href: "/pages/ttm-dashboard",
         icon: Leaf,
