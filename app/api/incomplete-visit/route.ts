@@ -15,6 +15,7 @@ interface IncompleteVisitRow extends RowDataPacket {
   diag_text: string | null;
   vsttime: string | null;
   cc: string | null;
+  hpi: string | null;
   hn: string;
   vn: string;
   pdx: string | null;
@@ -27,7 +28,7 @@ interface IncompleteVisitRow extends RowDataPacket {
 async function buildIncompleteVisits(start: string, end: string) {
   const [rows] = await db.query<IncompleteVisitRow[]>(
     `
-    select k.department, v.income, concat(p.pname,p.fname,"",p.lname)as pt_name, v.hn, v.vn, v.vstdate, ov.vsttime, oo.cc, od.diag_text,
+    select k.department, v.income, concat(p.pname,p.fname,"",p.lname)as pt_name, v.hn, v.vn, v.vstdate, ov.vsttime, oo.cc, oo.hpi, od.diag_text,
     v.pdx,o.icd10,o.doctor,d.name  from vn_stat v
     LEFT OUTER JOIN ovstdiag o          ON v.vn = o.vn AND o.diagtype = '1'
     LEFT OUTER JOIN doctor d            ON d.code = o.doctor
