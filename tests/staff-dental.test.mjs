@@ -93,6 +93,9 @@ test("group totals reconcile and Excel separates unfinished, done and unresolved
   const exported=staffDentalExport({...input,rows,groups,updatedAt:"now"});
   assert.equal(exported.unfinished.length,1); assert.equal(exported.unresolved.length,1); assert.equal(exported.all.length,3);
   assert.equal(exported.unfinished[0].จำนวน_visit,0); assert.equal(exported.unresolved[0].จำนวน_visit,null);
+  assert.deepEqual([exported.all[0].ทำแล้ว,exported.all[0].ยังไม่ทำ],["✓",""]);
+  assert.deepEqual([exported.unfinished[0].ทำแล้ว,exported.unfinished[0].ยังไม่ทำ],["","✓"]);
+  assert.deepEqual([exported.unresolved[0].ทำแล้ว,exported.unresolved[0].ยังไม่ทำ],["",""]);
   assert.equal(exported.all[0].HN,"0001");
   assert.equal(exported.all[0].วันที่เริ่ม,input.start);
 });

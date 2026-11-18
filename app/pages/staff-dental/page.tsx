@@ -13,8 +13,8 @@ const button = "min-h-10 rounded-lg border border-gray-300 px-4 py-2 text-sm fon
 type View = "not_done" | "done" | "unresolved" | "all";
 function Table({ rows }: { rows: StaffDentalRow[] }) {
   return <div className="overflow-auto rounded-xl border border-gray-200 bg-white"><table className="w-full text-left text-sm">
-    <thead className="bg-slate-700 text-white"><tr>{["ชื่อ–นามสกุล", "รหัสเจ้าหน้าที่", "ตำแหน่ง", "แผนก", "HN", "visit", "วันที่ล่าสุด", "สถานะ"].map(label => <th key={label} className="whitespace-nowrap px-4 py-3" scope="col">{label}</th>)}</tr></thead>
-    <tbody>{rows.map(r => <tr key={r.id} className="border-b border-gray-100 even:bg-gray-50"><td className="whitespace-nowrap px-4 py-3 font-medium">{r.name}</td><td className="px-4 py-3 font-mono">{r.doctorCode}</td><td className="min-w-48 px-4 py-3">{r.group}</td><td className="min-w-48 px-4 py-3">{r.department}</td><td className="px-4 py-3 font-mono">{r.matchedHn ?? "—"}</td><td className="px-4 py-3 text-right tabular-nums">{r.visits ?? "—"}</td><td className="whitespace-nowrap px-4 py-3">{r.lastVisit ? toThaiDate(r.lastVisit) : "—"}</td><td className={`min-w-52 px-4 py-3 ${r.status === "done" ? "text-green-800" : r.status === "not_done" ? "text-amber-800" : "text-red-700"}`}>{STAFF_DENTAL_STATUS[r.status]}</td></tr>)}</tbody>
+    <thead className="bg-slate-700 text-white"><tr>{["ชื่อ–นามสกุล", "รหัสเจ้าหน้าที่", "ทำแล้ว", "ยังไม่ทำ", "ตำแหน่ง", "แผนก", "HN", "visit", "วันที่ล่าสุด", "สถานะ"].map(label => <th key={label} className="whitespace-nowrap px-4 py-3" scope="col">{label}</th>)}</tr></thead>
+    <tbody>{rows.map(r => <tr key={r.id} className="border-b border-gray-100 even:bg-gray-50"><td className="whitespace-nowrap px-4 py-3 font-medium">{r.name}</td><td className="px-4 py-3 font-mono">{r.doctorCode}</td><td className="px-4 py-3 text-center"><input type="checkbox" checked={r.status === "done"} disabled aria-label={`ทำแล้ว: ${r.name}`} className="h-4 w-4 accent-green-700 disabled:opacity-100" /></td><td className="px-4 py-3 text-center"><input type="checkbox" checked={r.status === "not_done"} disabled aria-label={`ยังไม่ทำ: ${r.name}`} className="h-4 w-4 accent-amber-700 disabled:opacity-100" /></td><td className="min-w-48 px-4 py-3">{r.group}</td><td className="min-w-48 px-4 py-3">{r.department}</td><td className="px-4 py-3 font-mono">{r.matchedHn ?? "—"}</td><td className="px-4 py-3 text-right tabular-nums">{r.visits ?? "—"}</td><td className="whitespace-nowrap px-4 py-3">{r.lastVisit ? toThaiDate(r.lastVisit) : "—"}</td><td className={`min-w-52 px-4 py-3 ${r.status === "done" ? "text-green-800" : r.status === "not_done" ? "text-amber-800" : "text-red-700"}`}>{STAFF_DENTAL_STATUS[r.status]}</td></tr>)}</tbody>
   </table>{!rows.length && <p className="p-8 text-center text-sm text-gray-500">ไม่พบรายชื่อในตัวกรองนี้</p>}</div>;
 }
 export default function StaffDentalPage() {
@@ -55,7 +55,7 @@ export default function StaffDentalPage() {
     try {
       const XLSX = await import("xlsx");
       const data = staffDentalExport(result), book = XLSX.utils.book_new();
-      const columns = ["วันที่เริ่ม","วันที่สิ้นสุด","รหัสเจ้าหน้าที่","ตำแหน่ง","แผนก","ชื่อ_นามสกุล","HN","จำนวน_visit","วันที่ครั้งแรก","วันที่ล่าสุด","สถานะ"];
+      const columns = ["วันที่เริ่ม","วันที่สิ้นสุด","รหัสเจ้าหน้าที่","ตำแหน่ง","แผนก","ชื่อ_นามสกุล","HN","ทำแล้ว","ยังไม่ทำ","จำนวน_visit","วันที่ครั้งแรก","วันที่ล่าสุด","สถานะ"];
       for (const [name, rows, header] of [["ยังไม่พบ visit",data.unfinished,columns],["สรุปตำแหน่งแผนก",data.groups,undefined],["รายการ active ทั้งหมด",data.all,columns],["ต้องตรวจสอบ",data.unresolved,columns]] as const) {
         const sheet = XLSX.utils.json_to_sheet(rows, header ? { header: [...header] } : {});
         sheet["!cols"] = (header ?? Object.keys(rows[0] ?? {})).map(key => ({ wch: ["ตำแหน่ง","แผนก","ชื่อ_นามสกุล","สถานะ"].includes(key) ? 40 : 18 }));
@@ -66,6 +66,7 @@ export default function StaffDentalPage() {
         ["รายงาน",STAFF_DENTAL_TITLE],["รายชื่อหลัก","doctor.active = Y; จัดกลุ่มตาม doctor_position.name; แผนกตาม doctor.department ค่าว่างเป็น ไม่ระบุ"],["วันที่เริ่ม",result.start],["วันที่สิ้นสุด",result.end],["ข้อมูล ณ",result.updatedAt],
         ["เกณฑ์","นับ VN ไม่ซ้ำที่มีรายการค่าบริการจากบุคลากรทันตกรรม position_id 2 หรือ 6 ตามรายงานทันตกรรมเดิม"],
         ["ยังไม่พบ visit","จับคู่ตัวบุคคลได้ แต่ไม่พบ visit ทันตกรรมในช่วงที่เลือก"],
+        ["เครื่องหมาย ✓","ระบบติ๊กทำแล้วเมื่อพบ visit และติ๊กยังไม่ทำเมื่อยืนยันตัวบุคคลได้แต่ไม่พบ visit ในช่วงที่เลือก; ต้องตรวจสอบไม่ติ๊กทั้งสองช่อง"],
         ["ต้องตรวจสอบ","ไม่พบทะเบียนผู้ป่วย ชื่อซ้ำหลาย HN หรือ CID/HN ซ้ำหลายรหัสเจ้าหน้าที่ ไม่ถือว่าเป็นผู้ยังไม่ได้รับบริการ"],
         ["ขอบเขตส่งออก","รายการ active ใน doctor และช่วงวันที่ของผลรายงาน ไม่จำกัดตามตัวกรองบนหน้าจอ"],
       ]),"ขอบเขตรายงาน");
@@ -104,6 +105,7 @@ export default function StaffDentalPage() {
       <div className="overflow-auto rounded-xl border border-gray-200 bg-white"><table className="w-full text-left text-sm"><caption className="p-4 text-left font-semibold">สรุปตำแหน่ง/แผนก · กดกลุ่มเพื่อดูรายชื่อ</caption><thead className="bg-gray-100"><tr>{["ตำแหน่ง","แผนก","ทั้งหมด (รายการ)","รับบริการแล้ว","ยังไม่พบ visit","ต้องตรวจสอบ","visit รวม"].map(h=><th scope="col" className="whitespace-nowrap px-4 py-3" key={h}>{h}</th>)}</tr></thead><tbody>{result.groups.filter(g=>(!group||g.group===group)&&(!department||g.department===department)).map(g=><tr key={JSON.stringify([g.group,g.department])} className="border-t border-gray-100"><td className="px-4 py-3"><button className="text-left text-green-800 underline underline-offset-2" onClick={()=>{setGroup(g.group);setDepartment(g.department);setView("not_done");}}>{g.group}</button></td><td className="px-4 py-3">{g.department}</td>{[g.staff,g.done,g.notDone,g.unresolved,g.visits].map((v,i)=><td key={i} className="px-4 py-3 text-right tabular-nums">{v}</td>)}</tr>)}</tbody></table></div>
       <div className="flex flex-wrap items-center justify-between gap-3"><h3 className="font-semibold">{view === "not_done" ? "รายชื่อที่ยังไม่พบ visit ทันตกรรม" : view === "done" ? "รายชื่อที่รับบริการแล้ว" : view === "unresolved" ? "รายชื่อที่ต้องตรวจสอบตัวบุคคล" : "รายชื่อทั้งหมด"} ({visible.length} รายการ)</h3><input type="search" value={search} onChange={e=>setSearch(e.target.value)} placeholder="ค้นหาชื่อหรือ HN" aria-label="ค้นหาชื่อหรือ HN" className={`${button} min-w-64`} /></div>
       <Table rows={visible} />
+      <p className="text-xs text-gray-500">เครื่องหมายติ๊กแสดงอัตโนมัติจาก visit ในช่วงที่เลือก แก้ไขเองไม่ได้ · รายการที่ต้องตรวจสอบจะไม่ติ๊กทั้งสองช่อง</p>
       <p className="text-xs leading-relaxed text-gray-500">“ยังไม่พบ visit” หมายถึงจับคู่กับทะเบียนผู้ป่วยได้ แต่ไม่พบ visit ที่มีรายการค่าบริการจากบุคลากรทันตกรรมตามเกณฑ์รายงานทันตกรรมเดิมในช่วงที่เลือก ไม่ครอบคลุมการรับบริการนอกโรงพยาบาล · ข้อมูลตำแหน่ง/แผนกจาก doctor ไม่ใช่กลุ่มงานตามบัญชีบุคลากรเดิม จำนวนรายการ active อาจรวมรหัสซ้ำของบุคคลเดียวกัน</p>
     </section>}
   </div>;

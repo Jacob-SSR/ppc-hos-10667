@@ -97,7 +97,7 @@ export function summarizeStaffDental(rows: StaffDentalRow[]): StaffDentalSummary
   return [...groups.values()].sort((a,b) => b.notDone - a.notDone || a.group.localeCompare(b.group, "th") || a.department.localeCompare(b.department, "th"));
 }
 export function staffDentalExport(report: StaffDentalReport) {
-  const exportRows = (rows: StaffDentalRow[]) => rows.map(r => ({ วันที่เริ่ม: report.start, วันที่สิ้นสุด: report.end, รหัสเจ้าหน้าที่:r.doctorCode ?? "", ตำแหน่ง: r.group, แผนก: r.department, ชื่อ_นามสกุล: r.name, HN: r.matchedHn ?? "", จำนวน_visit: r.visits, วันที่ครั้งแรก: r.firstVisit ?? "", วันที่ล่าสุด: r.lastVisit ?? "", สถานะ: STAFF_DENTAL_STATUS[r.status] }));
+  const exportRows = (rows: StaffDentalRow[]) => rows.map(r => ({ วันที่เริ่ม: report.start, วันที่สิ้นสุด: report.end, รหัสเจ้าหน้าที่:r.doctorCode ?? "", ตำแหน่ง: r.group, แผนก: r.department, ชื่อ_นามสกุล: r.name, HN: r.matchedHn ?? "", ทำแล้ว: r.status === "done" ? "✓" : "", ยังไม่ทำ: r.status === "not_done" ? "✓" : "", จำนวน_visit: r.visits, วันที่ครั้งแรก: r.firstVisit ?? "", วันที่ล่าสุด: r.lastVisit ?? "", สถานะ: STAFF_DENTAL_STATUS[r.status] }));
   return {
     unfinished: exportRows(report.rows.filter(r => r.status === "not_done")),
     unresolved: exportRows(report.rows.filter(r => !["done", "not_done"].includes(r.status))),
