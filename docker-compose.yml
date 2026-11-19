@@ -14,6 +14,9 @@ services:
     # ชี้ app ไปหา redis ผ่านชื่อ service (docker network ภายใน)
     environment:
       - REDIS_URL=redis://redis:6379
+    # Personnel roster stays on the host, outside Git and the image; app reads it only.
+    volumes:
+      - ./private:/app/private:ro
     # ให้ container เรียก MySQL ที่รันบน "เครื่อง host เดียวกัน" ผ่าน host.docker.internal ได้
     # (ถ้า HosXP อยู่คนละเครื่องในวง LAN ให้ใส่ IP จริงใน DB_HOST/DB_HOST2 แทน แล้วบรรทัดนี้ไม่จำเป็น)
     extra_hosts:

@@ -1,30 +1,46 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { DatabaseSync } from "node:sqlite";
-import { HR_STAFF_SQL, STAFF_DENTAL_DEPARTMENTS_SQL, hrRosterStaff, parseStaffDentalFilters, staffPatientQuery, staffDentalVisitQuery, matchStaffPatients, resolveStaffPatients, summarizeStaffDental, staffDentalExport } from "../lib/staff-dental.ts";
+import { writeFile, unlink } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
+import { randomUUID } from "node:crypto";
+import { parseHrRosterFile, readStaffDentalRoster, StaffDentalRosterError } from "../lib/staff-dental-roster.ts";
+import { STAFF_DENTAL_DEPARTMENTS_SQL, hrRosterStaff, parseStaffDentalFilters, staffPatientQuery, staffDentalVisitQuery, matchStaffPatients, resolveStaffPatients, summarizeStaffDental, staffDentalExport } from "../lib/staff-dental.ts";
 import { canAccessPath } from "../lib/permissions.ts";
 
 const member = (id, first, more = {}) => ({ id, first, last: "ใจดี", prefix: "นาย", group: "พยาบาลวิชาชีพ", unit:"งานผู้ป่วยนอก",staffDepartment:"กลุ่มงานการพยาบาล",hn: "", cid: "", ...more });
 const input = { start: "2026-01-01", end: "2026-11-18", staff: [member(1,"สมชาย")] };
 
-test("HR roster retains personnel without provider codes and reads their actual positions and units", () => {
-  const db=new DatabaseSync(":memory:");
-  try {
-    db.exec(`ATTACH DATABASE ':memory:' AS ppchos;
-      CREATE TABLE ppchos.staff_dental_roster(staff_ordinal,prefix,first_name,last_name,cid,position_name,unit_name,department_name,active);
-      INSERT INTO ppchos.staff_dental_roster VALUES (1,'นาย','ก','ข','1234567890123','พนักงานทำความสะอาด','งานทำความสะอาด','กลุ่มงานบริหารทั่วไป',1),
-      (2,'นาง','ค','ง','1234567890124','พยาบาลวิชาชีพ','งานผู้ป่วยนอก','กลุ่มงานการพยาบาล',1),
-      (3,'นาย','จ','ฉ','1234567890125','แพทย์','องค์กรแพทย์','กลุ่มงานการแพทย์',0);`);
-    const staff=hrRosterStaff(db.prepare(HR_STAFF_SQL).all());
+const personnel={staff_ordinal:1,prefix:'นาย',first_name:'ก',last_name:'ข',cid:'1234567890123',position_name:'พนักงานทำความสะอาด',unit_name:'งานทำความสะอาด',department_name:'กลุ่มงานบริหารทั่วไป'};
+test("private HR file retains people without provider codes and ignores unrelated fields", () => {
+    const input={version:1,people:[{...personnel,salary:9999,bank_account:'not-for-report'},{...personnel,staff_ordinal:2,cid:'1234567890124',position_name:'พยาบาลวิชาชีพ',unit_name:'งานผู้ป่วยนอก',department_name:'กลุ่มงานการพยาบาล'},{...personnel,staff_ordinal:3,cid:'1234567890125',active:0}]};
+    const parsed=parseHrRosterFile(input);
+    assert.ok(parsed.every(r=>!Object.hasOwn(r,'salary') && !Object.hasOwn(r,'bank_account')));
+    const staff=hrRosterStaff(parsed);
     assert.equal(staff.length,2);assert.equal(staff[0].rosterNo,1);
     assert.equal(staff[0].group,'พนักงานทำความสะอาด');assert.equal(staff[0].unit,'งานทำความสะอาด');
     assert.equal(staff[1].group,'พยาบาลวิชาชีพ');assert.equal(staff[1].staffDepartment,'กลุ่มงานการพยาบาล');
     const missing=hrRosterStaff([{staff_ordinal:4,position_name:null,cid:'0000000000000'}]);
     assert.equal(missing[0].group,'ไม่ระบุตำแหน่ง');assert.equal(missing[0].cid,'');
     assert.ok(staff.every(s=>!Object.hasOwn(s,'department')));
-    assert.ok(!HR_STAFF_SQL.includes('doctor')); // No provider table is needed to build the cohort.
-    assert.ok(!HR_STAFF_SQL.includes('kskdepartment'));
-  } finally {db.close();}
+});
+
+test("read-only roster loader reads a BOM file and reports missing/invalid files without fallback",async()=>{
+  const filePath=path.join(tmpdir(),`staff-dental-roster-${randomUUID()}.json`);
+  try{
+    await writeFile(filePath,'\uFEFF'+JSON.stringify({version:1,people:[personnel]}),'utf8');
+    assert.deepEqual(await readStaffDentalRoster(filePath),[personnel]);
+    await writeFile(filePath,'invalid json','utf8');
+    await assert.rejects(()=>readStaffDentalRoster(filePath),StaffDentalRosterError);
+  }finally{await unlink(filePath);}
+  await assert.rejects(()=>readStaffDentalRoster(filePath),/ไม่พบไฟล์ทะเบียนบุคลากร/);
+  for(const invalid of [{version:2,people:[personnel]},{version:1,people:[]},{version:1,people:[personnel,personnel]},{version:1,people:[{...personnel,cid:'0000000000000'}]},{version:1,people:[{...personnel,unit_name:''}]}])assert.throws(()=>parseHrRosterFile(invalid),StaffDentalRosterError);
+});
+
+test("all report database statements remain SELECT-only",()=>{
+  const statements=[STAFF_DENTAL_DEPARTMENTS_SQL,staffPatientQuery([member(1,'ก')]).sql,staffDentalVisitQuery(['1'],input.start,input.end,'019').sql];
+  for(const sql of statements){assert.match(sql,/^SELECT\b/i);assert.ok(!sql.includes(';'));assert.doesNotMatch(sql,/\b(CREATE\s+TABLE|INSERT\s+INTO|UPDATE\s+\w+\s+SET|DELETE\s+FROM|ALTER\s+TABLE|DROP\s+TABLE|REPLACE\s+INTO|TRUNCATE\s+TABLE|INTO\s+OUTFILE|INTO\s+DUMPFILE)\b/i);}
 });
 
 test("same position in different HR units has separate reconciled summaries",()=>{

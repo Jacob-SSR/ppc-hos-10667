@@ -112,7 +112,7 @@ export default function StaffDentalPage() {
       </div>
       <div className="flex flex-wrap items-center gap-4 border-t border-gray-100 pt-4">
         <button className={`${button} border-green-700 bg-green-700 text-white`} disabled={loading || catalogLoading || !!catalogError} onClick={loadReport}>{loading ? "กำลังตรวจสอบกับ HOSxP…" : "ตรวจสอบผู้ที่ยังไม่ได้ทำฟัน"}</button>
-        <p className="text-sm text-gray-500">ใช้ทะเบียนบุคลากร HR ที่นำเข้าไว้ ไม่ต้องเลือกไฟล์รายชื่อซ้ำ</p>
+        <p className="text-sm text-gray-500">อ่านทะเบียนบุคลากร HR จากไฟล์บนเซิร์ฟเวอร์ ไม่ต้องเลือกไฟล์รายชื่อซ้ำ</p>
       </div>
       <p className="text-xs leading-relaxed text-gray-500">จับคู่ผู้ป่วยด้วย CID ก่อน ใช้ชื่อเฉพาะรายการที่ไม่มี CID · รหัสบุคคลซ้ำแยกไว้ตรวจสอบ</p>
       {catalogLoading && <p role="status" className="text-sm text-gray-500">กำลังโหลดแผนกรับบริการ…</p>}

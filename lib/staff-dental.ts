@@ -15,9 +15,6 @@ export const STAFF_DENTAL_DEPARTMENTS_SQL = `SELECT depcode AS code, department 
 export type StaffDentalFilters = { start: string; end: string; departmentCode?: string };
 export const cleanText = (v: unknown): string => String(v ?? "").replace(/\s+/gu, " ").trim();
 export const nameKey = (v: unknown): string => String(v ?? "").replace(/\s+/gu, "").normalize("NFC");
-export const HR_STAFF_SQL = `SELECT staff_ordinal, prefix, first_name, last_name, cid,
-  position_name, unit_name, department_name FROM ppchos.staff_dental_roster
-  WHERE active = 1 ORDER BY staff_ordinal, cid`;
 export type HrStaff = { staff_ordinal: number; prefix: string; first_name: string; last_name: string; cid: string; position_name: string; unit_name: string; department_name: string };
 const dbText = (v: unknown) => /^(null|\[\])$/i.test(cleanText(v)) ? "" : cleanText(v);
 export function hrRosterStaff(personnel: HrStaff[]): StaffMember[] {
