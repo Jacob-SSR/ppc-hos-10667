@@ -7,14 +7,14 @@ import { th } from "date-fns/locale";
 import "react-datepicker/dist/react-datepicker.css";
 import ThaiDateInput from "@/app/components/ThaiDateInput";
 import { fmtDate, getBangkokToday, toThaiDate, toThaiDateLabel } from "@/lib/thaiDate";
-import { staffDentalExport, STAFF_DENTAL_STATUS, STAFF_DENTAL_TITLE, type StaffDentalReport, type StaffDentalRow } from "@/lib/staff-dental";
+import { staffDentalExport, STAFF_DENTAL_STATUS, STAFF_DENTAL_TITLE, type StaffDentalReport, type StaffDentalRow, type StaffDentalDepartment } from "@/lib/staff-dental";
 
 const button = "min-h-10 rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium disabled:cursor-not-allowed disabled:opacity-40";
 type View = "not_done" | "done" | "unresolved" | "all";
 function Table({ rows }: { rows: StaffDentalRow[] }) {
   return <div className="overflow-auto rounded-xl border border-gray-200 bg-white"><table className="w-full text-left text-sm">
-    <thead className="bg-slate-700 text-white"><tr>{["ชื่อ–นามสกุล", "รหัสเจ้าหน้าที่", "ทำแล้ว", "ยังไม่ทำ", "ตำแหน่ง", "HN", "visit", "วันที่ล่าสุด", "สถานะ"].map(label => <th key={label} className="whitespace-nowrap px-4 py-3" scope="col">{label}</th>)}</tr></thead>
-    <tbody>{rows.map(r => <tr key={r.id} className="border-b border-gray-100 even:bg-gray-50"><td className="whitespace-nowrap px-4 py-3 font-medium">{r.name}</td><td className="px-4 py-3 font-mono">{r.doctorCode}</td><td className="px-4 py-3 text-center"><input type="checkbox" checked={r.status === "done"} disabled aria-label={`ทำแล้ว: ${r.name}`} className="h-4 w-4 accent-green-700 disabled:opacity-100" /></td><td className="px-4 py-3 text-center"><input type="checkbox" checked={r.status === "not_done"} disabled aria-label={`ยังไม่ทำ: ${r.name}`} className="h-4 w-4 accent-amber-700 disabled:opacity-100" /></td><td className="min-w-48 px-4 py-3">{r.group}</td><td className="px-4 py-3 font-mono">{r.matchedHn ?? "—"}</td><td className="px-4 py-3 text-right tabular-nums">{r.visits ?? "—"}</td><td className="whitespace-nowrap px-4 py-3">{r.lastVisit ? toThaiDate(r.lastVisit) : "—"}</td><td className={`min-w-52 px-4 py-3 ${r.status === "done" ? "text-green-800" : r.status === "not_done" ? "text-amber-800" : "text-red-700"}`}>{STAFF_DENTAL_STATUS[r.status]}</td></tr>)}</tbody>
+    <thead className="bg-slate-700 text-white"><tr>{["ชื่อ–นามสกุล", "รหัสเจ้าหน้าที่", "ทำแล้ว", "ยังไม่ทำ", "ตำแหน่ง", "แผนกที่พบ visit", "HN", "visit", "วันที่ล่าสุด", "สถานะ"].map(label => <th key={label} className="whitespace-nowrap px-4 py-3" scope="col">{label}</th>)}</tr></thead>
+    <tbody>{rows.map(r => <tr key={r.id} className="border-b border-gray-100 even:bg-gray-50"><td className="whitespace-nowrap px-4 py-3 font-medium">{r.name}</td><td className="px-4 py-3 font-mono">{r.doctorCode}</td><td className="px-4 py-3 text-center"><input type="checkbox" checked={r.status === "done"} disabled aria-label={`ทำแล้ว: ${r.name}`} className="h-4 w-4 accent-green-700 disabled:opacity-100" /></td><td className="px-4 py-3 text-center"><input type="checkbox" checked={r.status === "not_done"} disabled aria-label={`ยังไม่ทำ: ${r.name}`} className="h-4 w-4 accent-amber-700 disabled:opacity-100" /></td><td className="min-w-48 px-4 py-3">{r.group}</td><td className="min-w-48 px-4 py-3">{r.serviceDepartments || "—"}</td><td className="px-4 py-3 font-mono">{r.matchedHn ?? "—"}</td><td className="px-4 py-3 text-right tabular-nums">{r.visits ?? "—"}</td><td className="whitespace-nowrap px-4 py-3">{r.lastVisit ? toThaiDate(r.lastVisit) : "—"}</td><td className={`min-w-52 px-4 py-3 ${r.status === "done" ? "text-green-800" : r.status === "not_done" ? "text-amber-800" : "text-red-700"}`}>{STAFF_DENTAL_STATUS[r.status]}</td></tr>)}</tbody>
   </table>{!rows.length && <p className="p-8 text-center text-sm text-gray-500">ไม่พบรายชื่อในตัวกรองนี้</p>}</div>;
 }
 export default function StaffDentalPage() {
@@ -27,22 +27,41 @@ export default function StaffDentalPage() {
   const [loading, setLoading] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [error, setError] = useState("");
+  const [departments,setDepartments] = useState<StaffDentalDepartment[]>([]);
+  const [departmentCode,setDepartmentCode] = useState("");
+  const [catalogLoading,setCatalogLoading] = useState(true);
+  const [catalogError,setCatalogError] = useState("");
+  const [catalogRetry,setCatalogRetry] = useState(0);
   const request = useRef<AbortController | null>(null);
   useEffect(() => () => request.current?.abort(), []);
+  useEffect(()=>{
+    const controller=new AbortController();
+    async function load(){
+      setCatalogLoading(true);setCatalogError("");
+      try {
+        const response=await fetch("/api/staff-dental",{signal:controller.signal,cache:"no-store"});
+        const data=await response.json();
+        if(!response.ok)throw Error(data.error || "โหลดแผนกรับบริการไม่สำเร็จ");
+        if(!controller.signal.aborted)setDepartments(data.departments);
+      }catch(e){if(!controller.signal.aborted)setCatalogError(e instanceof Error?e.message:"โหลดแผนกรับบริการไม่สำเร็จ");}
+      finally{if(!controller.signal.aborted)setCatalogLoading(false);}
+    }
+    void load();return()=>controller.abort();
+  },[catalogRetry]);
 
   async function loadReport() {
     if (start > end) { setError("วันที่เริ่มต้องไม่เกินวันที่สิ้นสุด"); return; }
     request.current?.abort(); const controller = new AbortController(); request.current = controller;
     setLoading(true); setError("");
     try {
-      const response = await fetch("/api/staff-dental", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ start: fmtDate(start), end: fmtDate(end) }), signal: controller.signal, cache: "no-store" });
+      const response = await fetch("/api/staff-dental", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ start: fmtDate(start), end: fmtDate(end),departmentCode }), signal: controller.signal, cache: "no-store" });
       const data = await response.json();
       if (!response.ok) throw Error(data.error || "ดึงรายงานไม่สำเร็จ");
       if (!controller.signal.aborted) { setResult(data); setGroup(""); setView("not_done"); }
     } catch (e) { if (!controller.signal.aborted) setError(e instanceof Error ? e.message : "ดึงรายงานไม่สำเร็จ"); }
     finally { if (!controller.signal.aborted) setLoading(false); }
   }
-  const dirty = !!result && (result.start !== fmtDate(start) || result.end !== fmtDate(end));
+  const dirty = !!result && (result.start !== fmtDate(start) || result.end !== fmtDate(end) || (result.departmentCode || "") !== departmentCode);
   const groups = useMemo(() => [...new Set(result?.rows.map(r => r.group) ?? [])], [result]);
   const scoped = useMemo(() => result?.rows.filter(r => (!group || r.group === group)) ?? [], [result,group]);
   const counts = { all: scoped.length, not_done: scoped.filter(r => r.status === "not_done").length, done: scoped.filter(r => r.status === "done").length, unresolved: scoped.filter(r => !["done","not_done"].includes(r.status)).length };
@@ -53,20 +72,22 @@ export default function StaffDentalPage() {
     try {
       const XLSX = await import("xlsx");
       const data = staffDentalExport(result), book = XLSX.utils.book_new();
-      const columns = ["วันที่เริ่ม","วันที่สิ้นสุด","รหัสเจ้าหน้าที่","ตำแหน่ง","ชื่อ_นามสกุล","HN","ทำแล้ว","ยังไม่ทำ","จำนวน_visit","วันที่ครั้งแรก","วันที่ล่าสุด","สถานะ"];
+      const columns = ["วันที่เริ่ม","วันที่สิ้นสุด","แผนกรับบริการที่เลือก","รหัสเจ้าหน้าที่","ตำแหน่ง","ชื่อ_นามสกุล","HN","ทำแล้ว","ยังไม่ทำ","จำนวน_visit","แผนกที่พบ_visit","วันที่ครั้งแรก","วันที่ล่าสุด","สถานะ"];
       for (const [name, rows, header] of [["ยังไม่พบ visit",data.unfinished,columns],["สรุปตามตำแหน่ง",data.groups,undefined],["รายการ active ทั้งหมด",data.all,columns],["ต้องตรวจสอบ",data.unresolved,columns]] as const) {
         const sheet = XLSX.utils.json_to_sheet(rows, header ? { header: [...header] } : {});
-        sheet["!cols"] = (header ?? Object.keys(rows[0] ?? {})).map(key => ({ wch: ["ตำแหน่ง","ชื่อ_นามสกุล","สถานะ"].includes(key) ? 40 : 18 }));
+        sheet["!cols"] = (header ?? Object.keys(rows[0] ?? {})).map(key => ({ wch: ["ตำแหน่ง","แผนกรับบริการที่เลือก","แผนกที่พบ_visit","ชื่อ_นามสกุล","สถานะ"].includes(key) ? 40 : 18 }));
         if (sheet["!ref"]) sheet["!autofilter"] = { ref: sheet["!ref"] };
         XLSX.utils.book_append_sheet(book,sheet,name);
       }
       XLSX.utils.book_append_sheet(book, XLSX.utils.aoa_to_sheet([
         ["รายงาน",STAFF_DENTAL_TITLE],["รายชื่อหลัก","doctor.active = Y; จัดกลุ่มตาม doctor_position.name"],["วันที่เริ่ม",result.start],["วันที่สิ้นสุด",result.end],["ข้อมูล ณ",result.updatedAt],
+        ["แผนกรับบริการที่เลือก",result.departmentName || "ทุกแผนก"],["รหัสแผนก",result.departmentCode || "ทั้งหมด"],
+        ["การกรองแผนก","kskdepartment.depcode = ovst.cur_dep เหมือน incomplete-visit; เมื่อเลือกแผนก สถานะ/visit หมายถึงบริการเฉพาะแผนกนั้น จำนวนรายชื่อยังใช้ doctor.active ทั้งหมด ไม่ใช่สังกัดเจ้าหน้าที่"],
         ["เกณฑ์","นับ VN ไม่ซ้ำที่มีรายการค่าบริการจากบุคลากรทันตกรรม position_id 2 หรือ 6 ตามรายงานทันตกรรมเดิม"],
         ["ยังไม่พบ visit","จับคู่ตัวบุคคลได้ แต่ไม่พบ visit ทันตกรรมในช่วงที่เลือก"],
         ["เครื่องหมาย ✓","ระบบติ๊กทำแล้วเมื่อพบ visit และติ๊กยังไม่ทำเมื่อยืนยันตัวบุคคลได้แต่ไม่พบ visit ในช่วงที่เลือก; ต้องตรวจสอบไม่ติ๊กทั้งสองช่อง"],
         ["ต้องตรวจสอบ","ไม่พบทะเบียนผู้ป่วย ชื่อซ้ำหลาย HN หรือ CID/HN ซ้ำหลายรหัสเจ้าหน้าที่ ไม่ถือว่าเป็นผู้ยังไม่ได้รับบริการ"],
-        ["ขอบเขตส่งออก","รายการ active ใน doctor และช่วงวันที่ของผลรายงาน ไม่จำกัดตามตัวกรองบนหน้าจอ"],
+        ["ขอบเขตส่งออก","รายการ active ทั้งหมด ตามวันที่และแผนกรับบริการของผลรายงาน ไม่จำกัดตำแหน่งหรือสถานะที่กรองบนหน้าจอ"],
       ]),"ขอบเขตรายงาน");
       const url = URL.createObjectURL(new Blob([XLSX.write(book,{bookType:"xlsx",type:"array"})],{type:"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"}));
       const link = document.createElement("a");
@@ -83,17 +104,22 @@ export default function StaffDentalPage() {
         <label className="space-y-1 text-sm"><span className="block">วันที่เริ่ม</span><DatePicker selected={start} onChange={(d: Date | null) => d && setStart(d)} locale={th} dateFormat="dd/MM/yyyy" showMonthDropdown showYearDropdown dropdownMode="select" customInput={<ThaiDateInput />} /></label>
         <label className="space-y-1 text-sm"><span className="block">วันที่สิ้นสุด</span><DatePicker selected={end} onChange={(d: Date | null) => d && setEnd(d)} locale={th} dateFormat="dd/MM/yyyy" showMonthDropdown showYearDropdown dropdownMode="select" customInput={<ThaiDateInput />} /></label>
         <button className={button} onClick={() => { const today = getBangkokToday(); setStart(new Date(today.getFullYear(),0,1)); setEnd(today); }}>1 ม.ค. – วันนี้</button>
+        <label className="space-y-1 text-sm"><span className="block">แผนกรับบริการ</span><select value={departmentCode} onChange={e=>setDepartmentCode(e.target.value)} aria-label="แผนกรับบริการ" disabled={catalogLoading} className={`${button} max-w-80 bg-white`}><option value="">ทุกแผนก</option>{departments.map(d=><option key={d.code} value={d.code}>{d.name} [{d.code}]</option>)}</select></label>
       </div>
       <div className="flex flex-wrap items-center gap-4 border-t border-gray-100 pt-4">
-        <button className={`${button} border-green-700 bg-green-700 text-white`} disabled={loading} onClick={loadReport}>{loading ? "กำลังตรวจสอบกับ HOSxP…" : "ตรวจสอบผู้ที่ยังไม่ได้ทำฟัน"}</button>
+        <button className={`${button} border-green-700 bg-green-700 text-white`} disabled={loading || catalogLoading || !!catalogError} onClick={loadReport}>{loading ? "กำลังตรวจสอบกับ HOSxP…" : "ตรวจสอบผู้ที่ยังไม่ได้ทำฟัน"}</button>
         <p className="text-sm text-gray-500">ดึงรายชื่อจาก doctor ที่ active = Y ผ่าน SQL โดยตรง</p>
       </div>
       <p className="text-xs leading-relaxed text-gray-500">จับคู่ผู้ป่วยด้วย CID ก่อน ใช้ชื่อเฉพาะรายการที่ไม่มี CID · รหัสบุคคลซ้ำแยกไว้ตรวจสอบ</p>
+      {catalogLoading && <p role="status" className="text-sm text-gray-500">กำลังโหลดแผนกรับบริการ…</p>}
+      {catalogError && <p role="alert" className="text-sm text-red-700">{catalogError} <button className={button} onClick={()=>setCatalogRetry(n=>n+1)}>โหลดแผนกใหม่</button></p>}
     </section>
     {error && <p role="alert" className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">{error}</p>}
     {result && <section className="space-y-4" aria-label="ผลรายงาน">
       <div className="flex flex-wrap items-center justify-between gap-3"><div><h2 className="font-semibold">ผลตรวจสอบ {toThaiDateLabel(result.start,result.end)}</h2><p className="mt-1 text-xs text-gray-500">รายชื่อจาก doctor.active = Y · จำนวน visit ตาม VN ไม่ซ้ำ</p></div><button className={button} onClick={exportExcel} disabled={loading || dirty || exporting}><Download size={16} className="mr-2 inline" />{exporting ? "กำลังส่งออก…" : "Excel ทั้งรายงาน"}</button></div>
-      {dirty && <p className="rounded-lg bg-amber-50 p-3 text-sm text-amber-800">เปลี่ยนเงื่อนไขแล้ว กรุณากดตรวจสอบอีกครั้ง ผลด้านล่างยังเป็นช่วงวันที่เดิม</p>}
+      <p className="text-sm font-medium">แผนกรับบริการของผลรายงาน: {result.departmentName || "ทุกแผนก"}</p>
+      <p className="text-xs text-gray-500">เมื่อเลือกแผนก เครื่องหมายและจำนวน visit อ้างอิงเฉพาะแผนกนั้นในช่วงวันที่ที่เลือก รายชื่อหลักยังเป็นเจ้าหน้าที่ active ทั้งหมด ไม่ใช่แผนกสังกัด</p>
+      {dirty && <p className="rounded-lg bg-amber-50 p-3 text-sm text-amber-800">เปลี่ยนวันที่หรือแผนกแล้ว กรุณากดตรวจสอบอีกครั้ง ผลด้านล่างยังเป็นเงื่อนไขเดิม</p>}
       <div className="flex flex-wrap gap-3">
         <label className="text-sm">ตำแหน่ง<select aria-label="ตำแหน่งเจ้าหน้าที่" value={group} onChange={e => { setGroup(e.target.value); }} className={`${button} ml-2 max-w-80 bg-white`}><option value="">ทั้งหมด</option>{groups.map(g => <option key={g}>{g}</option>)}</select></label>
         <label className="text-sm">สถานะ<select value={view} onChange={e => setView(e.target.value as View)} aria-label="สถานะการทำฟัน" className={`${button} ml-2 bg-white`}><option value="not_done">ยังไม่ทำ (ไม่พบ visit)</option><option value="done">ทำแล้ว (มี visit)</option><option value="unresolved">ต้องตรวจสอบตัวบุคคล</option><option value="all">ทั้งหมด — ทำแล้วและยังไม่ทำ</option></select></label>

@@ -6,9 +6,13 @@ export const STAFF_DENTAL_STATUS: Record<StaffDentalStatus, string> = {
   done: "รับบริการแล้ว", not_done: "ยังไม่พบ visit ในช่วงที่เลือก", not_found: "ไม่พบชื่อ/รหัสในทะเบียนผู้ป่วย",
   ambiguous: "พบหลาย HN ต้องยืนยันตัวบุคคล", duplicate_patient: "CID/HN ซ้ำหลายรหัสเจ้าหน้าที่",
 };
-export type StaffDentalRow = StaffMember & { name: string; matchedHn: string | null; status: StaffDentalStatus; visits: number | null; firstVisit: string | null; lastVisit: string | null };
+export type StaffDentalRow = StaffMember & { name: string; matchedHn: string | null; status: StaffDentalStatus; visits: number | null; firstVisit: string | null; lastVisit: string | null; serviceDepartments?: string | null };
 export type StaffDentalSummary = { group: string; staff: number; done: number; notDone: number; unresolved: number; visits: number };
-export type StaffDentalReport = { start: string; end: string; rows: StaffDentalRow[]; groups: StaffDentalSummary[]; updatedAt: string };
+export type StaffDentalReport = { start: string; end: string; rows: StaffDentalRow[]; groups: StaffDentalSummary[]; updatedAt: string; departmentCode?: string; departmentName?: string };
+export type StaffDentalDepartment = { code: string; name: string };
+export const STAFF_DENTAL_DEPARTMENTS_SQL = `SELECT depcode AS code, department AS name FROM kskdepartment
+  WHERE NULLIF(TRIM(depcode), '') IS NOT NULL ORDER BY department, depcode`;
+export type StaffDentalFilters = { start: string; end: string; departmentCode?: string };
 export const cleanText = (v: unknown): string => String(v ?? "").replace(/\s+/gu, " ").trim();
 export const nameKey = (v: unknown): string => String(v ?? "").replace(/\s+/gu, "").normalize("NFC");
 export const ACTIVE_DOCTOR_SQL = `SELECT d.code, d.name, d.pname, d.fname, d.lname, d.cid,
@@ -23,13 +27,14 @@ export function activeDoctorStaff(doctors: ActiveDoctor[]): StaffMember[] {
     return { id:i+1, doctorCode:String(d.code), group:dbText(d.position_name) || "ไม่ระบุตำแหน่ง", prefix:dbText(d.pname), first:dbText(d.fname), last:dbText(d.lname), hn:"", cid:/^\d{13}$/.test(cid) && !/^(\d)\1{12}$/.test(cid) ? cid : "" };
   });
 }
-export function parseStaffDentalFilters(value: unknown): { start: string; end: string } {
+export function parseStaffDentalFilters(value: unknown): StaffDentalFilters {
   if (!value || typeof value !== "object") throw Error("ข้อมูลรายงานไม่ถูกต้อง");
   const v = value as Record<string,unknown>;
   const isDate = (d: unknown): d is string => typeof d === "string" && /^\d{4}-\d{2}-\d{2}$/.test(d) && Number(d.slice(0,4)) >= 1900 && Number.isFinite(Date.parse(d)) && new Date(d).toISOString().slice(0,10) === d;
   if (!isDate(v.start) || !isDate(v.end) || v.start > v.end) throw Error("กรุณาระบุวันที่เริ่มและสิ้นสุดให้ถูกต้อง");
   if ((Date.parse(v.end)-Date.parse(v.start))/86400000 > 366) throw Error("เลือกช่วงรายงานได้ไม่เกิน 367 วัน");
-  return {start:v.start,end:v.end};
+  if (v.departmentCode !== undefined && (typeof v.departmentCode !== "string" || (v.departmentCode !== "" && !/^[0-9A-Za-z_-]{1,20}$/.test(v.departmentCode)))) throw Error("รหัสแผนกรับบริการไม่ถูกต้อง");
+  return {start:v.start,end:v.end,...(v.departmentCode ? {departmentCode:v.departmentCode as string} : {})};
 }
 // Explicit UTF-8 collation avoids comparing the TIS-620 patient columns against a different collation.
 const sqlNameKey = (column: string) => `REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(CONVERT(${column} USING utf8mb4), ' ', ''), CHAR(9), ''), CHAR(10), ''), CHAR(13), ''), CONVERT(0xC2A0 USING utf8mb4), '') COLLATE utf8mb4_bin`;
@@ -59,14 +64,19 @@ export function matchStaffPatients(staff: StaffMember[], patients: StaffPatientC
     return matches.map(p=>({staff_id:s.id,hn:String(p.hn)}));
   });
 }
-export function staffDentalVisitQuery(hns: string[], start: string, end: string) {
+export function staffDentalVisitQuery(hns: string[], start: string, end: string, departmentCode = "") {
   if (!hns.length) throw Error("ต้องมี HN ก่อนดึง visit");
-  return { sql: `SELECT v.hn, COUNT(DISTINCT v.vn) AS visits, MIN(v.vstdate) AS first_visit, MAX(v.vstdate) AS last_visit
-    FROM vn_stat v WHERE v.hn IN (${hns.map(() => "?").join(",")})
+  return { sql: `SELECT v.hn, COUNT(DISTINCT v.vn) AS visits, MIN(v.vstdate) AS first_visit, MAX(v.vstdate) AS last_visit,
+      GROUP_CONCAT(DISTINCT k.department) AS service_departments
+    FROM vn_stat v
+    LEFT JOIN ovst ov ON ov.vn = v.vn
+    LEFT JOIN kskdepartment k ON k.depcode = ov.cur_dep
+    WHERE v.hn IN (${hns.map(() => "?").join(",")})
       AND v.vstdate >= ? AND v.vstdate < DATE_ADD(?, INTERVAL 1 DAY)
+      ${departmentCode ? "AND k.depcode = ?" : ""}
       AND EXISTS (SELECT 1 FROM opitemrece oo JOIN doctor dd ON dd.code = oo.doctor
         WHERE oo.vn = v.vn AND dd.position_id IN ('2','6'))
-    GROUP BY v.hn`, params: [...hns, start, end] };
+    GROUP BY v.hn`, params: [...hns, start, end,...(departmentCode ? [departmentCode] : [])] };
 }
 export function resolveStaffPatients(staff: StaffMember[], matches: { staff_id: number; hn: string }[]) {
   const cidUses = new Map<string,number>();
@@ -95,7 +105,7 @@ export function summarizeStaffDental(rows: StaffDentalRow[]): StaffDentalSummary
   return [...groups.values()].sort((a,b) => b.notDone - a.notDone || a.group.localeCompare(b.group, "th"));
 }
 export function staffDentalExport(report: StaffDentalReport) {
-  const exportRows = (rows: StaffDentalRow[]) => rows.map(r => ({ วันที่เริ่ม: report.start, วันที่สิ้นสุด: report.end, รหัสเจ้าหน้าที่:r.doctorCode ?? "", ตำแหน่ง: r.group, ชื่อ_นามสกุล: r.name, HN: r.matchedHn ?? "", ทำแล้ว: r.status === "done" ? "✓" : "", ยังไม่ทำ: r.status === "not_done" ? "✓" : "", จำนวน_visit: r.visits, วันที่ครั้งแรก: r.firstVisit ?? "", วันที่ล่าสุด: r.lastVisit ?? "", สถานะ: STAFF_DENTAL_STATUS[r.status] }));
+  const exportRows = (rows: StaffDentalRow[]) => rows.map(r => ({ วันที่เริ่ม: report.start, วันที่สิ้นสุด: report.end, แผนกรับบริการที่เลือก: report.departmentName || "ทุกแผนก", รหัสเจ้าหน้าที่:r.doctorCode ?? "", ตำแหน่ง: r.group, ชื่อ_นามสกุล: r.name, HN: r.matchedHn ?? "", ทำแล้ว: r.status === "done" ? "✓" : "", ยังไม่ทำ: r.status === "not_done" ? "✓" : "", จำนวน_visit: r.visits, แผนกที่พบ_visit:r.serviceDepartments ?? "", วันที่ครั้งแรก: r.firstVisit ?? "", วันที่ล่าสุด: r.lastVisit ?? "", สถานะ: STAFF_DENTAL_STATUS[r.status] }));
   return {
     unfinished: exportRows(report.rows.filter(r => r.status === "not_done")),
     unresolved: exportRows(report.rows.filter(r => !["done", "not_done"].includes(r.status))),

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { DatabaseSync } from "node:sqlite";
-import { ACTIVE_DOCTOR_SQL, activeDoctorStaff, parseStaffDentalFilters, staffPatientQuery, staffDentalVisitQuery, matchStaffPatients, resolveStaffPatients, summarizeStaffDental, staffDentalExport } from "../lib/staff-dental.ts";
+import { ACTIVE_DOCTOR_SQL, STAFF_DENTAL_DEPARTMENTS_SQL, activeDoctorStaff, parseStaffDentalFilters, staffPatientQuery, staffDentalVisitQuery, matchStaffPatients, resolveStaffPatients, summarizeStaffDental, staffDentalExport } from "../lib/staff-dental.ts";
 import { canAccessPath } from "../lib/permissions.ts";
 
 const member = (id, first, more = {}) => ({ id, first, last: "ใจดี", prefix: "นาย", group: "พยาบาลวิชาชีพ", hn: "", cid: "", ...more });
@@ -30,6 +30,8 @@ test("SQL roster uses doctor_position for active staff without reading departmen
 
 test("API accepts dates only; supplied staff cannot override the database population", () => {
   assert.deepEqual(parseStaffDentalFilters(input),{start:input.start,end:input.end});
+  assert.deepEqual(parseStaffDentalFilters({...input,departmentCode:'019'}),{start:input.start,end:input.end,departmentCode:'019'});
+  for(const departmentCode of ["019' OR 1=1",123,{},'a'.repeat(21)]) assert.throws(()=>parseStaffDentalFilters({...input,departmentCode}));
   for (const patch of [{start:"2026-02-30"},{start:"2026-11-19"},{end:"2028-01-01"}]) assert.throws(()=>parseStaffDentalFilters({...input,...patch}));
   const malicious = member(1,"ก' OR 1=1 --");
   const q=staffPatientQuery([malicious]);
@@ -52,6 +54,10 @@ function fixture() {
     CREATE TABLE vn_stat(vn TEXT PRIMARY KEY, hn TEXT, vstdate TEXT);
     CREATE TABLE opitemrece(vn TEXT, doctor TEXT);
     CREATE TABLE doctor(code TEXT PRIMARY KEY, position_id TEXT);
+    CREATE TABLE ovst(vn TEXT PRIMARY KEY, cur_dep TEXT, main_dep TEXT);
+    CREATE TABLE kskdepartment(depcode TEXT PRIMARY KEY, department TEXT);
+    INSERT INTO kskdepartment VALUES ('019','ทันตกรรม'),('001','กลับบ้าน'),('099','ชื่อเดียวกัน'),('100','ชื่อเดียวกัน');
+    INSERT INTO ovst VALUES ('v1','019','001'),('v2','001','019'),('medical','019','019'),('old','019','019'),('future','019','019'),('nondental','019','019');
     INSERT INTO patient VALUES ('0001','1111111111111','สมชาย  ','ใจดี'),('0002','2222222222222','สมศรี','ใจดี'),('0003','3333333333333','ซ้ำ','ใจดี'),('0004','4444444444444','ซ้ำ','ใจดี');
     INSERT INTO doctor VALUES ('d','2'),('t','6'),('other','1');
     INSERT INTO vn_stat VALUES ('v1','0001','2026-01-01'),('v2','0001','2026-11-18'),('medical','0001','2026-04-01'),('old','0001','2025-12-31'),('future','0001','2026-11-19'),('nondental','0002','2026-04-01');
@@ -79,10 +85,29 @@ test("counts distinct dental VN, includes both date boundaries and ignores medic
   try {
     const q=staffDentalVisitQuery(["0001","0002"],input.start,input.end);
     const rows=db.prepare(sqlite(q.sql)).all(...q.params);
-    assert.deepEqual(rows.map(r=>({...r})),[{hn:"0001",visits:2,first_visit:"2026-01-01",last_visit:"2026-11-18"}]);
+    assert.deepEqual(rows.map(r=>({...r})),[{hn:"0001",visits:2,first_visit:"2026-01-01",last_visit:"2026-11-18",service_departments:'ทันตกรรม,กลับบ้าน'}]);
     assert.throws(()=>staffDentalVisitQuery([],input.start,input.end));
     assert.ok(!q.sql.includes("main_dep"));
   } finally {db.close();}
+});
+
+test("department catalogue uses all kskdepartment codes and visit filter follows cur_dep like incomplete-visit",()=>{
+  const db=fixture();
+  try {
+    const catalog=db.prepare(STAFF_DENTAL_DEPARTMENTS_SQL).all();
+    assert.equal(catalog.length,4);assert.equal(catalog.filter(d=>d.name==='ชื่อเดียวกัน').length,2);
+    const dental=staffDentalVisitQuery(['0001'],input.start,input.end,'019');
+    const first=db.prepare(sqlite(dental.sql)).get(...dental.params);
+    assert.equal(first.visits,1);assert.equal(first.first_visit,'2026-01-01');assert.equal(first.service_departments,'ทันตกรรม');
+    const home=staffDentalVisitQuery(['0001'],input.start,input.end,'001');
+    assert.equal(db.prepare(sqlite(home.sql)).get(...home.params).first_visit,'2026-11-18');
+    db.exec("INSERT INTO vn_stat VALUES ('missing-ovst','0001','2026-06-01'); INSERT INTO opitemrece VALUES ('missing-ovst','d');");
+    const all=staffDentalVisitQuery(['0001'],input.start,input.end);
+    assert.equal(db.prepare(sqlite(all.sql)).get(...all.params).visits,3); // No inner join loss for all departments.
+    assert.equal(db.prepare(sqlite(dental.sql)).get(...dental.params).visits,1);
+    const empty=staffDentalVisitQuery(['0001'],input.start,input.end,'099');
+    assert.deepEqual(db.prepare(sqlite(empty.sql)).all(...empty.params),[]);
+  }finally{db.close();}
 });
 
 test("position totals combine staff regardless of legacy department and preserve checkmarks", () => {
@@ -103,6 +128,9 @@ test("position totals combine staff regardless of legacy department and preserve
   assert.equal(exported.all[0].วันที่เริ่ม,input.start);
   assert.ok(exported.all.every(r=>!Object.hasOwn(r,'แผนก')));
   assert.ok(exported.groups.every(r=>!Object.hasOwn(r,'แผนก')));
+  const scoped=staffDentalExport({...input,departmentCode:'019',departmentName:'ทันตกรรม',rows:[{...rows[0],serviceDepartments:'ทันตกรรม'}],groups,updatedAt:'now'});
+  assert.equal(scoped.all[0].แผนกรับบริการที่เลือก,'ทันตกรรม');
+  assert.equal(scoped.all[0].แผนกที่พบ_visit,'ทันตกรรม');
 });
 
 test("report page and API require dental permission, including custom feature grants", () => {
