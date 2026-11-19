@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { parseStaffDentalFilters } from "@/lib/staff-dental";
-import { getStaffDentalReport, getStaffDentalDepartments, StaffDentalDepartmentError } from "@/lib/staff-dental.service";
+import { getStaffDentalReport, getStaffDentalDepartments, StaffDentalDepartmentError, StaffDentalRosterError } from "@/lib/staff-dental.service";
 
 export const dynamic = "force-dynamic";
 export async function GET() {
@@ -21,6 +21,7 @@ export async function POST(req: Request) {
   try { return NextResponse.json(await getStaffDentalReport(input), { headers }); }
   catch (error) {
     if(error instanceof StaffDentalDepartmentError) return NextResponse.json({error:error.message},{status:400,headers});
+    if(error instanceof StaffDentalRosterError) return NextResponse.json({error:error.message},{status:503,headers});
     // Do not log SQL/error objects that may include patient identifiers.
     console.error("Staff dental report query failed");
     return NextResponse.json({ error: "ดึงข้อมูลทันตกรรมจาก HOSxP ไม่สำเร็จ กรุณาลองใหม่หรือติดต่อ IT" }, { status: 500, headers });

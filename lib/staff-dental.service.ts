@@ -1,7 +1,9 @@
 import { db } from "@/lib/db";
 import { withHeavySlot } from "@/lib/limiter";
 import type { RowDataPacket } from "mysql2";
-import { ACTIVE_DOCTOR_SQL, STAFF_DENTAL_DEPARTMENTS_SQL, activeDoctorStaff, matchStaffPatients, resolveStaffPatients, staffDentalVisitQuery, staffPatientQuery, summarizeStaffDental, type StaffDentalReport, type ActiveDoctor, type StaffPatientCandidate, type StaffDentalDepartment, type StaffDentalFilters } from "@/lib/staff-dental";
+import { STAFF_DENTAL_DEPARTMENTS_SQL, hrRosterStaff, matchStaffPatients, resolveStaffPatients, staffDentalVisitQuery, staffPatientQuery, summarizeStaffDental, type StaffDentalReport, type StaffPatientCandidate, type StaffDentalDepartment, type StaffDentalFilters } from "@/lib/staff-dental";
+import { readStaffDentalRoster } from "@/lib/staff-dental-roster";
+export { StaffDentalRosterError } from "@/lib/staff-dental-roster";
 
 export async function getStaffDentalDepartments(): Promise<StaffDentalDepartment[]> {
   const [rows] = await db.query<(RowDataPacket & StaffDentalDepartment)[]>(STAFF_DENTAL_DEPARTMENTS_SQL);
@@ -14,12 +16,11 @@ export function getStaffDentalReport(input: StaffDentalFilters): Promise<StaffDe
     const departments = input.departmentCode ? await getStaffDentalDepartments() : [];
     const department = departments.find(d=>d.code===input.departmentCode);
     if(input.departmentCode && !department) throw new StaffDentalDepartmentError("ไม่พบแผนกรับบริการที่เลือก กรุณาโหลดรายชื่อแผนกใหม่");
-    const [doctors] = await db.query<(RowDataPacket & ActiveDoctor)[]>({sql:ACTIVE_DOCTOR_SQL,timeout:60000});
-    const staff = activeDoctorStaff(doctors);
+    const personnel=await readStaffDentalRoster();
+    const staff = hrRosterStaff(personnel);
     const query = staffPatientQuery(staff);
     const [patients] = staff.length ? await db.query<(RowDataPacket & StaffPatientCandidate)[]>({ sql: query.sql, timeout: 60000 }, query.params) : [[]];
     const rows = resolveStaffPatients(staff, matchStaffPatients(staff,patients));
-    doctors.forEach((d,i)=>{ if(!staff[i].first || !staff[i].last) rows[i].name = d.name || `รหัส ${d.code}`; });
     const hns = rows.flatMap(r => r.matchedHn ? [r.matchedHn] : []);
     if (hns.length) {
       const visits = staffDentalVisitQuery(hns, input.start, input.end,input.departmentCode);

@@ -16,6 +16,7 @@ docker-compose.yml
 # ไฟล์ dev/ข้อมูลที่ไม่ต้องเข้า image
 /data/*.csv
 /data/*.xlsx
+/private/
 sync-sheets.bat
 hash.js
 importUsers.js
