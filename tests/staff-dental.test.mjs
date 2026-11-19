@@ -1,31 +1,40 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { DatabaseSync } from "node:sqlite";
-import { ACTIVE_DOCTOR_SQL, STAFF_DENTAL_DEPARTMENTS_SQL, activeDoctorStaff, parseStaffDentalFilters, staffPatientQuery, staffDentalVisitQuery, matchStaffPatients, resolveStaffPatients, summarizeStaffDental, staffDentalExport } from "../lib/staff-dental.ts";
+import { HR_STAFF_SQL, STAFF_DENTAL_DEPARTMENTS_SQL, hrRosterStaff, parseStaffDentalFilters, staffPatientQuery, staffDentalVisitQuery, matchStaffPatients, resolveStaffPatients, summarizeStaffDental, staffDentalExport } from "../lib/staff-dental.ts";
 import { canAccessPath } from "../lib/permissions.ts";
 
-const member = (id, first, more = {}) => ({ id, first, last: "ใจดี", prefix: "นาย", group: "พยาบาลวิชาชีพ", hn: "", cid: "", ...more });
+const member = (id, first, more = {}) => ({ id, first, last: "ใจดี", prefix: "นาย", group: "พยาบาลวิชาชีพ", unit:"งานผู้ป่วยนอก",staffDepartment:"กลุ่มงานการพยาบาล",hn: "", cid: "", ...more });
 const input = { start: "2026-01-01", end: "2026-11-18", staff: [member(1,"สมชาย")] };
 
-test("SQL roster uses doctor_position for active staff without reading departments", () => {
+test("HR roster retains personnel without provider codes and reads their actual positions and units", () => {
   const db=new DatabaseSync(":memory:");
   try {
-    db.exec(`CREATE TABLE doctor(code,name,pname,fname,lname,cid,department,position_id,active);
-      CREATE TABLE doctor_position(id,name);
-      INSERT INTO doctor_position VALUES ('5','พยาบาลวิชาชีพ');
-      INSERT INTO doctor VALUES ('0001','ก ข','นาย','ก','ข','1234567890123','[]','5','Y'),
-      ('0002','ค ง','นาง','ค','ง',NULL,'[][ห้องฉุกเฉิน]','5','Y'),
-      ('0003','จ ฉ',NULL,'จ','ฉ',NULL,NULL,NULL,'N');`);
-    const staff=activeDoctorStaff(db.prepare(ACTIVE_DOCTOR_SQL).all());
-    assert.equal(staff.length,2);assert.equal(staff[0].doctorCode,'0001');
-    assert.equal(staff[0].group,'พยาบาลวิชาชีพ');
-    assert.equal(staff[1].group,'พยาบาลวิชาชีพ');assert.equal(staff[1].cid,'');
-    const missing=activeDoctorStaff([{code:'4',position_name:null,cid:'0000000000000'}]);
+    db.exec(`ATTACH DATABASE ':memory:' AS ppchos;
+      CREATE TABLE ppchos.staff_dental_roster(staff_ordinal,prefix,first_name,last_name,cid,position_name,unit_name,department_name,active);
+      INSERT INTO ppchos.staff_dental_roster VALUES (1,'นาย','ก','ข','1234567890123','พนักงานทำความสะอาด','งานทำความสะอาด','กลุ่มงานบริหารทั่วไป',1),
+      (2,'นาง','ค','ง','1234567890124','พยาบาลวิชาชีพ','งานผู้ป่วยนอก','กลุ่มงานการพยาบาล',1),
+      (3,'นาย','จ','ฉ','1234567890125','แพทย์','องค์กรแพทย์','กลุ่มงานการแพทย์',0);`);
+    const staff=hrRosterStaff(db.prepare(HR_STAFF_SQL).all());
+    assert.equal(staff.length,2);assert.equal(staff[0].rosterNo,1);
+    assert.equal(staff[0].group,'พนักงานทำความสะอาด');assert.equal(staff[0].unit,'งานทำความสะอาด');
+    assert.equal(staff[1].group,'พยาบาลวิชาชีพ');assert.equal(staff[1].staffDepartment,'กลุ่มงานการพยาบาล');
+    const missing=hrRosterStaff([{staff_ordinal:4,position_name:null,cid:'0000000000000'}]);
     assert.equal(missing[0].group,'ไม่ระบุตำแหน่ง');assert.equal(missing[0].cid,'');
     assert.ok(staff.every(s=>!Object.hasOwn(s,'department')));
-    assert.ok(!ACTIVE_DOCTOR_SQL.includes('d.department'));
-    assert.ok(!ACTIVE_DOCTOR_SQL.includes('kskdepartment'));
+    assert.ok(!HR_STAFF_SQL.includes('doctor')); // No provider table is needed to build the cohort.
+    assert.ok(!HR_STAFF_SQL.includes('kskdepartment'));
   } finally {db.close();}
+});
+
+test("same position in different HR units has separate reconciled summaries",()=>{
+  const personnel=[member(1,'ก'),member(2,'ข',{unit:'งานผู้ป่วยใน'})];
+  const rows=resolveStaffPatients(personnel,[{staff_id:1,hn:'1'},{staff_id:2,hn:'2'}]);
+  const groups=summarizeStaffDental(rows);
+  assert.equal(groups.length,2);assert.equal(groups.reduce((n,g)=>n+g.staff,0),2);
+  const out=staffDentalExport({...input,rows,groups,updatedAt:'now'});
+  assert.equal(out.all[1].หน่วยงาน,'งานผู้ป่วยใน');assert.equal(out.all[1].กลุ่มงาน_ฝ่าย,'กลุ่มงานการพยาบาล');
+  assert.ok(out.all.every(r=>!Object.hasOwn(r,'cid')));
 });
 
 test("API accepts dates only; supplied staff cannot override the database population", () => {
