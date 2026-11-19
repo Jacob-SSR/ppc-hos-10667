@@ -4,10 +4,10 @@ import { DatabaseSync } from "node:sqlite";
 import { ACTIVE_DOCTOR_SQL, activeDoctorStaff, parseStaffDentalFilters, staffPatientQuery, staffDentalVisitQuery, matchStaffPatients, resolveStaffPatients, summarizeStaffDental, staffDentalExport } from "../lib/staff-dental.ts";
 import { canAccessPath } from "../lib/permissions.ts";
 
-const member = (id, first, more = {}) => ({ id, first, last: "ใจดี", prefix: "นาย", group: "กลุ่ม ก", department: "แผนก ก", hn: "", cid: "", ...more });
+const member = (id, first, more = {}) => ({ id, first, last: "ใจดี", prefix: "นาย", group: "พยาบาลวิชาชีพ", hn: "", cid: "", ...more });
 const input = { start: "2026-01-01", end: "2026-11-18", staff: [member(1,"สมชาย")] };
 
-test("SQL roster contains active doctors only and retains unknown departments without guessing a join", () => {
+test("SQL roster uses doctor_position for active staff without reading departments", () => {
   const db=new DatabaseSync(":memory:");
   try {
     db.exec(`CREATE TABLE doctor(code,name,pname,fname,lname,cid,department,position_id,active);
@@ -18,10 +18,12 @@ test("SQL roster contains active doctors only and retains unknown departments wi
       ('0003','จ ฉ',NULL,'จ','ฉ',NULL,NULL,NULL,'N');`);
     const staff=activeDoctorStaff(db.prepare(ACTIVE_DOCTOR_SQL).all());
     assert.equal(staff.length,2);assert.equal(staff[0].doctorCode,'0001');
-    assert.equal(staff[0].department,'ไม่ระบุ');assert.equal(staff[0].group,'พยาบาลวิชาชีพ');
-    assert.equal(staff[1].department,'ห้องฉุกเฉิน');assert.equal(staff[1].cid,'');
-    const missing=activeDoctorStaff([{code:'4',department:'NULL',cid:'0000000000000'}]);
-    assert.equal(missing[0].department,'ไม่ระบุ');assert.equal(missing[0].cid,'');
+    assert.equal(staff[0].group,'พยาบาลวิชาชีพ');
+    assert.equal(staff[1].group,'พยาบาลวิชาชีพ');assert.equal(staff[1].cid,'');
+    const missing=activeDoctorStaff([{code:'4',position_name:null,cid:'0000000000000'}]);
+    assert.equal(missing[0].group,'ไม่ระบุตำแหน่ง');assert.equal(missing[0].cid,'');
+    assert.ok(staff.every(s=>!Object.hasOwn(s,'department')));
+    assert.ok(!ACTIVE_DOCTOR_SQL.includes('d.department'));
     assert.ok(!ACTIVE_DOCTOR_SQL.includes('kskdepartment'));
   } finally {db.close();}
 });
@@ -83,11 +85,12 @@ test("counts distinct dental VN, includes both date boundaries and ignores medic
   } finally {db.close();}
 });
 
-test("group totals reconcile and Excel separates unfinished, done and unresolved", () => {
+test("position totals combine staff regardless of legacy department and preserve checkmarks", () => {
   const rows=resolveStaffPatients([member(1,"ก"),member(2,"ข"),member(3,"ค",{department:"แผนก ข"})],[{staff_id:1,hn:"0001"},{staff_id:2,hn:"0002"}]);
   Object.assign(rows[0],{status:"done",visits:2,firstVisit:"2026-01-01",lastVisit:"2026-11-18"});
   const groups=summarizeStaffDental(rows);
-  assert.equal(groups.length,2);
+  assert.equal(groups.length,1);
+  assert.equal(groups[0].staff,3);
   for(const g of groups) assert.equal(g.staff,g.done+g.notDone+g.unresolved);
   assert.equal(groups.reduce((n,g)=>n+g.visits,0),2);
   const exported=staffDentalExport({...input,rows,groups,updatedAt:"now"});
@@ -98,6 +101,8 @@ test("group totals reconcile and Excel separates unfinished, done and unresolved
   assert.deepEqual([exported.unresolved[0].ทำแล้ว,exported.unresolved[0].ยังไม่ทำ],["",""]);
   assert.equal(exported.all[0].HN,"0001");
   assert.equal(exported.all[0].วันที่เริ่ม,input.start);
+  assert.ok(exported.all.every(r=>!Object.hasOwn(r,'แผนก')));
+  assert.ok(exported.groups.every(r=>!Object.hasOwn(r,'แผนก')));
 });
 
 test("report page and API require dental permission, including custom feature grants", () => {

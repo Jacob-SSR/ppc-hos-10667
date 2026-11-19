@@ -1,28 +1,26 @@
 /** Report population: active records in doctor, including records that need identity review. */
 export const STAFF_DENTAL_TITLE = "ติดตามเจ้าหน้าที่ที่ยังไม่ได้รับบริการทันตกรรม";
-export type StaffMember = { id: number; group: string; department: string; prefix: string; first: string; last: string; hn: string; cid: string; doctorCode?: string };
+export type StaffMember = { id: number; group: string; prefix: string; first: string; last: string; hn: string; cid: string; doctorCode?: string };
 export type StaffDentalStatus = "done" | "not_done" | "not_found" | "ambiguous" | "duplicate_patient";
 export const STAFF_DENTAL_STATUS: Record<StaffDentalStatus, string> = {
   done: "รับบริการแล้ว", not_done: "ยังไม่พบ visit ในช่วงที่เลือก", not_found: "ไม่พบชื่อ/รหัสในทะเบียนผู้ป่วย",
   ambiguous: "พบหลาย HN ต้องยืนยันตัวบุคคล", duplicate_patient: "CID/HN ซ้ำหลายรหัสเจ้าหน้าที่",
 };
 export type StaffDentalRow = StaffMember & { name: string; matchedHn: string | null; status: StaffDentalStatus; visits: number | null; firstVisit: string | null; lastVisit: string | null };
-export type StaffDentalSummary = { group: string; department: string; staff: number; done: number; notDone: number; unresolved: number; visits: number };
+export type StaffDentalSummary = { group: string; staff: number; done: number; notDone: number; unresolved: number; visits: number };
 export type StaffDentalReport = { start: string; end: string; rows: StaffDentalRow[]; groups: StaffDentalSummary[]; updatedAt: string };
 export const cleanText = (v: unknown): string => String(v ?? "").replace(/\s+/gu, " ").trim();
 export const nameKey = (v: unknown): string => String(v ?? "").replace(/\s+/gu, "").normalize("NFC");
-export const ACTIVE_DOCTOR_SQL = `SELECT d.code, d.name, d.pname, d.fname, d.lname, d.cid, d.department,
+export const ACTIVE_DOCTOR_SQL = `SELECT d.code, d.name, d.pname, d.fname, d.lname, d.cid,
   dp.name AS position_name FROM doctor d
   LEFT JOIN doctor_position dp ON dp.id = d.position_id
   WHERE d.active = 'Y' ORDER BY d.code`;
-export type ActiveDoctor = { code: string; name: string | null; pname: string | null; fname: string | null; lname: string | null; cid: string | null; department: string | null; position_name: string | null };
+export type ActiveDoctor = { code: string; name: string | null; pname: string | null; fname: string | null; lname: string | null; cid: string | null; position_name: string | null };
 const dbText = (v: unknown) => /^(null|\[\])$/i.test(cleanText(v)) ? "" : cleanText(v);
 export function activeDoctorStaff(doctors: ActiveDoctor[]): StaffMember[] {
   return doctors.map((d,i) => {
-    const raw = dbText(d.department);
-    const department = raw.includes("[") ? [...new Set([...raw.matchAll(/\[([^\]]*)\]/g)].map(m=>cleanText(m[1])).filter(Boolean))].join(" / ") : raw;
     const cid = dbText(d.cid);
-    return { id:i+1, doctorCode:String(d.code), group:dbText(d.position_name) || "ไม่ระบุตำแหน่ง", department:department || "ไม่ระบุ", prefix:dbText(d.pname), first:dbText(d.fname), last:dbText(d.lname), hn:"", cid:/^\d{13}$/.test(cid) && !/^(\d)\1{12}$/.test(cid) ? cid : "" };
+    return { id:i+1, doctorCode:String(d.code), group:dbText(d.position_name) || "ไม่ระบุตำแหน่ง", prefix:dbText(d.pname), first:dbText(d.fname), last:dbText(d.lname), hn:"", cid:/^\d{13}$/.test(cid) && !/^(\d)\1{12}$/.test(cid) ? cid : "" };
   });
 }
 export function parseStaffDentalFilters(value: unknown): { start: string; end: string } {
@@ -89,19 +87,19 @@ export function resolveStaffPatients(staff: StaffMember[], matches: { staff_id: 
 export function summarizeStaffDental(rows: StaffDentalRow[]): StaffDentalSummary[] {
   const groups = new Map<string, StaffDentalSummary>();
   for (const row of rows) {
-    const key = JSON.stringify([row.group, row.department]);
-    const g = groups.get(key) ?? { group: row.group, department: row.department, staff: 0, done: 0, notDone: 0, unresolved: 0, visits: 0 };
+    const key = row.group;
+    const g = groups.get(key) ?? { group: row.group, staff: 0, done: 0, notDone: 0, unresolved: 0, visits: 0 };
     g.staff++; if (row.status === "done") g.done++; else if (row.status === "not_done") g.notDone++; else g.unresolved++;
     g.visits += row.visits ?? 0; groups.set(key, g);
   }
-  return [...groups.values()].sort((a,b) => b.notDone - a.notDone || a.group.localeCompare(b.group, "th") || a.department.localeCompare(b.department, "th"));
+  return [...groups.values()].sort((a,b) => b.notDone - a.notDone || a.group.localeCompare(b.group, "th"));
 }
 export function staffDentalExport(report: StaffDentalReport) {
-  const exportRows = (rows: StaffDentalRow[]) => rows.map(r => ({ วันที่เริ่ม: report.start, วันที่สิ้นสุด: report.end, รหัสเจ้าหน้าที่:r.doctorCode ?? "", ตำแหน่ง: r.group, แผนก: r.department, ชื่อ_นามสกุล: r.name, HN: r.matchedHn ?? "", ทำแล้ว: r.status === "done" ? "✓" : "", ยังไม่ทำ: r.status === "not_done" ? "✓" : "", จำนวน_visit: r.visits, วันที่ครั้งแรก: r.firstVisit ?? "", วันที่ล่าสุด: r.lastVisit ?? "", สถานะ: STAFF_DENTAL_STATUS[r.status] }));
+  const exportRows = (rows: StaffDentalRow[]) => rows.map(r => ({ วันที่เริ่ม: report.start, วันที่สิ้นสุด: report.end, รหัสเจ้าหน้าที่:r.doctorCode ?? "", ตำแหน่ง: r.group, ชื่อ_นามสกุล: r.name, HN: r.matchedHn ?? "", ทำแล้ว: r.status === "done" ? "✓" : "", ยังไม่ทำ: r.status === "not_done" ? "✓" : "", จำนวน_visit: r.visits, วันที่ครั้งแรก: r.firstVisit ?? "", วันที่ล่าสุด: r.lastVisit ?? "", สถานะ: STAFF_DENTAL_STATUS[r.status] }));
   return {
     unfinished: exportRows(report.rows.filter(r => r.status === "not_done")),
     unresolved: exportRows(report.rows.filter(r => !["done", "not_done"].includes(r.status))),
     all: exportRows(report.rows),
-    groups: report.groups.map(g => ({ ตำแหน่ง: g.group, แผนก: g.department, รายการ_active: g.staff, รับบริการแล้ว: g.done, ยังไม่พบ_visit: g.notDone, ต้องตรวจสอบ: g.unresolved, visit_รวมที่จับคู่ได้: g.visits })),
+    groups: report.groups.map(g => ({ ตำแหน่ง: g.group, รายการ_active: g.staff, รับบริการแล้ว: g.done, ยังไม่พบ_visit: g.notDone, ต้องตรวจสอบ: g.unresolved, visit_รวมที่จับคู่ได้: g.visits })),
   };
 }
